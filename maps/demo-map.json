@@ -1,0 +1,1993 @@
+{
+  "format_version": "gen3-map-v1",
+  "id": "demo-map",
+  "tile_size": {
+    "width": 16,
+    "height": 16
+  },
+  "width": 24,
+  "height": 16,
+  "materials": [
+    {
+      "id": "material-0000",
+      "layers": [
+        "tile-0102"
+      ]
+    },
+    {
+      "id": "material-0001",
+      "layers": [
+        "tile-0101"
+      ]
+    },
+    {
+      "id": "material-0002",
+      "layers": [
+        "tile-0102",
+        "tile-0110"
+      ]
+    },
+    {
+      "id": "material-0003",
+      "layers": [
+        "tile-0102",
+        "tile-0223"
+      ]
+    },
+    {
+      "id": "material-0004",
+      "layers": [
+        "tile-0251"
+      ]
+    },
+    {
+      "id": "material-0006",
+      "layers": [
+        "tile-0102",
+        "tile-0006"
+      ]
+    },
+    {
+      "id": "material-0008",
+      "layers": [
+        "tile-0013"
+      ]
+    },
+    {
+      "id": "material-0010",
+      "layers": [
+        "tile-0010"
+      ]
+    }
+  ],
+  "visual_cells": [
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0003"
+    },
+    {
+      "material": "material-0003"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0003"
+    },
+    {
+      "material": "material-0003"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0003"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0003"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0002"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0001"
+    },
+    {
+      "material": "material-0000"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0004"
+    },
+    {
+      "material": "material-0006"
+    },
+    {
+      "material": "material-0008"
+    }
+  ],
+  "collision_cells": [
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked",
+    "blocked"
+  ],
+  "event_cells": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    "encounter",
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+  ],
+  "player_spawn": [
+    3,
+    6
+  ]
+}

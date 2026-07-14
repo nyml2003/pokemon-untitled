@@ -1,0 +1,45 @@
+node_modules/
+dist/
+dist-test/
+.installed-skills/
+out/
+.output/
+.electron-builder/
+.pnpm-store/
+
+# Rust build artifacts, including nested workspaces like apps/thorn/target/
+target/
+/.target/
+
+# build artifacts
+*.tsbuildinfo
+*.pyc
+
+# env
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# data / log outputs
+*.jsonl
+*.geojson
+
+# IDE
+.idea/
+.cursorrules
+*.swp
+*.swo
+*.omx
+*.claude
+
+# debug
+npm-debug.log*
+pnpm-debug.log*
+test-results/
+playwright-report/

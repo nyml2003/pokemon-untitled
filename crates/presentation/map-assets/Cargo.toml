@@ -1,0 +1,18 @@
+[package]
+name = "map-assets"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+game-assets = { path = "../game-assets" }
+map-project = { workspace = true }
+map-render = { workspace = true }
+punctum-gpu = { workspace = true }
+
+[dev-dependencies]
+image = "0.25.8"
+
+[lib]
+path = "src/lib.rs"

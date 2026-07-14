@@ -1,0 +1,23 @@
+[package]
+name = "game-asset-plan"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+battle-application = { path = "../../application/battle-application" }
+game-assets = { path = "../game-assets" }
+game-native-plan = { path = "../game-native-plan" }
+game-session = { workspace = true }
+game-ui = { path = "../game-ui" }
+game-view = { path = "../game-view" }
+punctum-gpu = { workspace = true }
+world-application = { path = "../../application/world-application" }
+
+[dev-dependencies]
+game-data = { path = "../../domain/game-data" }
+image = "0.25.8"
+
+[lib]
+path = "src/lib.rs"

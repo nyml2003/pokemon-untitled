@@ -1,0 +1,23 @@
+[package]
+name = "game-ui"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+battle-application = { workspace = true }
+battle-ramus-adapter = { path = "../../adapter/battle-ramus-adapter" }
+battle-session = { workspace = true }
+game-session = { workspace = true }
+nucleo-matcher = "0.3.1"
+punctum-gpu = { workspace = true }
+punctum-grid = { workspace = true }
+punctum-input = { workspace = true }
+world-application = { path = "../../application/world-application" }
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+game-data = { path = "../../domain/game-data" }

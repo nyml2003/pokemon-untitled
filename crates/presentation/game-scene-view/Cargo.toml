@@ -1,0 +1,23 @@
+[package]
+name = "game-scene-view"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+game-session = { workspace = true }
+game-ui = { path = "../game-ui" }
+game-view = { path = "../game-view" }
+map-project = { workspace = true }
+map-render = { workspace = true }
+punctum-gpu = { workspace = true }
+punctum-grid = { workspace = true }
+world-application = { path = "../../application/world-application" }
+
+[dev-dependencies]
+game-assets = { path = "../game-assets" }
+game-data = { path = "../../domain/game-data" }
+
+[lib]
+path = "src/lib.rs"

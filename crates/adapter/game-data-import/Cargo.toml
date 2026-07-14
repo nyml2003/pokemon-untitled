@@ -1,0 +1,18 @@
+[package]
+name = "game-data-import"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+game-data = { path = "../../domain/game-data" }
+game-data-import-core = { path = "../game-data-import-core" }
+serde_json = "1.0.149"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "game-data-import"
+path = "src/main.rs"

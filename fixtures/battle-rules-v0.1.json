@@ -1,0 +1,106 @@
+{
+  "schema_version": "battle-rules-fixture-v1",
+  "identity": "BATTLE-RULES-v0.1",
+  "approved_at": "2026-07-11",
+  "semantic_owner": "User",
+  "format": "generation-iii-inspired-6v6-singles-core",
+  "team_size": 6,
+  "active_per_side": 1,
+  "implemented_rules": {
+    "turn_order": [
+      "switches resolve before moves",
+      "higher move priority resolves first",
+      "higher Speed resolves first",
+      "ties use the seeded battle RNG"
+    ],
+    "moves": [
+      "four move slots per creature",
+      "PP is consumed when a move is attempted",
+      "accuracy uses a seeded 1 through 100 roll",
+      "a creature with no usable move uses Struggle"
+    ],
+    "damage": [
+      "Generation III integer base damage formula",
+      "move type determines physical or special category",
+      "same-type attack bonus is 1.5x",
+      "dual-type effectiveness is multiplicative",
+      "critical hits deal 2x damage",
+      "random damage multiplier is an integer from 85 through 100 percent"
+    ],
+    "battle_flow": [
+      "voluntary switching",
+      "forced replacement after a knockout",
+      "a knocked-out creature cannot act",
+      "battle ends when one side has no conscious creature"
+    ]
+  },
+  "explicit_simplifications": [
+    "no abilities",
+    "no held items",
+    "no status conditions or volatile status",
+    "no weather",
+    "no stat stages",
+    "no move secondary effects",
+    "no multi-turn or multi-hit move behavior",
+    "no field, side, entry-hazard, trapping, or pursuit effects",
+    "critical-hit stage modifiers are not modeled",
+    "Struggle recoil is one quarter of the damage dealt, with a minimum of one HP"
+  ],
+  "data_boundary": "Species, rental pools, learned moves, and concrete move values are validated inputs and are not embedded in the engine fixture.",
+  "replay_oracle": {
+    "id": "seed-42-basic-turn",
+    "seed": 42,
+    "commands": [
+      "side one uses move slot 0",
+      "side two uses move slot 0"
+    ],
+    "expected_event_count": 11,
+    "expected_damage_each_side": 24,
+    "expected_remaining_hp_each_side": 176,
+    "test": "battle-domain::tests::approved_replay_fixture_locks_the_complete_seeded_event_log"
+  },
+  "vectors": [
+    {
+      "id": "normal-damage-level-50",
+      "input": {
+        "level": 50,
+        "power": 50,
+        "attack": 100,
+        "defense": 100,
+        "stab": false,
+        "effectiveness_quarters": 4,
+        "critical": false,
+        "random_percent": 100
+      },
+      "expected_damage": 24
+    },
+    {
+      "id": "stab-super-effective-special",
+      "input": {
+        "level": 50,
+        "power": 95,
+        "attack": 120,
+        "defense": 100,
+        "stab": true,
+        "effectiveness_quarters": 8,
+        "critical": false,
+        "random_percent": 100
+      },
+      "expected_damage": 156
+    },
+    {
+      "id": "immunity",
+      "input": {
+        "level": 50,
+        "power": 100,
+        "attack": 120,
+        "defense": 90,
+        "stab": true,
+        "effectiveness_quarters": 0,
+        "critical": true,
+        "random_percent": 100
+      },
+      "expected_damage": 0
+    }
+  ]
+}

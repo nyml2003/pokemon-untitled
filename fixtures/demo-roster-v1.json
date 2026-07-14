@@ -1,0 +1,20 @@
+{
+  "schema_version": "demo-roster-v1",
+  "version_group": "emerald",
+  "player": [
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] }
+  ],
+  "opponent": [
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] },
+    { "pokemon_form_id": 1, "level": 24, "move_ids": [33, 22] }
+  ]
+}

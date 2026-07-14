@@ -1,0 +1,58 @@
+[workspace]
+members = [
+    "crates/domain/battle-domain",
+    "crates/domain/game-data",
+    "crates/domain/map-project",
+    "crates/domain/world-domain",
+    "crates/foundation/punctum-grid",
+    "crates/foundation/punctum-input",
+    "crates/foundation/punctum-gpu",
+    "crates/foundation/punctum-terminal",
+    "crates/foundation/punctum-ui",
+    "crates/application/battle-application",
+    "crates/application/battle-session",
+    "crates/application/game-session",
+    "crates/application/map-editor-core",
+    "crates/application/world-application",
+    "crates/presentation/game-assets",
+    "crates/presentation/map-assets",
+    "crates/presentation/game-ui",
+    "crates/presentation/game-view",
+    "crates/presentation/game-scene-view",
+    "crates/presentation/game-native-plan",
+    "crates/presentation/game-asset-plan",
+    "crates/presentation/map-render",
+    "crates/presentation/map-editor-view",
+    "crates/adapter/battle-ramus-adapter",
+    "crates/adapter/game-data-import-core",
+    "crates/adapter/game-data-import",
+    "crates/adapter/game-fs-assets",
+    "crates/adapter/game-native-target",
+    "crates/adapter/punctum-crossterm",
+    "crates/adapter/punctum-wgpu",
+    "crates/runtime/game-host",
+    "crates/runtime/map-editor",
+    "crates/quality/game-e2e",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+
+[workspace.dependencies]
+battle-application = { path = "crates/application/battle-application" }
+battle-domain = { path = "crates/domain/battle-domain" }
+battle-session = { path = "crates/application/battle-session" }
+game-session = { path = "crates/application/game-session" }
+map-project = { path = "crates/domain/map-project" }
+map-render = { path = "crates/presentation/map-render" }
+world-domain = { path = "crates/domain/world-domain" }
+punctum-gpu = { path = "crates/foundation/punctum-gpu" }
+punctum-grid = { path = "crates/foundation/punctum-grid" }
+punctum-input = { path = "crates/foundation/punctum-input" }
+punctum-terminal = { path = "crates/foundation/punctum-terminal" }
+punctum-ui = { path = "crates/foundation/punctum-ui" }
+punctum-wgpu = { path = "crates/adapter/punctum-wgpu" }
+ramus-core = { path = "crates/foundation/ramus/crates/ramus-core" }
