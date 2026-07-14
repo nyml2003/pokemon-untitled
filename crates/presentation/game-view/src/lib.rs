@@ -253,20 +253,6 @@ pub fn project_pokedex(pokedex: &PokedexData, selected_index: usize) -> GameView
         label(
             TextRole::PokedexDetail,
             15,
-            10,
-            13,
-            1,
-            &entry
-                .types
-                .iter()
-                .map(|kind| kind.name.as_str())
-                .collect::<Vec<_>>()
-                .join(" / "),
-            BATTLE_INK,
-        ),
-        label(
-            TextRole::PokedexDetail,
-            15,
             16,
             14,
             1,
@@ -314,16 +300,31 @@ pub fn project_pokedex(pokedex: &PokedexData, selected_index: usize) -> GameView
             },
         ));
     }
-    let image = ViewImage::new(
+    let mut images = vec![ViewImage::new(
         GridRect::new(GridPos::new(23, 5), GridSize::new(6, 6)),
         AssetKey::new(format!("pokedex/{}", entry.national_dex))
             .expect("Pokedex asset key is valid"),
         Rgba8::new(255, 255, 255, 255),
         1,
-    );
+    )];
+    for (index, kind) in entry.types.iter().enumerate() {
+        if let Some(pokemon_type) = pokedex_type(kind.id.0) {
+            images.push(type_icon_image(15 + index as u32 * 3, 10, pokemon_type));
+        } else {
+            labels.push(label(
+                TextRole::PokedexDetail,
+                15,
+                10 + index as u32,
+                13,
+                1,
+                &kind.name,
+                BATTLE_INK,
+            ));
+        }
+    }
     GameView::new([
         ViewLayer::new(LayerKind::Map).with_surface(canvas.finish()),
-        ViewLayer::new(LayerKind::Character).with_images(vec![image]),
+        ViewLayer::new(LayerKind::Character).with_images(images),
         ViewLayer::new(LayerKind::Hud).with_labels(labels),
     ])
 }
@@ -1219,6 +1220,29 @@ fn type_icon_image(col: u32, row: u32, pokemon_type: PokemonType) -> ViewImage {
     )
 }
 
+fn pokedex_type(id: u16) -> Option<PokemonType> {
+    Some(match id {
+        1 => PokemonType::Normal,
+        2 => PokemonType::Fighting,
+        3 => PokemonType::Flying,
+        4 => PokemonType::Poison,
+        5 => PokemonType::Ground,
+        6 => PokemonType::Rock,
+        7 => PokemonType::Bug,
+        8 => PokemonType::Ghost,
+        9 => PokemonType::Steel,
+        10 => PokemonType::Fire,
+        11 => PokemonType::Water,
+        12 => PokemonType::Grass,
+        13 => PokemonType::Electric,
+        14 => PokemonType::Psychic,
+        15 => PokemonType::Ice,
+        16 => PokemonType::Dragon,
+        17 => PokemonType::Dark,
+        _ => return None,
+    })
+}
+
 pub fn type_icon_asset(pokemon_type: PokemonType) -> AssetKey {
     let name = match pokemon_type {
         PokemonType::Normal => "normal",
@@ -1433,6 +1457,14 @@ mod tests {
         assert!(
             view.images()
                 .any(|image| image.asset.as_str() == "pokedex/1")
+        );
+        assert!(
+            view.images()
+                .any(|image| image.asset == type_icon_asset(PokemonType::Grass))
+        );
+        assert!(
+            view.images()
+                .any(|image| image.asset == type_icon_asset(PokemonType::Poison))
         );
         assert_eq!(view.layers()[0].kind, LayerKind::Map);
     }
