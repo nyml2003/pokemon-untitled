@@ -1427,12 +1427,12 @@ mod tests {
 
     #[test]
     fn pokedex_projects_its_selected_canonical_front() {
-        let data = PokedexData::embedded_hoenn().unwrap();
+        let data = PokedexData::embedded_gen3().unwrap();
         let view = project_pokedex(&data, 0);
-        assert!(view.labels().any(|label| label.content == "木守宫"));
+        assert!(view.labels().any(|label| label.content == "妙蛙种子"));
         assert!(
             view.images()
-                .any(|image| image.asset.as_str() == "pokedex/252")
+                .any(|image| image.asset.as_str() == "pokedex/1")
         );
         assert_eq!(view.layers()[0].kind, LayerKind::Map);
     }

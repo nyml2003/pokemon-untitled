@@ -16,6 +16,7 @@ const WORLD_TICK_INTERVAL: Duration = Duration::from_millis(16);
 const TURN_HOLD_DURATION: Duration = Duration::from_millis(90);
 const RUN_STOP_DURATION: Duration = Duration::from_millis(90);
 const SETTLE_DURATION: Duration = Duration::from_millis(50);
+const POKEDEX_ENTRY_COUNT: usize = 386;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PresentationAction {
@@ -200,20 +201,24 @@ impl PresentationState {
                     self.pokedex = None;
                 }
                 LogicalKey::Named(NamedKey::ArrowUp) | LogicalKey::Named(NamedKey::ArrowLeft) => {
-                    pokedex.selected_index = (pokedex.selected_index + 133) % 134;
+                    pokedex.selected_index =
+                        (pokedex.selected_index + POKEDEX_ENTRY_COUNT - 1) % POKEDEX_ENTRY_COUNT;
                 }
                 LogicalKey::Named(NamedKey::ArrowDown)
                 | LogicalKey::Named(NamedKey::ArrowRight) => {
-                    pokedex.selected_index = (pokedex.selected_index + 1) % 134;
+                    pokedex.selected_index = (pokedex.selected_index + 1) % POKEDEX_ENTRY_COUNT;
                 }
                 LogicalKey::Named(NamedKey::PageUp) => {
-                    pokedex.selected_index = (pokedex.selected_index + 124) % 134;
+                    pokedex.selected_index =
+                        (pokedex.selected_index + POKEDEX_ENTRY_COUNT - 10) % POKEDEX_ENTRY_COUNT;
                 }
                 LogicalKey::Named(NamedKey::PageDown) => {
-                    pokedex.selected_index = (pokedex.selected_index + 10) % 134;
+                    pokedex.selected_index = (pokedex.selected_index + 10) % POKEDEX_ENTRY_COUNT;
                 }
                 LogicalKey::Named(NamedKey::Home) => pokedex.selected_index = 0,
-                LogicalKey::Named(NamedKey::End) => pokedex.selected_index = 133,
+                LogicalKey::Named(NamedKey::End) => {
+                    pokedex.selected_index = POKEDEX_ENTRY_COUNT - 1
+                }
                 _ => return PresentationUpdate::default(),
             }
             return PresentationUpdate::redraw();
@@ -846,7 +851,10 @@ mod tests {
         assert!(update.redraw);
         let (next, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
         state = next;
-        assert_eq!(view.pokedex.unwrap().selected_index, 133);
+        assert_eq!(
+            view.pokedex.unwrap().selected_index,
+            POKEDEX_ENTRY_COUNT - 1
+        );
 
         let (next, _) = state.handle_key(
             &key(NamedKey::ArrowRight),

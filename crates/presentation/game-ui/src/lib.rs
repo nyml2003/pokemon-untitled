@@ -101,21 +101,12 @@ impl BattleUiState {
         self.selected_index = self.selected_index.min(item_count - 1);
         self.notice = None;
         let outcome = match key.logical {
-            LogicalKey::Named(NamedKey::ArrowLeft) => {
+            LogicalKey::Named(NamedKey::ArrowLeft) | LogicalKey::Named(NamedKey::ArrowUp) => {
                 self.selected_index = (self.selected_index + item_count - 1) % item_count;
                 BattleUiOutcome::Updated
             }
-            LogicalKey::Named(NamedKey::ArrowRight) => {
+            LogicalKey::Named(NamedKey::ArrowRight) | LogicalKey::Named(NamedKey::ArrowDown) => {
                 self.selected_index = (self.selected_index + 1) % item_count;
-                BattleUiOutcome::Updated
-            }
-            LogicalKey::Named(NamedKey::ArrowUp) => {
-                self.selected_index =
-                    (self.selected_index + item_count - 2 % item_count) % item_count;
-                BattleUiOutcome::Updated
-            }
-            LogicalKey::Named(NamedKey::ArrowDown) => {
-                self.selected_index = (self.selected_index + 2) % item_count;
                 BattleUiOutcome::Updated
             }
             LogicalKey::Named(NamedKey::Escape)

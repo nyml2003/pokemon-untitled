@@ -23,8 +23,8 @@ id_type!(TypeId, u16);
 
 const POKEDEX_MAGIC: &[u8; 4] = b"PKDX";
 const POKEDEX_VERSION: u16 = 1;
-pub const HOENN_FIRST_DEX: u16 = 252;
-pub const HOENN_LAST_DEX: u16 = 385;
+pub const GEN3_FIRST_DEX: u16 = 1;
+pub const GEN3_LAST_DEX: u16 = 386;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PokedexType {
@@ -49,10 +49,11 @@ pub struct PokedexData {
 }
 
 impl PokedexData {
-    pub fn embedded_hoenn() -> Result<Self, PokedexLoadError> {
-        Self::from_bytes(include_bytes!(
-            "../../../../assets/source/data/game/pokedex/hoenn.v1.bin"
-        ))
+    pub fn embedded_gen3() -> Result<Self, PokedexLoadError> {
+        Self::from_bytes(include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../assets/source/data/game/pokedex/gen3.v1.bin"
+        )))
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, PokedexLoadError> {
@@ -100,9 +101,9 @@ impl PokedexData {
         if !reader.is_finished() {
             return Err(PokedexLoadError::TrailingBytes);
         }
-        if entries.len() != usize::from(HOENN_LAST_DEX - HOENN_FIRST_DEX + 1)
+        if entries.len() != usize::from(GEN3_LAST_DEX - GEN3_FIRST_DEX + 1)
             || entries.iter().enumerate().any(|(index, entry)| {
-                entry.national_dex != HOENN_FIRST_DEX + u16::try_from(index).unwrap()
+                entry.national_dex != GEN3_FIRST_DEX + u16::try_from(index).unwrap()
                     || entry.front_asset
                         != format!("pokemon/{:04}/form/00/normal/front/00", entry.national_dex)
             })
@@ -489,18 +490,18 @@ impl Error for DataLoadError {}
 #[cfg(test)]
 mod tests {
     use super::{
-        CurrentDataSet, DamageClass, DataLoadError, HOENN_FIRST_DEX, HOENN_LAST_DEX, MoveId,
+        CurrentDataSet, DamageClass, DataLoadError, GEN3_FIRST_DEX, GEN3_LAST_DEX, MoveId,
         PokedexData, PokemonFormId, TypeId,
     };
 
     #[test]
-    fn embedded_pokedex_covers_the_canonical_hoenn_fronts() {
-        let pokedex = PokedexData::embedded_hoenn().unwrap();
-        assert_eq!(pokedex.entries().len(), 134);
-        assert_eq!(pokedex.entries()[0].national_dex, HOENN_FIRST_DEX);
+    fn embedded_pokedex_covers_the_canonical_gen3_fronts() {
+        let pokedex = PokedexData::embedded_gen3().unwrap();
+        assert_eq!(pokedex.entries().len(), 386);
+        assert_eq!(pokedex.entries()[0].national_dex, GEN3_FIRST_DEX);
         assert_eq!(
             pokedex.entries().last().unwrap().national_dex,
-            HOENN_LAST_DEX
+            GEN3_LAST_DEX
         );
         for entry in pokedex.entries() {
             assert_eq!(

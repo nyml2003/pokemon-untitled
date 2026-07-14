@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Hoenn Pokedex from local data and canonical front sprites.
+"""Build the Gen3 National Pokedex from local data and canonical front sprites.
 
 The front sprite is the identity source.  Legacy icon files are deliberately
 excluded from the generated index because some of their filenames refer to a
@@ -16,8 +16,8 @@ import struct
 from typing import Any
 
 
-FIRST_DEX = 252
-LAST_DEX = 385
+FIRST_DEX = 1
+LAST_DEX = 386
 MAGIC = b"PKDX"
 VERSION = 1
 
@@ -121,6 +121,7 @@ def update_catalog(repository: Path, binary: Path, report: Path) -> None:
     entries = [
         item for item in catalog["assets"]
         if not item["source"].startswith("source/pokemon/")
+        and not item["source"].startswith("source/data/game/pokedex/")
         and item["source"] not in {
             binary.relative_to(assets).as_posix(),
             report.relative_to(assets).as_posix(),
@@ -137,7 +138,7 @@ def update_catalog(repository: Path, binary: Path, report: Path) -> None:
         entries.append(item)
     entries.append(catalog_entry(assets, binary))
     report_entry = catalog_entry(assets, report)
-    report_entry["key"] = "data/game/pokedex/hoenn.v1.report"
+    report_entry["key"] = "data/game/pokedex/gen3.v1.report"
     report_entry["codec"] = "json"
     entries.append(report_entry)
     entries.sort(key=lambda item: item["key"])
@@ -161,7 +162,7 @@ def write_report(repository: Path, entries: list[Entry]) -> Path:
             for entry in entries
         ],
     }
-    path = repository / "assets/source/data/game/pokedex/hoenn.v1.json"
+    path = repository / "assets/source/data/game/pokedex/gen3.v1.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     write_text_atomic(path, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     return path
@@ -170,7 +171,7 @@ def write_report(repository: Path, entries: list[Entry]) -> Path:
 def main() -> None:
     repository = root()
     entries = load_entries(repository)
-    binary = repository / "assets/source/data/game/pokedex/hoenn.v1.bin"
+    binary = repository / "assets/source/data/game/pokedex/gen3.v1.bin"
     binary.parent.mkdir(parents=True, exist_ok=True)
     binary.write_bytes(encode(entries))
     report = write_report(repository, entries)

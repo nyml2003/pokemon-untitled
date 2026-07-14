@@ -36,7 +36,7 @@ mod tests {
         let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 17).unwrap();
         let assets = load_game_assets(
             &game.sprite_manifest().unwrap(),
-            &PokedexData::embedded_hoenn().unwrap(),
+            &PokedexData::embedded_gen3().unwrap(),
             Vec::new(),
         )
         .unwrap();

@@ -327,9 +327,9 @@ mod tests {
 
     #[test]
     fn manifest_expands_to_stable_resource_and_asset_key_requests() {
-        let pokedex = PokedexData::embedded_hoenn().unwrap();
+        let pokedex = PokedexData::embedded_gen3().unwrap();
         let requests = asset_requests(&manifest(), &pokedex);
-        assert_eq!(requests.len(), 214);
+        assert_eq!(requests.len(), 466);
         assert_eq!(
             requests[0].asset_key.as_str(),
             "character/red/down/stand/00"
@@ -351,7 +351,7 @@ mod tests {
 
     #[test]
     fn assembly_decodes_and_validates_declared_sizes() {
-        let requests = asset_requests(&manifest(), &PokedexData::embedded_hoenn().unwrap());
+        let requests = asset_requests(&manifest(), &PokedexData::embedded_gen3().unwrap());
         let sources = requests
             .into_iter()
             .map(|request| AssetBytes {
