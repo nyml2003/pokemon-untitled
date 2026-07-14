@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 battle-session = { workspace = true }
 game-assets = { path = "../game-assets" }
+game-data = { path = "../../domain/game-data" }
 game-ui = { path = "../game-ui" }
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }

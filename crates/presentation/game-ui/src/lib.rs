@@ -10,7 +10,8 @@ use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
 
 pub use console::{ConsoleEntry, ConsoleIntent, ConsoleOutcome, ConsoleState, GameConsole};
 pub use presentation::{
-    PresentationAction, PresentationSnapshot, PresentationState, PresentationUpdate,
+    PokedexUiSnapshot, PresentationAction, PresentationSnapshot, PresentationState,
+    PresentationUpdate,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

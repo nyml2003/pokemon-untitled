@@ -13,7 +13,8 @@ use game_data::{
 
 const ROSTER_SIZE: usize = TEAM_SIZE * 2;
 const DEMO_LEVEL: u8 = 50;
-const LAST_EMERALD_POKEMON: u32 = 386;
+const FIRST_NATIONAL_POKEMON: u32 = 1;
+const LAST_GEN3_POKEMON: u32 = 386;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RosterError {
@@ -110,7 +111,7 @@ fn random_members(data: &CurrentDataSet, seed: u64) -> Result<Vec<RosterMember>,
     let mut eligible = data
         .pokemon_iter()
         .filter_map(|pokemon| {
-            if pokemon.id.0 > LAST_EMERALD_POKEMON
+            if !is_gen3_default_form(pokemon.species_id.0, pokemon.id.0)
                 || !pokemon.types.iter().all(|id| is_supported_type(data, *id))
                 || !seen_names.insert(pokemon.display_name.localized.clone())
             {
@@ -146,6 +147,10 @@ fn random_members(data: &CurrentDataSet, seed: u64) -> Result<Vec<RosterMember>,
             })
         })
         .collect()
+}
+
+const fn is_gen3_default_form(species_id: u32, form_id: u32) -> bool {
+    species_id >= FIRST_NATIONAL_POKEMON && species_id <= LAST_GEN3_POKEMON && form_id == species_id
 }
 
 fn compatible_move_ids(data: &CurrentDataSet, pokemon: PokemonFormId) -> Vec<DataMoveId> {
@@ -468,6 +473,28 @@ mod tests {
                     .all(|move_id| data.can_learn(member.pokemon_form_id, *move_id))
             );
             assert_eq!(member.training, TrainingValues::perfect_untrained());
+        }
+    }
+
+    #[test]
+    fn random_roster_uses_the_complete_gen3_national_range_and_default_forms() {
+        for national_dex in [FIRST_NATIONAL_POKEMON, LAST_GEN3_POKEMON] {
+            assert!(is_gen3_default_form(national_dex, national_dex));
+        }
+        for (species_id, form_id) in [
+            (0, 0),
+            (LAST_GEN3_POKEMON + 1, LAST_GEN3_POKEMON + 1),
+            (25, 1_025),
+        ] {
+            assert!(!is_gen3_default_form(species_id, form_id));
+        }
+
+        let data = CurrentDataSet::embedded().unwrap();
+        for member in random_members(&data, 42).unwrap() {
+            assert!(is_gen3_default_form(
+                data.pokemon(member.pokemon_form_id).unwrap().species_id.0,
+                member.pokemon_form_id.0,
+            ));
         }
     }
 

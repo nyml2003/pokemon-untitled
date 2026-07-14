@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+game-data = { path = "../../domain/game-data" }
 game-session = { workspace = true }
 game-ui = { path = "../game-ui" }
 game-view = { path = "../game-view" }
@@ -17,7 +18,6 @@ world-application = { path = "../../application/world-application" }
 
 [dev-dependencies]
 game-assets = { path = "../game-assets" }
-game-data = { path = "../../domain/game-data" }
 
 [lib]
 path = "src/lib.rs"

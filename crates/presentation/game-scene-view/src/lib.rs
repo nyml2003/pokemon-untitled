@@ -2,11 +2,12 @@
 
 #![forbid(unsafe_code)]
 
+use game_data::PokedexData;
 use game_session::{GameScene, GameSnapshot};
 use game_ui::{CommandConsoleView, PresentationSnapshot};
 use game_view::{
     BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, GameView, compose_world, project_battle,
-    with_console,
+    project_pokedex, with_console,
 };
 use map_project::MapProject;
 use map_render::{
@@ -19,6 +20,7 @@ pub struct SceneViewInput<'a> {
     pub game: &'a GameSnapshot,
     pub presentation: PresentationSnapshot,
     pub console: Option<&'a CommandConsoleView>,
+    pub pokedex: &'a PokedexData,
     pub map_project: &'a MapProject,
     pub map_catalog: &'a AtomicTileCatalog,
     pub viewport: Viewport,
@@ -31,41 +33,45 @@ pub struct ProjectedScene {
 
 pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, MapRenderError> {
     let viewport = input.viewport;
-    let view = match input.game.scene() {
-        GameScene::World => {
-            let camera = world_camera(input.game.world().player());
-            let scene = project_map(MapRenderInput {
-                project: input.map_project,
-                catalog: input.map_catalog,
-                camera,
-                pixel_offset: invert_pixel_offset(input.presentation.world_pixel_offset),
-                viewport,
-                layout: MapGridLayout::new(
-                    GridSize::new(CANVAS_WIDTH, CANVAS_HEIGHT),
-                    GridSize::new(2, 2),
-                ),
-            })?;
-            compose_world(
-                scene.into_layer(),
-                GridPos::new(camera.col, camera.row),
-                input.game.world(),
-                input.presentation.world_animation,
-                input.presentation.sprite_frame,
-                input.console,
-            )
-        }
-        GameScene::Battle => {
-            let battle = input.game.battle().expect("battle scene owns a battle");
-            let battle_view = project_battle(
-                battle.session(),
-                input.presentation.battle_ui,
-                BattleSpriteResources::for_slots(
-                    battle.own_sprite_slot(),
-                    battle.opponent_sprite_slot(),
-                ),
-                input.presentation.sprite_frame,
-            );
-            with_console(battle_view.layers().to_vec(), input.console)
+    let view = if let Some(pokedex) = input.presentation.pokedex {
+        project_pokedex(input.pokedex, pokedex.selected_index)
+    } else {
+        match input.game.scene() {
+            GameScene::World => {
+                let camera = world_camera(input.game.world().player());
+                let scene = project_map(MapRenderInput {
+                    project: input.map_project,
+                    catalog: input.map_catalog,
+                    camera,
+                    pixel_offset: invert_pixel_offset(input.presentation.world_pixel_offset),
+                    viewport,
+                    layout: MapGridLayout::new(
+                        GridSize::new(CANVAS_WIDTH, CANVAS_HEIGHT),
+                        GridSize::new(2, 2),
+                    ),
+                })?;
+                compose_world(
+                    scene.into_layer(),
+                    GridPos::new(camera.col, camera.row),
+                    input.game.world(),
+                    input.presentation.world_animation,
+                    input.presentation.sprite_frame,
+                    input.console,
+                )
+            }
+            GameScene::Battle => {
+                let battle = input.game.battle().expect("battle scene owns a battle");
+                let battle_view = project_battle(
+                    battle.session(),
+                    input.presentation.battle_ui,
+                    BattleSpriteResources::for_slots(
+                        battle.own_sprite_slot(),
+                        battle.opponent_sprite_slot(),
+                    ),
+                    input.presentation.sprite_frame,
+                );
+                with_console(battle_view.layers().to_vec(), input.console)
+            }
         }
     };
     Ok(ProjectedScene { view, viewport })
@@ -132,6 +138,7 @@ mod tests {
     fn presentation(offset: PixelOffset) -> PresentationSnapshot {
         PresentationSnapshot {
             battle_ui: BattleUiState::default(),
+            pokedex: None,
             world_animation: WorldAnimation::Walk,
             sprite_frame: 1,
             world_pixel_offset: offset,
@@ -151,6 +158,7 @@ mod tests {
             game: &game.snapshot(),
             presentation: presentation(PixelOffset::new(12, -6)),
             console: None,
+            pokedex: &PokedexData::embedded_hoenn().unwrap(),
             map_project: &project,
             map_catalog: &catalog,
             viewport: game_viewport(PixelSize::new(960, 720)),
@@ -187,6 +195,7 @@ mod tests {
             game: &game.snapshot(),
             presentation: presentation(PixelOffset::new(0, 0)),
             console: Some(&console),
+            pokedex: &PokedexData::embedded_hoenn().unwrap(),
             map_project: &project,
             map_catalog: &catalog,
             viewport: game_viewport(PixelSize::new(1000, 720)),

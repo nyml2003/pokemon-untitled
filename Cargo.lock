@@ -1034,6 +1034,7 @@ dependencies = [
  "battle-application",
  "battle-session",
  "game-assets",
+ "game-data",
  "game-ui",
  "punctum-gpu",
  "punctum-grid",

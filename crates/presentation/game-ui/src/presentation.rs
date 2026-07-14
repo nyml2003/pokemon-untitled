@@ -50,14 +50,21 @@ impl PresentationUpdate {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PresentationSnapshot {
     pub battle_ui: BattleUiState,
+    pub pokedex: Option<PokedexUiSnapshot>,
     pub world_animation: WorldAnimation,
     pub sprite_frame: usize,
     pub world_pixel_offset: PixelOffset,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PokedexUiSnapshot {
+    pub selected_index: usize,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PresentationState {
     battle_ui: BattleUiState,
+    pokedex: Option<PokedexUiSnapshot>,
     console: ConsoleState,
     battle_playback_remaining: Option<Duration>,
     battle_sprite_remaining: Option<Duration>,
@@ -130,6 +137,7 @@ impl PresentationState {
             };
         PresentationSnapshot {
             battle_ui: self.battle_ui,
+            pokedex: self.pokedex,
             world_animation,
             sprite_frame,
             world_pixel_offset,
@@ -179,6 +187,43 @@ impl PresentationState {
         }
         if self.console.is_open() {
             return self.handle_console_key(key, text);
+        }
+        if let Some(pokedex) = &mut self.pokedex {
+            if key.phase == KeyPhase::Release {
+                return PresentationUpdate::default();
+            }
+            match key.logical {
+                LogicalKey::Named(NamedKey::Escape) => {
+                    self.pokedex = None;
+                }
+                LogicalKey::Character(ref value) if value.eq_ignore_ascii_case("p") => {
+                    self.pokedex = None;
+                }
+                LogicalKey::Named(NamedKey::ArrowUp) | LogicalKey::Named(NamedKey::ArrowLeft) => {
+                    pokedex.selected_index = (pokedex.selected_index + 133) % 134;
+                }
+                LogicalKey::Named(NamedKey::ArrowDown)
+                | LogicalKey::Named(NamedKey::ArrowRight) => {
+                    pokedex.selected_index = (pokedex.selected_index + 1) % 134;
+                }
+                LogicalKey::Named(NamedKey::PageUp) => {
+                    pokedex.selected_index = (pokedex.selected_index + 124) % 134;
+                }
+                LogicalKey::Named(NamedKey::PageDown) => {
+                    pokedex.selected_index = (pokedex.selected_index + 10) % 134;
+                }
+                LogicalKey::Named(NamedKey::Home) => pokedex.selected_index = 0,
+                LogicalKey::Named(NamedKey::End) => pokedex.selected_index = 133,
+                _ => return PresentationUpdate::default(),
+            }
+            return PresentationUpdate::redraw();
+        }
+        if game.scene() == GameScene::World
+            && key.phase == KeyPhase::Press
+            && matches!(&key.logical, LogicalKey::Character(value) if value.eq_ignore_ascii_case("p"))
+        {
+            self.pokedex = Some(PokedexUiSnapshot { selected_index: 0 });
+            return PresentationUpdate::redraw();
         }
         if game.scene() == GameScene::World
             && let Some(direction) = direction_for_key(key)
@@ -768,6 +813,57 @@ mod tests {
             modifiers: Modifiers::default(),
             phase: KeyPhase::Press,
         }
+    }
+
+    fn character(value: &str) -> KeyEvent {
+        KeyEvent {
+            physical: Some(PhysicalKeyCode::KeyP),
+            logical: LogicalKey::Character(value.into()),
+            modifiers: Modifiers::default(),
+            phase: KeyPhase::Press,
+        }
+    }
+
+    #[test]
+    fn pokedex_opens_in_world_and_browses_a_bounded_catalog() {
+        let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 13).unwrap();
+        let snapshot = game.snapshot();
+        let (mut state, update) = PresentationState::default().handle_key(
+            &character("p"),
+            None,
+            false,
+            &snapshot,
+            Vec::new(),
+        );
+        assert!(update.redraw);
+        let (next, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
+        state = next;
+        assert_eq!(view.pokedex.unwrap().selected_index, 0);
+
+        let (next, update) =
+            state.handle_key(&key(NamedKey::End), None, false, &snapshot, Vec::new());
+        state = next;
+        assert!(update.redraw);
+        let (next, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
+        state = next;
+        assert_eq!(view.pokedex.unwrap().selected_index, 133);
+
+        let (next, _) = state.handle_key(
+            &key(NamedKey::ArrowRight),
+            None,
+            false,
+            &snapshot,
+            Vec::new(),
+        );
+        state = next;
+        let (next, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
+        state = next;
+        assert_eq!(view.pokedex.unwrap().selected_index, 0);
+
+        let (next, _) =
+            state.handle_key(&key(NamedKey::Escape), None, false, &snapshot, Vec::new());
+        let (_, view) = next.snapshot(&snapshot, PixelSize::new(30, 30));
+        assert!(view.pokedex.is_none());
     }
 
     fn toggle(phase: KeyPhase, physical: bool) -> KeyEvent {

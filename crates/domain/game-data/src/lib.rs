@@ -21,6 +21,171 @@ id_type!(SpeciesId, u32);
 id_type!(MoveId, u32);
 id_type!(TypeId, u16);
 
+const POKEDEX_MAGIC: &[u8; 4] = b"PKDX";
+const POKEDEX_VERSION: u16 = 1;
+pub const HOENN_FIRST_DEX: u16 = 252;
+pub const HOENN_LAST_DEX: u16 = 385;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PokedexType {
+    pub id: TypeId,
+    pub name: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PokedexEntry {
+    pub national_dex: u16,
+    pub form_id: PokemonFormId,
+    pub localized_name: String,
+    pub english_name: String,
+    pub types: Vec<PokedexType>,
+    pub base_stats: BaseStats,
+    pub front_asset: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PokedexData {
+    entries: Vec<PokedexEntry>,
+}
+
+impl PokedexData {
+    pub fn embedded_hoenn() -> Result<Self, PokedexLoadError> {
+        Self::from_bytes(include_bytes!(
+            "../../../../assets/source/data/game/pokedex/hoenn.v1.bin"
+        ))
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, PokedexLoadError> {
+        let mut reader = PokedexReader::new(bytes);
+        if reader.take(4)? != POKEDEX_MAGIC {
+            return Err(PokedexLoadError::InvalidMagic);
+        }
+        if reader.u16()? != POKEDEX_VERSION {
+            return Err(PokedexLoadError::UnsupportedVersion);
+        }
+        let count = usize::from(reader.u16()?);
+        let mut entries = Vec::with_capacity(count);
+        for _ in 0..count {
+            let national_dex = reader.u16()?;
+            let form_id = PokemonFormId(reader.u32()?);
+            let base_stats = BaseStats {
+                hp: reader.u16()?,
+                attack: reader.u16()?,
+                defense: reader.u16()?,
+                special_attack: reader.u16()?,
+                special_defense: reader.u16()?,
+                speed: reader.u16()?,
+            };
+            let type_count = usize::from(reader.u8()?);
+            if !(1..=2).contains(&type_count) {
+                return Err(PokedexLoadError::InvalidTypeCount(type_count));
+            }
+            let mut types = Vec::with_capacity(type_count);
+            for _ in 0..type_count {
+                types.push(PokedexType {
+                    id: TypeId(reader.u16()?),
+                    name: reader.text()?,
+                });
+            }
+            entries.push(PokedexEntry {
+                national_dex,
+                form_id,
+                localized_name: reader.text()?,
+                english_name: reader.text()?,
+                types,
+                base_stats,
+                front_asset: reader.text()?,
+            });
+        }
+        if !reader.is_finished() {
+            return Err(PokedexLoadError::TrailingBytes);
+        }
+        if entries.len() != usize::from(HOENN_LAST_DEX - HOENN_FIRST_DEX + 1)
+            || entries.iter().enumerate().any(|(index, entry)| {
+                entry.national_dex != HOENN_FIRST_DEX + u16::try_from(index).unwrap()
+                    || entry.front_asset
+                        != format!("pokemon/{:04}/form/00/normal/front/00", entry.national_dex)
+            })
+        {
+            return Err(PokedexLoadError::InvalidEntries);
+        }
+        Ok(Self { entries })
+    }
+
+    pub fn entries(&self) -> &[PokedexEntry] {
+        &self.entries
+    }
+}
+
+struct PokedexReader<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> PokedexReader<'a> {
+    const fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn take(&mut self, count: usize) -> Result<&'a [u8], PokedexLoadError> {
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or(PokedexLoadError::Truncated)?;
+        let bytes = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or(PokedexLoadError::Truncated)?;
+        self.offset = end;
+        Ok(bytes)
+    }
+
+    fn u8(&mut self) -> Result<u8, PokedexLoadError> {
+        Ok(self.take(1)?[0])
+    }
+
+    fn u16(&mut self) -> Result<u16, PokedexLoadError> {
+        Ok(u16::from_le_bytes(
+            self.take(2)?.try_into().expect("two bytes"),
+        ))
+    }
+
+    fn u32(&mut self) -> Result<u32, PokedexLoadError> {
+        Ok(u32::from_le_bytes(
+            self.take(4)?.try_into().expect("four bytes"),
+        ))
+    }
+
+    fn text(&mut self) -> Result<String, PokedexLoadError> {
+        let length = usize::from(self.u8()?);
+        let bytes = self.take(length)?;
+        String::from_utf8(bytes.to_vec()).map_err(|_| PokedexLoadError::InvalidText)
+    }
+
+    const fn is_finished(&self) -> bool {
+        self.offset == self.bytes.len()
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PokedexLoadError {
+    Truncated,
+    InvalidMagic,
+    UnsupportedVersion,
+    InvalidText,
+    InvalidTypeCount(usize),
+    TrailingBytes,
+    InvalidEntries,
+}
+
+impl fmt::Display for PokedexLoadError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "invalid Pokedex binary: {self:?}")
+    }
+}
+
+impl Error for PokedexLoadError {}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DataSetMetadata {
     pub schema_version: String,
@@ -323,7 +488,29 @@ impl Error for DataLoadError {}
 
 #[cfg(test)]
 mod tests {
-    use super::{CurrentDataSet, DamageClass, DataLoadError, MoveId, PokemonFormId, TypeId};
+    use super::{
+        CurrentDataSet, DamageClass, DataLoadError, HOENN_FIRST_DEX, HOENN_LAST_DEX, MoveId,
+        PokedexData, PokemonFormId, TypeId,
+    };
+
+    #[test]
+    fn embedded_pokedex_covers_the_canonical_hoenn_fronts() {
+        let pokedex = PokedexData::embedded_hoenn().unwrap();
+        assert_eq!(pokedex.entries().len(), 134);
+        assert_eq!(pokedex.entries()[0].national_dex, HOENN_FIRST_DEX);
+        assert_eq!(
+            pokedex.entries().last().unwrap().national_dex,
+            HOENN_LAST_DEX
+        );
+        for entry in pokedex.entries() {
+            assert_eq!(
+                entry.front_asset,
+                format!("pokemon/{:04}/form/00/normal/front/00", entry.national_dex)
+            );
+            assert!(!entry.localized_name.is_empty());
+            assert!(!entry.types.is_empty());
+        }
+    }
 
     fn fixture() -> Vec<u8> {
         serde_json::to_vec(&CurrentDataSet {

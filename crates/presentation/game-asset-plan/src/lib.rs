@@ -6,6 +6,7 @@ use std::{error::Error, fmt};
 
 use battle_application::{MoveCategory, PokemonType, TEAM_SIZE};
 use game_assets::{AssetKey, DecodedImage, decode_png};
+use game_data::PokedexData;
 use game_native_plan::NativeAssets;
 use game_session::DemoSpriteManifest;
 use game_ui::WorldAnimation;
@@ -63,7 +64,7 @@ pub struct AssetBytes {
     pub bytes: Vec<u8>,
 }
 
-pub fn asset_requests(manifest: &DemoSpriteManifest) -> Vec<AssetRequest> {
+pub fn asset_requests(manifest: &DemoSpriteManifest, pokedex: &PokedexData) -> Vec<AssetRequest> {
     debug_assert_eq!(manifest.player().len(), TEAM_SIZE);
     debug_assert_eq!(manifest.opponent().len(), TEAM_SIZE);
     let mut requests = character_requests();
@@ -76,8 +77,8 @@ pub fn asset_requests(manifest: &DemoSpriteManifest) -> Vec<AssetRequest> {
             });
             requests.push(AssetRequest {
                 resource_key: pokemon_icon_asset(slot, frame),
-                asset_key: pokemon_icon_asset_key(form.0, frame),
-                expected_size: Some(PixelSize::new(32, 32)),
+                asset_key: pokemon_asset_key(form.0, "normal", "front", frame),
+                expected_size: None,
             });
         }
     }
@@ -92,6 +93,15 @@ pub fn asset_requests(manifest: &DemoSpriteManifest) -> Vec<AssetRequest> {
     }
     requests.extend(type_icon_requests());
     requests.extend(move_category_requests());
+    for entry in pokedex.entries() {
+        requests.push(AssetRequest {
+            resource_key: AssetKey::new(format!("pokedex/{}", entry.national_dex))
+                .expect("fixed Pokedex resource key is valid"),
+            asset_key: AssetKey::new(entry.front_asset.clone())
+                .expect("generated Pokedex asset key is valid"),
+            expected_size: None,
+        });
+    }
     requests
 }
 
@@ -195,11 +205,6 @@ fn pokemon_asset_key(form: u32, palette: &str, pose: &str, frame: usize) -> Asse
         frame % 2
     ))
     .expect("fixed pokemon key is valid")
-}
-
-fn pokemon_icon_asset_key(form: u32, frame: usize) -> AssetKey {
-    AssetKey::new(format!("pokemon/{form:04}/form/00/icon/{:02}", frame % 2))
-        .expect("fixed pokemon icon key is valid")
 }
 
 pub fn assemble_assets(
@@ -322,13 +327,22 @@ mod tests {
 
     #[test]
     fn manifest_expands_to_stable_resource_and_asset_key_requests() {
-        let requests = asset_requests(&manifest());
-        assert_eq!(requests.len(), 80);
+        let pokedex = PokedexData::embedded_hoenn().unwrap();
+        let requests = asset_requests(&manifest(), &pokedex);
+        assert_eq!(requests.len(), 214);
         assert_eq!(
             requests[0].asset_key.as_str(),
             "character/red/down/stand/00"
         );
         assert_eq!(requests[0].resource_key.as_str(), "character/0/0");
+        assert!(requests.iter().any(|request| {
+            request.resource_key == player_back_asset(0, 0)
+                && request.asset_key.as_str().contains("/normal/back/00")
+        }));
+        assert!(requests.iter().any(|request| {
+            request.resource_key == pokemon_icon_asset(0, 0)
+                && request.asset_key.as_str().contains("/normal/front/00")
+        }));
         assert!(requests.iter().any(|request| {
             request.asset_key.as_str() == "ui/battle/move-category/status"
                 && request.resource_key.as_str() == "ui/battle/move-category/status"
@@ -337,7 +351,7 @@ mod tests {
 
     #[test]
     fn assembly_decodes_and_validates_declared_sizes() {
-        let requests = asset_requests(&manifest());
+        let requests = asset_requests(&manifest(), &PokedexData::embedded_hoenn().unwrap());
         let sources = requests
             .into_iter()
             .map(|request| AssetBytes {

@@ -7,6 +7,7 @@ use battle_session::{
     ObservedBattleOutcome, Participant, Pokemon, PokemonType, TypeEffectiveness, UsedMove,
 };
 use game_assets::AssetKey;
+use game_data::PokedexData;
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, WorldAnimation};
 use punctum_gpu::{PixelOffset, Rgba8};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface};
@@ -83,6 +84,9 @@ pub enum TextRole {
     ConsoleItem(usize),
     ConsoleDiagnostic,
     Editor,
+    PokedexTitle,
+    PokedexEntry,
+    PokedexDetail,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -193,6 +197,135 @@ impl GameView {
     pub fn labels(&self) -> impl Iterator<Item = &TextLabel> {
         self.layers.iter().flat_map(|layer| &layer.labels)
     }
+}
+
+pub fn project_pokedex(pokedex: &PokedexData, selected_index: usize) -> GameView {
+    let entries = pokedex.entries();
+    let selected_index = selected_index.min(entries.len().saturating_sub(1));
+    let entry = &entries[selected_index];
+    let mut canvas = Canvas::new(Rgba8::new(13, 21, 29, 255));
+    canvas.fill(0, 0, CANVAS_WIDTH, 3, Rgba8::new(21, 47, 60, 255));
+    canvas.fill(1, 4, 11, 17, Rgba8::new(31, 52, 64, 255));
+    canvas.fill(13, 4, 18, 17, Rgba8::new(237, 242, 233, 255));
+    canvas.fill(14, 5, 16, 9, Rgba8::new(201, 220, 208, 255));
+    canvas.fill(14, 15, 16, 5, Rgba8::new(31, 52, 64, 255));
+    let first = selected_index
+        .saturating_sub(2)
+        .min(entries.len().saturating_sub(5));
+    let mut labels = vec![
+        label(TextRole::PokedexTitle, 2, 1, 20, 1, "宝可梦图鉴", TEXT),
+        label(
+            TextRole::PokedexDetail,
+            23,
+            1,
+            7,
+            1,
+            &format!("{}/{}", selected_index + 1, entries.len()),
+            MUTED_TEXT,
+        ),
+        label(
+            TextRole::PokedexDetail,
+            15,
+            5,
+            8,
+            1,
+            &format!("No.{:03}", entry.national_dex),
+            BATTLE_INK,
+        ),
+        label(
+            TextRole::PokedexTitle,
+            15,
+            7,
+            12,
+            1,
+            &entry.localized_name,
+            BATTLE_INK,
+        ),
+        label(
+            TextRole::PokedexDetail,
+            15,
+            8,
+            13,
+            1,
+            &entry.english_name,
+            BATTLE_MUTED,
+        ),
+        label(
+            TextRole::PokedexDetail,
+            15,
+            10,
+            13,
+            1,
+            &entry
+                .types
+                .iter()
+                .map(|kind| kind.name.as_str())
+                .collect::<Vec<_>>()
+                .join(" / "),
+            BATTLE_INK,
+        ),
+        label(
+            TextRole::PokedexDetail,
+            15,
+            16,
+            14,
+            1,
+            &format!(
+                "HP {:>3}  ATK {:>3}  DEF {:>3}",
+                entry.base_stats.hp, entry.base_stats.attack, entry.base_stats.defense
+            ),
+            TEXT,
+        ),
+        label(
+            TextRole::PokedexDetail,
+            15,
+            18,
+            15,
+            1,
+            &format!(
+                "SPA {:>3}  SPD {:>3}  SPE {:>3}",
+                entry.base_stats.special_attack,
+                entry.base_stats.special_defense,
+                entry.base_stats.speed
+            ),
+            TEXT,
+        ),
+    ];
+    for (row, candidate) in entries.iter().skip(first).take(5).enumerate() {
+        let prefix = if first + row == selected_index {
+            ">"
+        } else {
+            " "
+        };
+        labels.push(label(
+            TextRole::PokedexEntry,
+            2,
+            6 + row as u32 * 3,
+            9,
+            1,
+            &format!(
+                "{prefix}{:03} {}",
+                candidate.national_dex, candidate.localized_name
+            ),
+            if first + row == selected_index {
+                SELECTED
+            } else {
+                TEXT
+            },
+        ));
+    }
+    let image = ViewImage::new(
+        GridRect::new(GridPos::new(23, 5), GridSize::new(6, 6)),
+        AssetKey::new(format!("pokedex/{}", entry.national_dex))
+            .expect("Pokedex asset key is valid"),
+        Rgba8::new(255, 255, 255, 255),
+        1,
+    );
+    GameView::new([
+        ViewLayer::new(LayerKind::Map).with_surface(canvas.finish()),
+        ViewLayer::new(LayerKind::Character).with_images(vec![image]),
+        ViewLayer::new(LayerKind::Hud).with_labels(labels),
+    ])
 }
 
 pub fn project_console(console: &CommandConsoleView) -> ViewLayer {
@@ -1277,6 +1410,7 @@ mod tests {
         Action, BattleCoordinator, BattleObservation, BattleSession, BattleSessionSnapshot,
         OpponentPolicy,
     };
+    use game_data::PokedexData;
     use punctum_grid::{GridPos, GridSize};
     use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
     use world_application::{Direction, Position, WorldApplication};
@@ -1287,9 +1421,21 @@ mod tests {
 
     use super::{
         BattleSpriteResources, LayerKind, TextRole, ViewCell, ViewLayer, compose_world,
-        move_category_icon_asset, pill_ui_asset, project_battle, project_console, project_world,
-        rounded_ui_asset, type_icon_asset, world_character_asset,
+        move_category_icon_asset, pill_ui_asset, project_battle, project_console, project_pokedex,
+        project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
     };
+
+    #[test]
+    fn pokedex_projects_its_selected_canonical_front() {
+        let data = PokedexData::embedded_hoenn().unwrap();
+        let view = project_pokedex(&data, 0);
+        assert!(view.labels().any(|label| label.content == "木守宫"));
+        assert!(
+            view.images()
+                .any(|image| image.asset.as_str() == "pokedex/252")
+        );
+        assert_eq!(view.layers()[0].kind, LayerKind::Map);
+    }
 
     fn key(name: NamedKey) -> KeyEvent {
         KeyEvent {

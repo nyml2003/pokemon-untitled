@@ -8,7 +8,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-use game_data::CurrentDataSet;
+use game_data::{CurrentDataSet, PokedexData};
 use game_native_target::{
     FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, WinitCommittedTextSnapshot,
     WinitKeyEventSnapshot, normalize_committed_text, normalize_key_event,
@@ -35,6 +35,7 @@ const GAME_TEXT_SCALE: TextScale = TextScale::new(3, 5, 10, 28);
 
 struct CreatureGameApp {
     game: Option<GameSession>,
+    pokedex: PokedexData,
     presentation: PresentationState,
     map_project: MapProject,
     map_catalog: AtomicTileCatalog,
@@ -57,9 +58,11 @@ impl CreatureGameApp {
         let sprite_manifest = game
             .sprite_manifest()
             .map_err(|error| std::io::Error::other(format!("demo sprite manifest: {error:?}")))?;
-        let assets = load_game_assets(&sprite_manifest, loaded_map.images)?;
+        let pokedex = PokedexData::embedded_hoenn()?;
+        let assets = load_game_assets(&sprite_manifest, &pokedex, loaded_map.images)?;
         Ok(Self {
             game: Some(game),
+            pokedex,
             presentation: PresentationState::default(),
             map_project: loaded_map.project,
             map_catalog: loaded_map.catalog,
@@ -119,6 +122,7 @@ impl CreatureGameApp {
             game: &game_snapshot,
             presentation,
             console: console.as_ref(),
+            pokedex: &self.pokedex,
             map_project: &self.map_project,
             map_catalog: &self.map_catalog,
             viewport,
