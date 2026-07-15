@@ -1,0 +1,15 @@
+{
+  "schema": "arbor.skill-package/v1",
+  "id": "arbor/knowledge-pattern-maintainer",
+  "name": "knowledge-pattern-maintainer",
+  "version": "1.0.0",
+  "format": "agent-skill",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/capture-decision.md",
+    "references/pattern-document.md",
+    "references/skill-extraction.md",
+    "skill.package.json"
+  ]
+}

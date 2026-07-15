@@ -1,0 +1,15 @@
+{
+  "schema": "arbor.skill-package/v1",
+  "id": "arbor/domain-core-architect",
+  "name": "domain-core-architect",
+  "version": "1.0.0",
+  "format": "agent-skill",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/domain-modeling.md",
+    "references/failure-and-ports.md",
+    "references/pure-core-boundary.md",
+    "skill.package.json"
+  ]
+}

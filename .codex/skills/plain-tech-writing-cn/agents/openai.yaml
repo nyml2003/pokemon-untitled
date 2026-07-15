@@ -1,0 +1,4 @@
+interface:
+  display_name: "中文技术写作"
+  short_description: "改写直接可执行的中文技术文档"
+  default_prompt: "使用 $plain-tech-writing-cn 把这段技术内容改写成直接、简洁的中文。"

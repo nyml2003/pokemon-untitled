@@ -1,0 +1,12 @@
+{
+  "schema": "arbor.skill-package/v1",
+  "id": "arbor/plain-tech-writing-cn",
+  "name": "plain-tech-writing-cn",
+  "version": "1.0.0",
+  "format": "agent-skill",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "skill.package.json"
+  ]
+}

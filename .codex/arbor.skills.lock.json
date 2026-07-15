@@ -1,0 +1,118 @@
+{
+  "schema": "arbor.skills-lock/v1",
+  "generatedAt": "2026-07-11T19:56:03.199Z",
+  "skills": {
+    "arbor/arbor-skill-manager-usage": {
+      "name": "arbor-skill-manager-usage",
+      "version": "1.0.0",
+      "packageMetadataSource": "source",
+      "source": {
+        "type": "path",
+        "path": "../packages/arbor-skills/skills/arbor-skill-manager-usage",
+        "resolvedPath": "C:\\Users\\nyml\\code\\arbor\\packages\\arbor-skills\\skills\\arbor-skill-manager-usage"
+      },
+      "contentHash": "sha256-9aec1b337fa7d62af5b412e3558739e5823b334f3c489d826284c5ae73752c9d",
+      "install": {
+        "targetDir": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills",
+        "path": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills\\arbor-skill-manager-usage",
+        "mode": "copy"
+      }
+    },
+    "arbor/plain-tech-writing-cn": {
+      "name": "plain-tech-writing-cn",
+      "version": "1.0.0",
+      "packageMetadataSource": "source",
+      "source": {
+        "type": "path",
+        "path": "../packages/arbor-skills/skills/plain-tech-writing-cn",
+        "resolvedPath": "C:\\Users\\nyml\\code\\arbor\\packages\\arbor-skills\\skills\\plain-tech-writing-cn"
+      },
+      "contentHash": "sha256-334af63e82d49bbe3e8dec79b36136c5534e2157e4e784c113578a434353885e",
+      "install": {
+        "targetDir": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills",
+        "path": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills\\plain-tech-writing-cn",
+        "mode": "copy"
+      }
+    },
+    "arbor/skill-manager-maintainer": {
+      "name": "skill-manager-maintainer",
+      "version": "1.0.0",
+      "packageMetadataSource": "source",
+      "source": {
+        "type": "path",
+        "path": "../packages/arbor-skills/skills/skill-manager-maintainer",
+        "resolvedPath": "C:\\Users\\nyml\\code\\arbor\\packages\\arbor-skills\\skills\\skill-manager-maintainer"
+      },
+      "contentHash": "sha256-05a9a6ce6231eb3be10bff2033959ca14604d8970a8285fb47c103c1b1b7cc80",
+      "install": {
+        "targetDir": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills",
+        "path": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills\\skill-manager-maintainer",
+        "mode": "copy"
+      }
+    },
+    "arbor/arbor-repo-maintainer": {
+      "name": "arbor-repo-maintainer",
+      "version": "1.0.0",
+      "packageMetadataSource": "source",
+      "source": {
+        "type": "path",
+        "path": "../packages/arbor-skills/skills/arbor-repo-maintainer",
+        "resolvedPath": "C:\\Users\\nyml\\code\\arbor\\packages\\arbor-skills\\skills\\arbor-repo-maintainer"
+      },
+      "contentHash": "sha256-94eb3e918ac0d7bad6c4161603ed1da16d40543b9a219d3bb62a0dba7f3cb94f",
+      "install": {
+        "targetDir": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills",
+        "path": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills\\arbor-repo-maintainer",
+        "mode": "copy"
+      }
+    },
+    "arbor/domain-core-architect": {
+      "name": "domain-core-architect",
+      "version": "1.0.0",
+      "packageMetadataSource": "source",
+      "source": {
+        "type": "path",
+        "path": "../packages/arbor-skills/skills/domain-core-architect",
+        "resolvedPath": "C:\\Users\\nyml\\code\\arbor\\packages\\arbor-skills\\skills\\domain-core-architect"
+      },
+      "contentHash": "sha256-bb416fcf51e6d0e324a48ecd671be544fa23043a397f3f9bb367e894a893f6d6",
+      "install": {
+        "targetDir": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills",
+        "path": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills\\domain-core-architect",
+        "mode": "copy"
+      }
+    },
+    "arbor/electron-solid-workbench": {
+      "name": "electron-solid-workbench",
+      "version": "1.0.0",
+      "packageMetadataSource": "source",
+      "source": {
+        "type": "path",
+        "path": "../packages/arbor-skills/skills/electron-solid-workbench",
+        "resolvedPath": "C:\\Users\\nyml\\code\\arbor\\packages\\arbor-skills\\skills\\electron-solid-workbench"
+      },
+      "contentHash": "sha256-472d28667006065305e9eadd886af40c4996a66bba56f433d43fc5d9212fad5a",
+      "install": {
+        "targetDir": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills",
+        "path": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills\\electron-solid-workbench",
+        "mode": "copy"
+      }
+    },
+    "arbor/knowledge-pattern-maintainer": {
+      "name": "knowledge-pattern-maintainer",
+      "version": "1.0.0",
+      "packageMetadataSource": "source",
+      "source": {
+        "type": "path",
+        "path": "../packages/arbor-skills/skills/knowledge-pattern-maintainer",
+        "resolvedPath": "C:\\Users\\nyml\\code\\arbor\\packages\\arbor-skills\\skills\\knowledge-pattern-maintainer"
+      },
+      "contentHash": "sha256-447fe004b26b5e64947063905b7b114804a234d7e1f96de112f0e3371cb887eb",
+      "install": {
+        "targetDir": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills",
+        "path": "C:\\Users\\nyml\\code\\arbor\\.codex\\skills\\knowledge-pattern-maintainer",
+        "mode": "copy"
+      }
+    }
+  }
+}

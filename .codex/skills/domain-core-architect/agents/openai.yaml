@@ -1,0 +1,4 @@
+interface:
+  display_name: "领域核心架构师"
+  short_description: "设计纯领域核心和边界模型"
+  default_prompt: "使用 $domain-core-architect 设计一个纯领域核心包。"
