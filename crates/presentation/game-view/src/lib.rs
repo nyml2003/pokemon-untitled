@@ -225,6 +225,7 @@ pub fn project_pokedex(
                 width: Dimension::Fill,
                 height: Dimension::Px(52),
                 padding: Insets::symmetric(14, 10),
+                border_radius: punctum_ui::UiBorderRadius::all(8),
                 interactive: true,
                 ..UiStyle::default()
             },
@@ -286,6 +287,12 @@ pub fn project_pokedex(
                     main_align: MainAlign::SpaceBetween,
                     cross_align: CrossAlign::Center,
                     padding: Insets::symmetric(32, 18),
+                    border_radius: punctum_ui::UiBorderRadius {
+                        top_left: 0,
+                        top_right: 0,
+                        bottom_right: 14,
+                        bottom_left: 14,
+                    },
                     ..UiStyle::default()
                 },
                 UiColor::new(21, 47, 60, 255),
@@ -318,6 +325,7 @@ pub fn project_pokedex(
                             direction: FlexDirection::Column,
                             gap: 10,
                             padding: Insets::all(12),
+                            border_radius: punctum_ui::UiBorderRadius::all(14),
                             clip: true,
                             ..UiStyle::default()
                         },
@@ -332,6 +340,7 @@ pub fn project_pokedex(
                             direction: FlexDirection::Column,
                             gap: 16,
                             padding: Insets::all(28),
+                            border_radius: punctum_ui::UiBorderRadius::all(16),
                             ..UiStyle::default()
                         },
                         UiColor::new(237, 242, 233, 255),
@@ -350,6 +359,8 @@ pub fn project_pokedex(
                                         UiStyle {
                                             width: Dimension::Px(280),
                                             height: Dimension::Px(280),
+                                            border_radius: punctum_ui::UiBorderRadius::all(12),
+                                            clip: true,
                                             ..UiStyle::default()
                                         },
                                         UiColor::new(201, 220, 208, 255),
@@ -359,6 +370,7 @@ pub fn project_pokedex(
                                             UiStyle {
                                                 width: Dimension::Fill,
                                                 height: Dimension::Fill,
+                                                border_radius: punctum_ui::UiBorderRadius::all(12),
                                                 ..UiStyle::default()
                                             },
                                         )],
@@ -412,6 +424,7 @@ pub fn project_pokedex(
                                     direction: FlexDirection::Column,
                                     gap: 10,
                                     padding: Insets::all(16),
+                                    border_radius: punctum_ui::UiBorderRadius::all(10),
                                     ..UiStyle::default()
                                 },
                                 UiColor::new(31, 52, 64, 255),
@@ -2658,7 +2671,6 @@ mod tests {
         OpponentPolicy,
     };
     use game_data::PokedexData;
-    use punctum_gpu::{PixelOffset, Rgba8};
     use punctum_grid::{GridPos, GridSize};
     use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
     use world_application::{Direction, Position, WorldApplication};
@@ -2669,8 +2681,9 @@ mod tests {
 
     use super::{
         BattleSpriteResources, LayerKind, TextRole, ViewCell, ViewLayer, compose_world,
-        move_category_icon_asset, pill_ui_asset, project_battle, project_battle_ui, project_console,
-        project_console_ui, project_pokedex, project_world, rounded_ui_asset, type_icon_asset,
+        move_category_icon_asset, pill_ui_asset, pokemon_icon_asset, project_battle,
+        project_battle_ui, project_console, project_console_ui, project_pokedex, project_world,
+        rounded_ui_asset, type_icon_asset,
         world_character_asset,
     };
 
@@ -2692,6 +2705,17 @@ mod tests {
             frame.commands().iter().any(|command| matches!(command,
                 punctum_ui::UiDrawCommand::Image { content, .. } if content.as_str() == "pokedex/1"))
         );
+        assert!(frame.commands().iter().any(|command| matches!(
+            command,
+            punctum_ui::UiDrawCommand::Image { content, border_radius, .. }
+                if content.as_str() == "pokedex/1" && *border_radius == punctum_ui::UiBorderRadius::all(12)
+        )));
+        assert!(frame.commands().iter().any(|command| matches!(
+            command,
+            punctum_ui::UiDrawCommand::Fill { color, border_radius, .. }
+                if *color == super::UiColor::new(237, 242, 233, 255)
+                    && *border_radius == punctum_ui::UiBorderRadius::all(16)
+        )));
         assert!(
             frame.commands().iter().any(|command| matches!(command,
                 punctum_ui::UiDrawCommand::Image { content, .. } if content.as_str() == type_icon_asset(PokemonType::Grass).as_str()))
