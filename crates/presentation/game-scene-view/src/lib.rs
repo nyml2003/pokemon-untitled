@@ -6,8 +6,8 @@ use game_data::PokedexData;
 use game_session::{GameScene, GameSnapshot};
 use game_ui::{CommandConsoleView, PresentationSnapshot};
 use game_view::{
-    BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, GameView, compose_world, project_battle,
-    project_pokedex, with_console,
+    BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, GameView, compose_world, project_battle_ui,
+    project_console_ui, project_pokedex,
 };
 use map_project::MapProject;
 use map_render::{
@@ -15,6 +15,8 @@ use map_render::{
 };
 use punctum_gpu::{PixelOffset, PixelSize, Viewport};
 use punctum_grid::{GridPos, GridSize};
+use punctum_ui::{UiBuildError, UiFrame, UiLayoutError, UiSize};
+use std::{error::Error, fmt};
 
 pub struct SceneViewInput<'a> {
     pub game: &'a GameSnapshot,
@@ -27,16 +29,58 @@ pub struct SceneViewInput<'a> {
 }
 
 pub struct ProjectedScene {
-    pub view: GameView,
+    pub frame: SceneFrame,
     pub viewport: Viewport,
 }
 
-pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, MapRenderError> {
+pub enum SceneFrame {
+    Grid(GameView),
+    Ui(UiFrame),
+    GridWithUi { base: GameView, overlay: UiFrame },
+    UiWithUi { base: UiFrame, overlay: UiFrame },
+}
+
+#[derive(Debug)]
+pub enum SceneViewError {
+    Map(MapRenderError),
+    UiBuild(UiBuildError),
+    UiLayout(UiLayoutError),
+}
+
+impl fmt::Display for SceneViewError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Map(error) => write!(formatter, "map projection failed: {error}"),
+            Self::UiBuild(error) => write!(formatter, "Pokedex UI construction failed: {error}"),
+            Self::UiLayout(error) => write!(formatter, "Pokedex UI layout failed: {error}"),
+        }
+    }
+}
+impl Error for SceneViewError {}
+
+pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, SceneViewError> {
     let viewport = input.viewport;
-    let view = if let Some(pokedex) = input.presentation.pokedex {
-        project_pokedex(input.pokedex, pokedex.selected_index)
+    let ui_size = UiSize::new(viewport.target_size.width, viewport.target_size.height);
+    let console = match input.console {
+        Some(console) => Some(
+            project_console_ui(console)
+                .map_err(SceneViewError::UiBuild)?
+                .resolve(ui_size)
+                .map_err(SceneViewError::UiLayout)?,
+        ),
+        None => None,
+    };
+    let frame = if let Some(pokedex) = input.presentation.pokedex {
+        let base = project_pokedex(input.pokedex, pokedex.selected_index)
+            .map_err(SceneViewError::UiBuild)?
+            .resolve(ui_size)
+            .map_err(SceneViewError::UiLayout)?;
+        match console {
+            Some(overlay) => SceneFrame::UiWithUi { base, overlay },
+            None => SceneFrame::Ui(base),
+        }
     } else {
-        match input.game.scene() {
+        let base = match input.game.scene() {
             GameScene::World => {
                 let camera = world_camera(input.game.world().player());
                 let scene = project_map(MapRenderInput {
@@ -49,19 +93,20 @@ pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, MapRen
                         GridSize::new(CANVAS_WIDTH, CANVAS_HEIGHT),
                         GridSize::new(2, 2),
                     ),
-                })?;
+                })
+                .map_err(SceneViewError::Map)?;
                 compose_world(
                     scene.into_layer(),
                     GridPos::new(camera.col, camera.row),
                     input.game.world(),
                     input.presentation.world_animation,
                     input.presentation.sprite_frame,
-                    input.console,
+                    None,
                 )
             }
             GameScene::Battle => {
                 let battle = input.game.battle().expect("battle scene owns a battle");
-                let battle_view = project_battle(
+                let base = project_battle_ui(
                     battle.session(),
                     input.presentation.battle_ui,
                     BattleSpriteResources::for_slots(
@@ -69,12 +114,25 @@ pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, MapRen
                         battle.opponent_sprite_slot(),
                     ),
                     input.presentation.sprite_frame,
-                );
-                with_console(battle_view.layers().to_vec(), input.console)
+                )
+                .map_err(SceneViewError::UiBuild)?
+                .resolve(ui_size)
+                .map_err(SceneViewError::UiLayout)?;
+                return Ok(ProjectedScene {
+                    frame: match console {
+                        Some(overlay) => SceneFrame::UiWithUi { base, overlay },
+                        None => SceneFrame::Ui(base),
+                    },
+                    viewport,
+                });
             }
+        };
+        match console {
+            Some(overlay) => SceneFrame::GridWithUi { base, overlay },
+            None => SceneFrame::Grid(base),
         }
     };
-    Ok(ProjectedScene { view, viewport })
+    Ok(ProjectedScene { frame, viewport })
 }
 
 pub fn game_viewport(target_size: PixelSize) -> Viewport {
@@ -164,8 +222,11 @@ mod tests {
             viewport: game_viewport(PixelSize::new(960, 720)),
         })
         .unwrap();
-        let map_layer = &projected.view.layers()[0];
-        let character_layer = &projected.view.layers()[1];
+        let SceneFrame::Grid(view) = projected.frame else {
+            panic!("world uses the grid path")
+        };
+        let map_layer = &view.layers()[0];
+        let character_layer = &view.layers()[1];
         assert!(
             map_layer
                 .images
@@ -190,11 +251,10 @@ mod tests {
             game = next;
         }
         assert_eq!(game.snapshot().scene(), GameScene::Battle);
-        let console = CommandConsoleView::default();
         let projected = project_scene(SceneViewInput {
             game: &game.snapshot(),
             presentation: presentation(PixelOffset::new(0, 0)),
-            console: Some(&console),
+            console: None,
             pokedex: &PokedexData::embedded_gen3().unwrap(),
             map_project: &project,
             map_catalog: &catalog,
@@ -203,10 +263,11 @@ mod tests {
         .unwrap();
         assert_eq!(projected.viewport.cell_size, PixelSize::new(30, 30));
         assert_eq!(projected.viewport.origin, PixelOffset::new(20, 0));
-        assert_eq!(
-            projected.view.layers().last().unwrap().kind,
-            game_view::LayerKind::Console
-        );
+        let SceneFrame::Ui(frame) = projected.frame else {
+            panic!("battle uses the pixel UI path")
+        };
+        assert!(frame.commands().len() > 12);
+        assert_eq!(frame.hit_regions().len(), 4);
 
         let tiny = game_viewport(PixelSize::new(1, 1));
         assert_eq!(tiny.cell_size, PixelSize::new(1, 1));

@@ -12,6 +12,10 @@ use game_data::PokedexData;
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, WorldAnimation};
 use punctum_gpu::{PixelOffset, Rgba8};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface};
+use punctum_ui::{
+    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
+    UiContentId, UiId, UiNode, UiStyle, UiTextSize, UiTree,
+};
 use world_application::{Direction as WorldDirection, Position, WorldObservation};
 
 pub const CANVAS_WIDTH: u32 = 32;
@@ -200,134 +204,1137 @@ impl GameView {
     }
 }
 
-pub fn project_pokedex(pokedex: &PokedexData, selected_index: usize) -> GameView {
+/// Builds the Pokedex as a responsive pixel UI tree. It deliberately does not
+/// project into `GameView`: the Pokedex is a focused page, not a map surface.
+pub fn project_pokedex(
+    pokedex: &PokedexData,
+    selected_index: usize,
+) -> Result<UiTree, UiBuildError> {
     let entries = pokedex.entries();
     let selected_index = selected_index.min(entries.len().saturating_sub(1));
     let entry = &entries[selected_index];
-    let mut canvas = Canvas::new(Rgba8::new(13, 21, 29, 255));
-    canvas.fill(0, 0, CANVAS_WIDTH, 3, Rgba8::new(21, 47, 60, 255));
-    canvas.fill(1, 4, 11, 17, Rgba8::new(31, 52, 64, 255));
-    canvas.fill(13, 4, 18, 17, Rgba8::new(237, 242, 233, 255));
-    canvas.fill(14, 5, 16, 9, Rgba8::new(201, 220, 208, 255));
-    canvas.fill(14, 15, 16, 5, Rgba8::new(31, 52, 64, 255));
     let first = selected_index
         .saturating_sub(2)
         .min(entries.len().saturating_sub(5));
-    let mut labels = vec![
-        label(TextRole::PokedexTitle, 2, 1, 20, 1, "宝可梦图鉴", TEXT),
-        label(
-            TextRole::PokedexDetail,
-            23,
-            1,
-            7,
-            1,
-            &format!("{}/{}", selected_index + 1, entries.len()),
-            MUTED_TEXT,
-        ),
-        label(
-            TextRole::PokedexDetail,
-            15,
-            5,
-            8,
-            1,
-            &format!("No.{:03}", entry.national_dex),
-            BATTLE_INK,
-        ),
-        label(
-            TextRole::PokedexTitle,
-            15,
-            7,
-            12,
-            1,
-            &entry.localized_name,
-            BATTLE_INK,
-        ),
-        label(
-            TextRole::PokedexDetail,
-            15,
-            8,
-            13,
-            1,
-            &entry.english_name,
-            BATTLE_MUTED,
-        ),
-        label(
-            TextRole::PokedexDetail,
-            15,
-            16,
-            14,
-            1,
-            &format!(
-                "HP {:>3}  ATK {:>3}  DEF {:>3}",
-                entry.base_stats.hp, entry.base_stats.attack, entry.base_stats.defense
-            ),
-            TEXT,
-        ),
-        label(
-            TextRole::PokedexDetail,
-            15,
-            18,
-            15,
-            1,
-            &format!(
-                "SPA {:>3}  SPD {:>3}  SPE {:>3}",
-                entry.base_stats.special_attack,
-                entry.base_stats.special_defense,
-                entry.base_stats.speed
-            ),
-            TEXT,
-        ),
-    ];
+    let mut list_children = Vec::new();
     for (row, candidate) in entries.iter().skip(first).take(5).enumerate() {
-        let prefix = if first + row == selected_index {
-            ">"
-        } else {
-            " "
-        };
-        labels.push(label(
-            TextRole::PokedexEntry,
-            2,
-            6 + row as u32 * 3,
-            9,
-            1,
-            &format!(
-                "{prefix}{:03} {}",
-                candidate.national_dex, candidate.localized_name
-            ),
-            if first + row == selected_index {
-                SELECTED
-            } else {
-                TEXT
+        let selected = first + row == selected_index;
+        list_children.push(panel(
+            10 + row as u32,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Px(52),
+                padding: Insets::symmetric(14, 10),
+                interactive: true,
+                ..UiStyle::default()
             },
+            if selected {
+                UiColor::new(29, 70, 67, 255)
+            } else {
+                UiColor::new(31, 52, 64, 255)
+            },
+            [text(
+                100 + row as u32,
+                format!(
+                    "{:03}  {}",
+                    candidate.national_dex, candidate.localized_name
+                ),
+                if selected {
+                    UiColor::new(73, 211, 168, 255)
+                } else {
+                    TEXT.into_ui()
+                },
+                19,
+                Dimension::Fill,
+            )],
         ));
     }
-    let mut images = vec![ViewImage::new(
-        GridRect::new(GridPos::new(23, 5), GridSize::new(6, 6)),
-        AssetKey::new(format!("pokedex/{}", entry.national_dex))
-            .expect("Pokedex asset key is valid"),
-        Rgba8::new(255, 255, 255, 255),
-        1,
-    )];
+    let mut type_children = Vec::new();
     for (index, kind) in entry.types.iter().enumerate() {
         if let Some(pokemon_type) = pokedex_type(kind.id.0) {
-            images.push(type_icon_image(15 + index as u32 * 3, 10, pokemon_type));
+            type_children.push(image(
+                400 + index as u32,
+                type_icon_asset(pokemon_type).as_str(),
+                UiStyle::fixed(88, 30),
+            ));
         } else {
-            labels.push(label(
-                TextRole::PokedexDetail,
-                15,
-                10 + index as u32,
-                13,
-                1,
-                &kind.name,
-                BATTLE_INK,
+            type_children.push(text(
+                400 + index as u32,
+                kind.name.clone(),
+                BATTLE_INK.into_ui(),
+                16,
+                Dimension::Px(90),
             ));
         }
     }
-    GameView::new([
-        ViewLayer::new(LayerKind::Map).with_surface(canvas.finish()),
-        ViewLayer::new(LayerKind::Character).with_images(images),
-        ViewLayer::new(LayerKind::Hud).with_labels(labels),
-    ])
+    UiTree::new(with_generated_ui_ids(panel(
+        1,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            ..UiStyle::default()
+        },
+        UiColor::new(13, 21, 29, 255),
+        [
+            panel(
+                2,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(76),
+                    direction: FlexDirection::Row,
+                    main_align: MainAlign::SpaceBetween,
+                    cross_align: CrossAlign::Center,
+                    padding: Insets::symmetric(32, 18),
+                    ..UiStyle::default()
+                },
+                UiColor::new(21, 47, 60, 255),
+                [
+                    text(3, "宝可梦图鉴", TEXT.into_ui(), 28, Dimension::Px(300)),
+                    text(
+                        4,
+                        format!("{}/{}", selected_index + 1, entries.len()),
+                        MUTED_TEXT.into_ui(),
+                        18,
+                        Dimension::Px(120),
+                    ),
+                ],
+            ),
+            UiNode::new(UiId(5))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Row,
+                    gap: 20,
+                    padding: Insets::all(24),
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    panel(
+                        6,
+                        UiStyle {
+                            width: Dimension::Px(300),
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Column,
+                            gap: 10,
+                            padding: Insets::all(12),
+                            clip: true,
+                            ..UiStyle::default()
+                        },
+                        UiColor::new(31, 52, 64, 255),
+                        list_children,
+                    ),
+                    panel(
+                        7,
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Column,
+                            gap: 16,
+                            padding: Insets::all(28),
+                            ..UiStyle::default()
+                        },
+                        UiColor::new(237, 242, 233, 255),
+                        [
+                            UiNode::new(UiId(8))
+                                .with_style(UiStyle {
+                                    width: Dimension::Fill,
+                                    height: Dimension::Fill,
+                                    direction: FlexDirection::Row,
+                                    gap: 28,
+                                    ..UiStyle::default()
+                                })
+                                .with_children([
+                                    panel(
+                                        9,
+                                        UiStyle {
+                                            width: Dimension::Px(280),
+                                            height: Dimension::Px(280),
+                                            ..UiStyle::default()
+                                        },
+                                        UiColor::new(201, 220, 208, 255),
+                                        [image(
+                                            201,
+                                            format!("pokedex/{}", entry.national_dex),
+                                            UiStyle {
+                                                width: Dimension::Fill,
+                                                height: Dimension::Fill,
+                                                ..UiStyle::default()
+                                            },
+                                        )],
+                                    ),
+                                    UiNode::new(UiId(202))
+                                        .with_style(UiStyle {
+                                            width: Dimension::Fill,
+                                            height: Dimension::Fill,
+                                            direction: FlexDirection::Column,
+                                            gap: 12,
+                                            ..UiStyle::default()
+                                        })
+                                        .with_children([
+                                            text(
+                                                203,
+                                                format!("No.{:03}", entry.national_dex),
+                                                BATTLE_INK.into_ui(),
+                                                22,
+                                                Dimension::Fill,
+                                            ),
+                                            text(
+                                                204,
+                                                entry.localized_name.clone(),
+                                                BATTLE_INK.into_ui(),
+                                                34,
+                                                Dimension::Fill,
+                                            ),
+                                            text(
+                                                205,
+                                                entry.english_name.clone(),
+                                                BATTLE_MUTED.into_ui(),
+                                                19,
+                                                Dimension::Fill,
+                                            ),
+                                            UiNode::new(UiId(206))
+                                                .with_style(UiStyle {
+                                                    width: Dimension::Fill,
+                                                    height: Dimension::Px(36),
+                                                    direction: FlexDirection::Row,
+                                                    gap: 8,
+                                                    ..UiStyle::default()
+                                                })
+                                                .with_children(type_children),
+                                        ]),
+                                ]),
+                            panel(
+                                207,
+                                UiStyle {
+                                    width: Dimension::Fill,
+                                    height: Dimension::Px(96),
+                                    direction: FlexDirection::Column,
+                                    gap: 10,
+                                    padding: Insets::all(16),
+                                    ..UiStyle::default()
+                                },
+                                UiColor::new(31, 52, 64, 255),
+                                [
+                                    text(
+                                        208,
+                                        format!(
+                                            "HP {:>3}    ATK {:>3}    DEF {:>3}",
+                                            entry.base_stats.hp,
+                                            entry.base_stats.attack,
+                                            entry.base_stats.defense
+                                        ),
+                                        TEXT.into_ui(),
+                                        18,
+                                        Dimension::Fill,
+                                    ),
+                                    text(
+                                        209,
+                                        format!(
+                                            "SPA {:>3}    SPD {:>3}    SPE {:>3}",
+                                            entry.base_stats.special_attack,
+                                            entry.base_stats.special_defense,
+                                            entry.base_stats.speed
+                                        ),
+                                        TEXT.into_ui(),
+                                        18,
+                                        Dimension::Fill,
+                                    ),
+                                ],
+                            ),
+                        ],
+                    ),
+                ]),
+        ],
+    )))
+}
+
+/// Builds the battle scene as a responsive pixel UI page.
+pub fn project_battle_ui(
+    snapshot: &BattleSessionSnapshot,
+    ui: BattleUiState,
+    sprites: BattleSpriteResources,
+    sprite_frame: usize,
+) -> Result<UiTree, UiBuildError> {
+    let scene = snapshot.scene();
+    let own = scene.own();
+    let opponent = scene.opponent();
+    let (page, selected, notice) = ui.view();
+    let message = notice
+        .map(str::to_owned)
+        .unwrap_or_else(|| battle_message(snapshot));
+    let animation = battle_animation(snapshot.cue());
+    let prompt = prompt_data(snapshot.interaction());
+    let actions = prompt.map_or(&[][..], |(_, actions)| actions);
+    let observation = prompt.map(|(observation, _)| observation);
+
+    if page == BattleMenuPage::Pokemon {
+        let root = observation.map_or_else(
+            || battle_unavailable_page(&message),
+            |observation| battle_pokemon_page_ui(observation, selected, &message, sprite_frame),
+        );
+        return UiTree::new(with_generated_ui_ids(root));
+    }
+
+    let menu = match page {
+        BattleMenuPage::Main => battle_main_actions_flex(selected),
+        BattleMenuPage::Fight if actions.contains(&Action::Struggle) => {
+            battle_move_menu(
+                selected,
+                [("挣扎".to_owned(), PokemonType::Normal, MoveCategory::Physical, "威50 PP--".to_owned())],
+            )
+        }
+        BattleMenuPage::Fight => battle_move_menu(
+            selected,
+            observation
+                .map(active_pokemon)
+                .map_or(&[][..], |pokemon| pokemon.moves())
+                .iter()
+                .take(4)
+                .map(|battle_move| {
+                    (
+                        battle_move.name().to_owned(),
+                        battle_move.move_type(),
+                        battle_move.category(),
+                        format!(
+                            "威{} PP{}/{}",
+                            battle_move.power(),
+                            battle_move.current_pp(),
+                            battle_move.max_pp()
+                        ),
+                    )
+                }),
+        ),
+        BattleMenuPage::Pokemon => unreachable!("the Pokemon page returns before building the battle scene"),
+        BattleMenuPage::Hidden => UiNode::new(UiId(9_100)),
+    };
+
+    UiTree::new(with_generated_ui_ids(panel(
+        8_000,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            ..UiStyle::default()
+        },
+        SKY.into_ui(),
+        [
+            UiNode::new(UiId(8_010))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Column,
+                    padding: Insets::all(20),
+                    gap: 18,
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Fill(DISTANT_GRASS.into_ui()))
+                .with_children([
+                    UiNode::new(UiId(8_011))
+                        .with_style(UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Row,
+                            main_align: MainAlign::SpaceBetween,
+                            cross_align: CrossAlign::Center,
+                            ..UiStyle::default()
+                        })
+                        .with_children([
+                            battle_status_panel(
+                                8_100,
+                                opponent.name(),
+                                opponent.level(),
+                                opponent.current_hp(),
+                                opponent.max_hp(),
+                                OPPONENT_ACCENT.into_ui(),
+                                opponent.primary_type(),
+                                opponent.secondary_type(),
+                            ),
+                            image(
+                                8_110,
+                                sprites.opponent[sprite_frame % 2].as_str(),
+                                UiStyle {
+                                    width: Dimension::Px(220),
+                                    height: Dimension::Px(220),
+                                    ..UiStyle::default()
+                                },
+                            )
+                            .with_content(UiContent::ImageTinted {
+                                content: UiContentId::new(sprites.opponent[sprite_frame % 2].as_str())?,
+                                tint: creature_tint(animation, Participant::Opponent).into_ui(),
+                            }),
+                        ]),
+                    UiNode::new(UiId(8_012))
+                        .with_style(UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Row,
+                            main_align: MainAlign::SpaceBetween,
+                            cross_align: CrossAlign::Center,
+                            ..UiStyle::default()
+                        })
+                        .with_children([
+                            image(
+                                8_120,
+                                sprites.own[sprite_frame % 2].as_str(),
+                                UiStyle {
+                                    width: Dimension::Px(220),
+                                    height: Dimension::Px(220),
+                                    ..UiStyle::default()
+                                },
+                            )
+                            .with_content(UiContent::ImageTinted {
+                                content: UiContentId::new(sprites.own[sprite_frame % 2].as_str())?,
+                                tint: creature_tint(animation, Participant::Own).into_ui(),
+                            }),
+                            battle_status_panel(
+                                8_300,
+                                own.name(),
+                                own.level(),
+                                own.current_hp(),
+                                own.max_hp(),
+                                PLAYER_ACCENT.into_ui(),
+                                own.primary_type(),
+                                own.secondary_type(),
+                            ),
+                        ]),
+                ]),
+            panel(
+                8_200,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(220),
+                    direction: FlexDirection::Row,
+                    padding: Insets::all(14),
+                    border: punctum_ui::UiBorder {
+                        widths: Insets::all(2),
+                        color: ACTION_BORDER.into_ui(),
+                    },
+                    border_radius: punctum_ui::UiBorderRadius::all(16),
+                    ..UiStyle::default()
+                },
+                ACTION_PANEL.into_ui(),
+                [
+                    UiNode::new(UiId(8_201))
+                        .with_style(UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Column,
+                            padding: Insets::all(12),
+                            ..UiStyle::default()
+                        })
+                        .with_children([text(8_202, message, MUTED_TEXT.into_ui(), 19, Dimension::Fill)]),
+                    UiNode::new(UiId(8_210))
+                        .with_style(UiStyle {
+                            width: Dimension::Px(430),
+                            height: Dimension::Fill,
+                            ..UiStyle::default()
+                        })
+                        .with_children([menu]),
+                ],
+            ),
+        ],
+    )))
+}
+
+pub fn project_console_ui(console: &CommandConsoleView) -> Result<UiTree, UiBuildError> {
+    let first = visible_console_start(console.items.len(), console.selected_index);
+    let mut rows = console
+        .items
+        .iter()
+        .enumerate()
+        .skip(first)
+        .take(8)
+        .map(|(index, item)| console_item(8_500 + index as u32, item, console.selected_index == Some(index)))
+        .collect::<Vec<_>>();
+    if rows.is_empty() {
+        rows.push(text(8_500, "没有匹配指令", MUTED_TEXT.into_ui(), 18, Dimension::Fill));
+    }
+    if let Some(diagnostic) = &console.diagnostic {
+        rows.push(text(8_590, diagnostic.clone(), CONSOLE_ERROR.into_ui(), 17, Dimension::Fill));
+    }
+    UiTree::new(with_generated_ui_ids(
+        UiNode::new(UiId(8_400))
+            .with_style(UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                direction: FlexDirection::Column,
+                main_align: MainAlign::Center,
+                cross_align: CrossAlign::Center,
+                padding: Insets::all(36),
+                ..UiStyle::default()
+            })
+            .with_children([panel(
+                8_401,
+                UiStyle {
+                    width: Dimension::Px(880),
+                    height: Dimension::Px(510),
+                    direction: FlexDirection::Column,
+                    gap: 12,
+                    padding: Insets::all(24),
+                    border: punctum_ui::UiBorder {
+                        widths: Insets::all(2),
+                        color: PANEL_EDGE.into_ui(),
+                    },
+                    border_radius: punctum_ui::UiBorderRadius::all(18),
+                    ..UiStyle::default()
+                },
+                PANEL.into_ui(),
+                [
+                    text(8_402, format!("> {}{}", console.query, console.preedit), TEXT.into_ui(), 21, Dimension::Fill),
+                    UiNode::new(UiId(8_403))
+                        .with_style(UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Column,
+                            gap: 6,
+                            clip: true,
+                            ..UiStyle::default()
+                        })
+                        .with_children(rows),
+                ],
+            )]),
+    ))
+}
+
+/// IDs are scoped to a single tree. Rebuilding the same tree produces the same
+/// IDs, while no page author has to coordinate hand-written numeric ranges.
+#[derive(Default)]
+struct UiNodeIds {
+    next: u32,
+}
+
+impl UiNodeIds {
+    fn next(&mut self) -> UiId {
+        let id = UiId(self.next);
+        self.next = self
+            .next
+            .checked_add(1)
+            .expect("a UI tree cannot contain more than u32::MAX nodes");
+        id
+    }
+}
+
+fn with_generated_ui_ids(root: UiNode) -> UiNode {
+    fn visit(mut node: UiNode, ids: &mut UiNodeIds) -> UiNode {
+        node.id = ids.next();
+        node.children = node
+            .children
+            .into_iter()
+            .map(|child| visit(child, ids))
+            .collect();
+        node
+    }
+
+    visit(root, &mut UiNodeIds::default())
+}
+
+trait UiColorExt {
+    fn into_ui(self) -> UiColor;
+}
+impl UiColorExt for Rgba8 {
+    fn into_ui(self) -> UiColor {
+        UiColor::new(self.red, self.green, self.blue, self.alpha)
+    }
+}
+
+fn battle_main_actions_flex(selected: usize) -> UiNode {
+    let buttons = ["战斗", "宝可梦", "包包", "逃走"];
+    let rows = (0_usize..2).map(|row| {
+        UiNode::new(UiId(9_100 + row as u32))
+            .with_style(UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                direction: FlexDirection::Row,
+                ..UiStyle::default()
+            })
+            .with_children((0..2).map(|column| {
+                let index = row * 2 + column;
+                battle_main_action_button(9_110 + index as u32, buttons[index], index == selected)
+            }))
+    });
+    UiNode::new(UiId(9_010))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            border_radius: punctum_ui::UiBorderRadius::all(12),
+            clip: true,
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(ACTION_PANEL_ALT.into_ui()))
+        .with_children(rows)
+}
+
+fn battle_main_action_button(id: u32, content: &str, selected: bool) -> UiNode {
+    UiNode::new(UiId(id))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            border_radius: punctum_ui::UiBorderRadius::all(10),
+            interactive: true,
+            ..UiStyle::default()
+        })
+        .with_content(if selected {
+            UiContent::Fill(SELECTED.into_ui())
+        } else {
+            UiContent::Empty
+        })
+        .with_children([UiNode::new(UiId(id + 100))
+            .with_style(UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                ..UiStyle::default()
+            })
+            .with_content(UiContent::TextScaled {
+                content: content.to_owned(),
+                color: if selected {
+                    BATTLE_INK.into_ui()
+                } else {
+                    TEXT.into_ui()
+                },
+                font_size: UiTextSize::Px(18),
+            })])
+}
+
+fn battle_move_menu(
+    selected: usize,
+    moves: impl IntoIterator<Item = (String, PokemonType, MoveCategory, String)>,
+) -> UiNode {
+    let moves = moves.into_iter().collect::<Vec<_>>();
+    let selected = selected.min(moves.len().saturating_sub(1));
+    let detail = moves.get(selected).map(|(_, move_type, category, detail)| {
+        move_detail_panel(9_300, *move_type, *category, detail)
+    });
+
+    UiNode::new(UiId(9_100))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Row,
+            gap: 10,
+            ..UiStyle::default()
+        })
+        .with_children([
+            UiNode::new(UiId(9_110))
+                .with_style(UiStyle {
+                    width: Dimension::Ratio { units: 3, base: 5 },
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Column,
+                    gap: 6,
+                    clip: true,
+                    ..UiStyle::default()
+                })
+                .with_children(moves.iter().enumerate().map(|(index, (name, ..))| {
+                    battle_main_action_button(9_120 + index as u32, name, index == selected)
+                })),
+            UiNode::new(UiId(9_200))
+                .with_style(UiStyle {
+                    width: Dimension::Ratio { units: 2, base: 5 },
+                    height: Dimension::Fill,
+                    ..UiStyle::default()
+                })
+                .with_children(detail),
+        ])
+}
+
+fn move_detail_panel(
+    id: u32,
+    move_type: PokemonType,
+    category: MoveCategory,
+    detail: &str,
+) -> UiNode {
+    panel(
+        id,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            gap: 8,
+            padding: Insets::all(10),
+            border_radius: punctum_ui::UiBorderRadius::all(10),
+            ..UiStyle::default()
+        },
+        ACTION_PANEL_ALT.into_ui(),
+        [
+            text(id + 1, "招式详情", MUTED_TEXT.into_ui(), 15, Dimension::Fill),
+            UiNode::new(UiId(id + 2))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(28),
+                    direction: FlexDirection::Row,
+                    gap: 8,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    image(id + 3, type_icon_asset(move_type).as_str(), UiStyle::fixed(72, 28)),
+                    image(
+                        id + 4,
+                        move_category_icon_asset(category).as_str(),
+                        UiStyle::fixed(72, 28),
+                    ),
+                ]),
+            text(id + 5, detail, TEXT.into_ui(), 17, Dimension::Fill),
+        ],
+    )
+}
+
+fn battle_unavailable_page(message: &str) -> UiNode {
+    panel(
+        9_400,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            padding: Insets::all(32),
+            ..UiStyle::default()
+        },
+        PARTY_BG.into_ui(),
+        [text(9_401, message, TEXT.into_ui(), 22, Dimension::Fill)],
+    )
+}
+
+fn battle_pokemon_page_ui(
+    observation: &BattleObservation,
+    selected: usize,
+    message: &str,
+    sprite_frame: usize,
+) -> UiNode {
+    let members = observation.own().members();
+    let selected = selected.min(members.len().saturating_sub(1));
+    let selected_pokemon = &members[selected];
+    let active_slot = observation.own().active_slot().index();
+
+    panel(
+        9_500,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            padding: Insets::all(24),
+            gap: 16,
+            ..UiStyle::default()
+        },
+        PARTY_BG.into_ui(),
+        [
+            panel(
+                9_501,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(54),
+                    direction: FlexDirection::Row,
+                    main_align: MainAlign::SpaceBetween,
+                    cross_align: CrossAlign::Center,
+                    padding: Insets::symmetric(18, 10),
+                    border_radius: punctum_ui::UiBorderRadius::all(12),
+                    ..UiStyle::default()
+                },
+                PARTY_PANEL_ALT.into_ui(),
+                [
+                    text(9_502, "选择宝可梦", TEXT.into_ui(), 25, Dimension::Px(240)),
+                    text(9_503, message, MUTED_TEXT.into_ui(), 16, Dimension::Fill),
+                ],
+            ),
+            UiNode::new(UiId(9_510))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Row,
+                    gap: 16,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    selected_team_member_panel(
+                        9_520,
+                        selected,
+                        selected_pokemon,
+                        active_slot,
+                        sprite_frame,
+                    ),
+                    UiNode::new(UiId(9_600))
+                        .with_style(UiStyle {
+                            width: Dimension::Ratio { units: 3, base: 5 },
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Column,
+                            gap: 8,
+                            clip: true,
+                            ..UiStyle::default()
+                        })
+                        .with_children(members.iter().enumerate().map(|(index, pokemon)| {
+                            team_member_card(
+                                9_610 + index as u32 * 20,
+                                index,
+                                pokemon,
+                                index == selected,
+                                index == active_slot,
+                                sprite_frame,
+                            )
+                        })),
+                ]),
+        ],
+    )
+}
+
+fn selected_team_member_panel(
+    id: u32,
+    slot: usize,
+    pokemon: &Pokemon,
+    active_slot: usize,
+    sprite_frame: usize,
+) -> UiNode {
+    let mut types = vec![image(
+        id + 5,
+        type_icon_asset(pokemon.primary_type()).as_str(),
+        UiStyle::fixed(72, 28),
+    )];
+    if let Some(secondary) = pokemon.secondary_type() {
+        types.push(image(
+            id + 6,
+            type_icon_asset(secondary).as_str(),
+            UiStyle::fixed(72, 28),
+        ));
+    }
+    panel(
+        id,
+        UiStyle {
+            width: Dimension::Ratio { units: 2, base: 5 },
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            gap: 12,
+            padding: Insets::all(20),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(2),
+                color: PARTY_EDGE.into_ui(),
+            },
+            border_radius: punctum_ui::UiBorderRadius::all(14),
+            ..UiStyle::default()
+        },
+        PARTY_PANEL.into_ui(),
+        [
+            image(
+                id + 1,
+                pokemon_icon_asset(slot, sprite_frame).as_str(),
+                UiStyle::fixed(190, 190),
+            )
+            .with_content(UiContent::ImageTinted {
+                content: UiContentId::new(pokemon_icon_asset(slot, sprite_frame).as_str())
+                    .expect("team icon asset keys are non-empty"),
+                tint: if pokemon.is_fainted() {
+                    UiColor::new(112, 112, 112, 255)
+                } else {
+                    UiColor::new(255, 255, 255, 255)
+                },
+            }),
+            text(id + 2, pokemon.name(), TEXT.into_ui(), 24, Dimension::Fill),
+            text(
+                id + 3,
+                format!(
+                    "Lv.{}{}",
+                    pokemon.level(),
+                    if slot == active_slot { "  出战" } else { "" }
+                ),
+                if slot == active_slot {
+                    PLAYER_ACCENT.into_ui()
+                } else {
+                    MUTED_TEXT.into_ui()
+                },
+                17,
+                Dimension::Fill,
+            ),
+            UiNode::new(UiId(id + 4))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(28),
+                    direction: FlexDirection::Row,
+                    gap: 8,
+                    ..UiStyle::default()
+                })
+                .with_children(types),
+            hp_bar(id + 8, pokemon.current_hp(), pokemon.max_hp()),
+            text(
+                id + 12,
+                if pokemon.is_fainted() {
+                    "无法战斗".to_owned()
+                } else {
+                    format!("HP {}/{}", pokemon.current_hp(), pokemon.max_hp())
+                },
+                if pokemon.is_fainted() {
+                    HP_LOW.into_ui()
+                } else {
+                    TEXT.into_ui()
+                },
+                17,
+                Dimension::Fill,
+            ),
+        ],
+    )
+}
+
+fn team_member_card(
+    id: u32,
+    slot: usize,
+    pokemon: &Pokemon,
+    selected: bool,
+    active: bool,
+    sprite_frame: usize,
+) -> UiNode {
+    UiNode::new(UiId(id))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Row,
+            cross_align: CrossAlign::Center,
+            gap: 12,
+            padding: Insets::all(10),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: if selected { SELECTED } else { PARTY_EDGE }.into_ui(),
+            },
+            border_radius: punctum_ui::UiBorderRadius::all(10),
+            interactive: true,
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(
+            if selected { PARTY_PANEL_ALT } else { PARTY_PANEL }.into_ui(),
+        ))
+        .with_children([
+            image(
+                id + 1,
+                pokemon_icon_asset(slot, sprite_frame).as_str(),
+                UiStyle::fixed(54, 54),
+            )
+            .with_content(UiContent::ImageTinted {
+                content: UiContentId::new(pokemon_icon_asset(slot, sprite_frame).as_str())
+                    .expect("team icon asset keys are non-empty"),
+                tint: if pokemon.is_fainted() {
+                    UiColor::new(112, 112, 112, 255)
+                } else {
+                    UiColor::new(255, 255, 255, 255)
+                },
+            }),
+            UiNode::new(UiId(id + 2))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Column,
+                    main_align: MainAlign::Center,
+                    gap: 4,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    text(
+                        id + 3,
+                        pokemon.name(),
+                        if pokemon.is_fainted() {
+                            MUTED_TEXT.into_ui()
+                        } else {
+                            TEXT.into_ui()
+                        },
+                        18,
+                        Dimension::Fill,
+                    ),
+                    hp_bar(id + 4, pokemon.current_hp(), pokemon.max_hp()),
+                ]),
+            text(
+                id + 9,
+                if pokemon.is_fainted() {
+                    "无法战斗".to_owned()
+                } else if active {
+                    "出战".to_owned()
+                } else {
+                    format!("Lv.{}", pokemon.level())
+                },
+                if pokemon.is_fainted() {
+                    HP_LOW.into_ui()
+                } else if active {
+                    PLAYER_ACCENT.into_ui()
+                } else {
+                    MUTED_TEXT.into_ui()
+                },
+                16,
+                Dimension::Px(82),
+            ),
+        ])
+}
+
+fn hp_bar(id: u32, hp: u32, max_hp: u32) -> UiNode {
+    UiNode::new(UiId(id))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(12),
+            border_radius: punctum_ui::UiBorderRadius::all(6),
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(HP_TRACK_EDGE.into_ui()))
+        .with_children([UiNode::new(UiId(id + 1))
+            .with_style(UiStyle {
+                width: Dimension::Ratio {
+                    units: hp,
+                    base: max_hp.max(1),
+                },
+                height: Dimension::Fill,
+                border_radius: punctum_ui::UiBorderRadius::all(6),
+                ..UiStyle::default()
+            })
+            .with_content(UiContent::Fill(hp_color(hp, max_hp).into_ui()))])
+}
+
+fn battle_status_panel(
+    id: u32,
+    name: &str,
+    level: u8,
+    hp: u32,
+    max_hp: u32,
+    accent: UiColor,
+    primary: PokemonType,
+    secondary: Option<PokemonType>,
+) -> UiNode {
+    let mut types = vec![image(
+        id + 30,
+        type_icon_asset(primary).as_str(),
+        UiStyle::fixed(72, 28),
+    )];
+    if let Some(secondary) = secondary {
+        types.push(image(
+            id + 31,
+            type_icon_asset(secondary).as_str(),
+            UiStyle::fixed(72, 28),
+        ));
+    }
+    panel(
+        id,
+        UiStyle {
+            width: Dimension::Px(300),
+            height: Dimension::Px(160),
+            direction: FlexDirection::Column,
+            gap: 8,
+            padding: Insets::all(16),
+            border_radius: punctum_ui::UiBorderRadius::all(14),
+            ..UiStyle::default()
+        },
+        BATTLE_CARD.into_ui(),
+        [
+            UiNode::new(UiId(id + 1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(30),
+                    direction: FlexDirection::Row,
+                    main_align: MainAlign::SpaceBetween,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    text(id + 2, name, BATTLE_INK.into_ui(), 21, Dimension::Fill),
+                    text(id + 3, format!("Lv.{level}"), BATTLE_MUTED.into_ui(), 16, Dimension::Px(64)),
+                ]),
+            UiNode::new(UiId(id + 4))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(28),
+                    direction: FlexDirection::Row,
+                    gap: 6,
+                    ..UiStyle::default()
+                })
+                .with_children(types),
+            UiNode::new(UiId(id + 5))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(14),
+                    border_radius: punctum_ui::UiBorderRadius::all(7),
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Fill(HP_TRACK_EDGE.into_ui()))
+                .with_children([UiNode::new(UiId(id + 6))
+                    .with_style(UiStyle {
+                        width: Dimension::Ratio {
+                            units: hp,
+                            base: max_hp.max(1),
+                        },
+                        height: Dimension::Fill,
+                        border_radius: punctum_ui::UiBorderRadius::all(7),
+                        ..UiStyle::default()
+                    })
+                    .with_content(UiContent::Fill(hp_color(hp, max_hp).into_ui()))]),
+            text(id + 7, format!("HP {hp}/{max_hp}"), BATTLE_MUTED.into_ui(), 15, Dimension::Fill),
+            UiNode::new(UiId(id + 8))
+                .with_style(UiStyle {
+                    width: Dimension::Px(12),
+                    height: Dimension::Px(12),
+                    border_radius: punctum_ui::UiBorderRadius::all(6),
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Fill(accent)),
+        ],
+    )
+}
+
+fn console_item(id: u32, content: &str, selected: bool) -> UiNode {
+    UiNode::new(UiId(id))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(36),
+            padding: Insets::symmetric(10, 6),
+            border_radius: punctum_ui::UiBorderRadius::all(6),
+            interactive: true,
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(
+            if selected { SELECTED_DARK } else { ACTION_PANEL_ALT }.into_ui(),
+        ))
+        .with_children([text(
+            id + 100,
+            content,
+            if selected { SELECTED } else { TEXT }.into_ui(),
+            17,
+            Dimension::Fill,
+        )])
+}
+
+fn hp_color(hp: u32, max_hp: u32) -> Rgba8 {
+    match hp.saturating_mul(100) / max_hp.max(1) {
+        0..=20 => HP_LOW,
+        21..=50 => HP_MID,
+        _ => HP_GOOD,
+    }
+}
+
+fn panel(
+    id: u32,
+    style: UiStyle,
+    color: UiColor,
+    children: impl IntoIterator<Item = UiNode>,
+) -> UiNode {
+    UiNode::new(UiId(id))
+        .with_style(style)
+        .with_content(UiContent::Fill(color))
+        .with_children(children)
+}
+fn text(
+    id: u32,
+    content: impl Into<String>,
+    color: UiColor,
+    font_size: u32,
+    width: Dimension,
+) -> UiNode {
+    UiNode::new(UiId(id))
+        .with_style(UiStyle {
+            width,
+            height: Dimension::Px(font_size.saturating_add(6)),
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Text {
+            content: content.into(),
+            color,
+            font_size,
+        })
+}
+fn image(id: u32, content: impl Into<String>, style: UiStyle) -> UiNode {
+    UiNode::new(UiId(id))
+        .with_style(style)
+        .with_content(UiContent::Image(
+            UiContentId::new(content).expect("static UI asset keys are non-empty"),
+        ))
 }
 
 pub fn project_console(console: &CommandConsoleView) -> ViewLayer {
@@ -1651,6 +2658,7 @@ mod tests {
         OpponentPolicy,
     };
     use game_data::PokedexData;
+    use punctum_gpu::{PixelOffset, Rgba8};
     use punctum_grid::{GridPos, GridSize};
     use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
     use world_application::{Direction, Position, WorldApplication};
@@ -1661,28 +2669,144 @@ mod tests {
 
     use super::{
         BattleSpriteResources, LayerKind, TextRole, ViewCell, ViewLayer, compose_world,
-        move_category_icon_asset, pill_ui_asset, project_battle, project_console, project_pokedex,
-        project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
+        move_category_icon_asset, pill_ui_asset, project_battle, project_battle_ui, project_console,
+        project_console_ui, project_pokedex, project_world, rounded_ui_asset, type_icon_asset,
+        world_character_asset,
     };
 
     #[test]
     fn pokedex_projects_its_selected_canonical_front() {
         let data = PokedexData::embedded_gen3().unwrap();
-        let view = project_pokedex(&data, 0);
-        assert!(view.labels().any(|label| label.content == "妙蛙种子"));
+        let tree = project_pokedex(&data, 0).unwrap();
+        for viewport in [
+            punctum_ui::UiSize::new(960, 720),
+            punctum_ui::UiSize::new(640, 480),
+            punctum_ui::UiSize::new(320, 240),
+        ] {
+            assert!(tree.resolve(viewport).is_ok());
+        }
+        let frame = tree.resolve(punctum_ui::UiSize::new(960, 720)).unwrap();
+        assert!(frame.commands().iter().any(|command| matches!(command,
+                punctum_ui::UiDrawCommand::Text { content, .. } if content == "妙蛙种子")));
         assert!(
-            view.images()
-                .any(|image| image.asset.as_str() == "pokedex/1")
+            frame.commands().iter().any(|command| matches!(command,
+                punctum_ui::UiDrawCommand::Image { content, .. } if content.as_str() == "pokedex/1"))
         );
         assert!(
-            view.images()
-                .any(|image| image.asset == type_icon_asset(PokemonType::Grass))
+            frame.commands().iter().any(|command| matches!(command,
+                punctum_ui::UiDrawCommand::Image { content, .. } if content.as_str() == type_icon_asset(PokemonType::Grass).as_str()))
         );
-        assert!(
-            view.images()
-                .any(|image| image.asset == type_icon_asset(PokemonType::Poison))
-        );
-        assert_eq!(view.layers()[0].kind, LayerKind::Map);
+        assert!(frame.hit_regions().len() == 5);
+    }
+
+    #[test]
+    fn battle_pixel_ui_uses_flex_and_keeps_move_metadata_visible() {
+        let snapshot = battle_fixture();
+        let sprites = BattleSpriteResources::for_slots(0, 0);
+        let main = project_battle_ui(
+            &snapshot,
+            BattleUiState::default(),
+            sprites.clone(),
+            0,
+        )
+        .unwrap()
+        .resolve(punctum_ui::UiSize::new(1000, 720))
+        .unwrap();
+        assert_eq!(main.hit_regions().len(), 4);
+        assert!(main.hit_regions().iter().all(|region| region.bounds.width > 0 && region.bounds.height > 0));
+        assert!(main.commands().iter().any(|command| matches!(
+            command,
+            punctum_ui::UiDrawCommand::Text { content, .. } if content == "战斗"
+        )));
+
+        let mut ui = BattleUiState::default();
+        handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
+        let fight = project_battle_ui(&snapshot, ui, sprites, 0)
+            .unwrap()
+            .resolve(punctum_ui::UiSize::new(1000, 720))
+            .unwrap();
+        assert!(fight.commands().iter().any(|command| matches!(
+            command,
+            punctum_ui::UiDrawCommand::Text { content, .. } if content == "威40 PP35/35"
+        )));
+        let images = fight
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                punctum_ui::UiDrawCommand::Image { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(images.contains(&type_icon_asset(PokemonType::Grass).as_str()));
+        assert!(images.contains(&move_category_icon_asset(MoveCategory::Special).as_str()));
+    }
+
+    #[test]
+    fn pokemon_selection_pixel_ui_has_a_detail_panel_and_all_team_members() {
+        let snapshot = battle_fixture();
+        let mut ui = BattleUiState::default();
+        handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
+        handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
+
+        let frame = project_battle_ui(
+            &snapshot,
+            ui,
+            BattleSpriteResources::for_slots(0, 0),
+            1,
+        )
+        .unwrap()
+        .resolve(punctum_ui::UiSize::new(1000, 720))
+        .unwrap();
+        assert!(frame.commands().iter().any(|command| matches!(
+            command,
+            punctum_ui::UiDrawCommand::Text { content, .. } if content == "选择宝可梦"
+        )));
+        assert_eq!(frame.hit_regions().len(), TEAM_SIZE);
+        let images = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                punctum_ui::UiDrawCommand::Image { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for slot in 0..TEAM_SIZE {
+            assert!(images.contains(&pokemon_icon_asset(slot, 1).as_str()));
+        }
+        assert!(images.contains(&type_icon_asset(PokemonType::Poison).as_str()));
+    }
+
+    #[test]
+    fn console_pixel_ui_preserves_the_legacy_overlay_without_an_opaque_root() {
+        let console = CommandConsoleView {
+            query: "gi".to_owned(),
+            preedit: "t".to_owned(),
+            items: vec!["give potion".to_owned(), "goto town".to_owned()],
+            selected_index: Some(1),
+            diagnostic: Some("invalid target".to_owned()),
+        };
+        let frame = project_console_ui(&console)
+            .unwrap()
+            .resolve(punctum_ui::UiSize::new(1000, 720))
+            .unwrap();
+        assert!(!frame.commands().iter().any(|command| matches!(
+            command,
+            punctum_ui::UiDrawCommand::Fill {
+                bounds,
+                color,
+                ..
+            } if *bounds == punctum_ui::UiRect::new(0, 0, 1000, 720)
+                && color.alpha == 255
+        )));
+        let actual_labels = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                punctum_ui::UiDrawCommand::Text { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual_labels, ["> git", "give potion", "goto town", "invalid target"]);
     }
 
     fn key(name: NamedKey) -> KeyEvent {

@@ -55,22 +55,21 @@ impl<'window> NativeTarget<'window> {
     }
 
     pub fn present(&mut self, frame: &FramePlan) -> Result<PresentOutcome, NativeTargetError> {
-        if frame.labels().is_empty() {
-            return self
-                .runtime
-                .present_plan(frame.gpu())
-                .map_err(NativeTargetError::Gpu);
-        }
-
+        let passes = frame.passes();
+        let plans = passes.iter().map(|pass| pass.gpu()).collect::<Vec<_>>();
         let mut text_result = Ok(());
         let text = &mut self.text;
-        let result = self.runtime.present_plan_with_overlay(
-            frame.gpu(),
-            |device, queue, target, encoder, format, surface_size| {
+        let result = self.runtime.present_plans_with_overlays(
+            &plans,
+            |index, device, queue, target, encoder, format, surface_size| {
+                let pass = &passes[index];
+                if pass.labels().is_empty() {
+                    return;
+                }
                 text_result = text.encode(
-                    frame.labels(),
-                    frame.viewport(),
-                    frame.text_scale(),
+                    pass.labels(),
+                    pass.viewport(),
+                    pass.text_scale(),
                     device,
                     queue,
                     target,
@@ -186,7 +185,10 @@ impl TextGpu {
             let mut buffer = Buffer::new(
                 font_system,
                 Metrics::new(
-                    text_scale.font_size(grid_viewport.cell_size.height),
+                    label
+                        .font_size
+                        .map(|size| size as f32)
+                        .unwrap_or_else(|| text_scale.font_size(grid_viewport.cell_size.height)),
                     bounds.height().max(1) as f32,
                 ),
             );

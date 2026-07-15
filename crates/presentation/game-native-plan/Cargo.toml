@@ -10,6 +10,7 @@ game-assets = { path = "../game-assets" }
 game-view = { path = "../game-view" }
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }
+punctum-ui = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

@@ -260,31 +260,51 @@ impl<'window> GpuRuntime<'window> {
             PixelSize,
         ),
     {
-        if plan.viewport.target_size != self.surface_size {
-            return Err(GpuRuntimeError::ViewportSizeMismatch {
-                viewport_size: plan.viewport.target_size,
-                surface_size: self.surface_size,
-            });
+        let mut overlay = Some(encode_overlay);
+        self.present_plans_with_overlays(&[plan], move |_, device, queue, target, encoder, format, size| {
+            overlay
+                .take()
+                .expect("the single-plan overlay is encoded once")(
+                device, queue, target, encoder, format, size,
+            );
+        })
+    }
+
+    pub fn present_plans_with_overlays<F>(
+        &mut self,
+        plans: &[&SubmissionPlan],
+        mut encode_overlay: F,
+    ) -> Result<PresentOutcome, GpuRuntimeError>
+    where
+        F: FnMut(
+            usize,
+            &wgpu::Device,
+            &wgpu::Queue,
+            &wgpu::TextureView,
+            &mut wgpu::CommandEncoder,
+            wgpu::TextureFormat,
+            PixelSize,
+        ),
+    {
+        for plan in plans {
+            if plan.viewport.target_size != self.surface_size {
+                return Err(GpuRuntimeError::ViewportSizeMismatch {
+                    viewport_size: plan.viewport.target_size,
+                    surface_size: self.surface_size,
+                });
+            }
         }
-
-        self.apply_uploads(plan)?;
-        self.queue.write_buffer(
-            &self.uniform_buffer,
-            0,
-            &encode_uniform(plan.viewport, self.atlas_size),
-        );
-
         if !self.configured || self.surface_size.is_empty() {
             return Ok(PresentOutcome::SkippedMinimized);
         }
 
         match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => {
-                self.render_with_overlay(frame, plan, encode_overlay);
+                self.render_plans_with_overlays(frame, plans, &mut encode_overlay)?;
                 self.finish_acquired_frame(SurfaceAcquisition::Success)
             }
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
-                self.render_with_overlay(frame, plan, encode_overlay);
+                self.render_plans_with_overlays(frame, plans, &mut encode_overlay)?;
                 self.finish_acquired_frame(SurfaceAcquisition::Suboptimal)
             }
             wgpu::CurrentSurfaceTexture::Timeout => {
@@ -372,13 +392,15 @@ impl<'window> GpuRuntime<'window> {
         Ok(())
     }
 
-    fn render_with_overlay<F>(
-        &self,
+    fn render_plans_with_overlays<F>(
+        &mut self,
         frame: wgpu::SurfaceTexture,
-        plan: &SubmissionPlan,
-        encode_overlay: F,
-    ) where
-        F: FnOnce(
+        plans: &[&SubmissionPlan],
+        encode_overlay: &mut F,
+    ) -> Result<(), GpuRuntimeError>
+    where
+        F: FnMut(
+            usize,
             &wgpu::Device,
             &wgpu::Queue,
             &wgpu::TextureView,
@@ -390,43 +412,57 @@ impl<'window> GpuRuntime<'window> {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("punctum-gpu frame encoder"),
-            });
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("punctum-gpu render pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(self.clear_color),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                ..Default::default()
-            });
-            if let Some(scissor) = plan.scissor {
-                pass.set_pipeline(&self.pipeline);
-                pass.set_bind_group(0, &self.bind_group, &[]);
-                pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-                pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
-                pass.draw(0..6, 0..plan.instance_count);
+        for (index, plan) in plans.iter().enumerate() {
+            self.apply_uploads(plan)?;
+            self.queue.write_buffer(
+                &self.uniform_buffer,
+                0,
+                &encode_uniform(plan.viewport, self.atlas_size),
+            );
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("punctum-gpu frame encoder"),
+                });
+            {
+                let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("punctum-gpu render pass"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: if index == 0 {
+                                wgpu::LoadOp::Clear(self.clear_color)
+                            } else {
+                                wgpu::LoadOp::Load
+                            },
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    ..Default::default()
+                });
+                if let Some(scissor) = plan.scissor {
+                    pass.set_pipeline(&self.pipeline);
+                    pass.set_bind_group(0, &self.bind_group, &[]);
+                    pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+                    pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
+                    pass.draw(0..6, 0..plan.instance_count);
+                }
             }
+            encode_overlay(
+                index,
+                &self.device,
+                &self.queue,
+                &view,
+                &mut encoder,
+                self.config.format,
+                self.surface_size,
+            );
+            self.queue.submit([encoder.finish()]);
         }
-        encode_overlay(
-            &self.device,
-            &self.queue,
-            &view,
-            &mut encoder,
-            self.config.format,
-            self.surface_size,
-        );
-        self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
+        Ok(())
     }
 }
 
@@ -547,6 +583,11 @@ fn create_pipeline(
             format: wgpu::VertexFormat::Uint32,
             offset: 44,
             shader_location: 5,
+        },
+        wgpu::VertexAttribute {
+            format: wgpu::VertexFormat::Uint32x4,
+            offset: 48,
+            shader_location: 6,
         },
     ];
     let buffers = [Some(wgpu::VertexBufferLayout {

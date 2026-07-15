@@ -19,6 +19,9 @@ pub fn encode_instances(instances: &[InstanceData]) -> Vec<u8> {
         }
         bytes.extend_from_slice(&instance.tint);
         bytes.extend_from_slice(&instance.visible.to_le_bytes());
+        for value in instance.corner_radii {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
     }
     bytes
 }

@@ -12,6 +12,7 @@ fn instance_encoding_matches_the_declared_vertex_stride() {
         atlas_rect: [3, 4, 5, 6],
         tint: [7, 8, 9, 10],
         visible: 11,
+        corner_radii: [12, 13, 14, 15],
     };
     let bytes = encode_instances(&[instance]);
 
@@ -22,6 +23,8 @@ fn instance_encoding_matches_the_declared_vertex_stride() {
     assert_eq!(&bytes[20..24], &15_i32.to_le_bytes());
     assert_eq!(&bytes[40..44], &[7, 8, 9, 10]);
     assert_eq!(&bytes[44..48], &[11, 0, 0, 0]);
+    assert_eq!(&bytes[48..52], &[12, 0, 0, 0]);
+    assert_eq!(&bytes[60..64], &[15, 0, 0, 0]);
 }
 
 #[test]

@@ -1,197 +1,108 @@
-//! Backend-neutral, stateless layout and paint primitives for discrete surfaces.
-//!
-//! The pipeline has three boundaries:
-//!
-//! 1. [`Ui::measure`] applies integer [`Constraints`] and asks a [`TextLayouter`]
-//!    for backend-owned text layout results.
-//! 2. [`Measured::layout`] places the measured tree without consulting the backend.
-//! 3. [`Frame::paint`] reuses the stored text layout results and sends clipped draw
-//!    operations to a [`PaintTarget`]. It never measures text again.
-//!
-//! Resizing reruns the same stateless measure/layout pipeline with new constraints.
-//! Colors, fonts, border appearance, and themes belong to backend `PaintTarget`
-//! implementations; they are intentionally outside this layout crate.
+//! Pure pixel UI tree, restricted Flex layout, paint commands, and hit regions.
 
 #![forbid(unsafe_code)]
 
-use std::{error::Error, fmt};
+use std::{collections::BTreeSet, error::Error, fmt};
 
-use punctum_grid::{GridPos, GridRect, GridSize};
-
-const MAX_COORDINATE: u32 = i32::MAX as u32;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Constraints {
-    min: GridSize,
-    max: GridSize,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiSize {
+    pub width: u32,
+    pub height: u32,
+}
+impl UiSize {
+    pub const fn new(width: u32, height: u32) -> Self {
+        Self { width, height }
+    }
 }
 
-impl Constraints {
-    pub fn new(min: GridSize, max: GridSize) -> Result<Self, ConstraintError> {
-        if min.cols > max.cols || min.rows > max.rows {
-            return Err(ConstraintError::MinimumExceedsMaximum { min, max });
-        }
-        if max.cols > MAX_COORDINATE || max.rows > MAX_COORDINATE {
-            return Err(ConstraintError::CoordinateRangeExceeded { size: max });
-        }
-        Ok(Self { min, max })
-    }
-
-    pub fn loose(max: GridSize) -> Result<Self, ConstraintError> {
-        Self::new(GridSize::new(0, 0), max)
-    }
-
-    pub fn tight(size: GridSize) -> Result<Self, ConstraintError> {
-        Self::new(size, size)
-    }
-
-    pub const fn min(self) -> GridSize {
-        self.min
-    }
-
-    pub const fn max(self) -> GridSize {
-        self.max
-    }
-
-    fn constrain(self, size: GridSize) -> GridSize {
-        GridSize::new(
-            size.cols.clamp(self.min.cols, self.max.cols),
-            size.rows.clamp(self.min.rows, self.max.rows),
-        )
-    }
-
-    fn loosened_with_max(self, max: GridSize) -> Self {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiRect {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+impl UiRect {
+    pub const fn new(x: u32, y: u32, width: u32, height: u32) -> Self {
         Self {
-            min: GridSize::new(0, 0),
-            max,
+            x,
+            y,
+            width,
+            height,
         }
+    }
+    pub const fn size(self) -> UiSize {
+        UiSize::new(self.width, self.height)
+    }
+    pub const fn is_empty(self) -> bool {
+        self.width == 0 || self.height == 0
+    }
+    pub fn intersect(self, other: Self) -> Option<Self> {
+        let left = self.x.max(other.x);
+        let top = self.y.max(other.y);
+        let right = self
+            .x
+            .saturating_add(self.width)
+            .min(other.x.saturating_add(other.width));
+        let bottom = self
+            .y
+            .saturating_add(self.height)
+            .min(other.y.saturating_add(other.height));
+        (left < right && top < bottom).then_some(Self::new(left, top, right - left, bottom - top))
+    }
+    pub fn contains(self, x: u32, y: u32) -> bool {
+        x >= self.x
+            && y >= self.y
+            && x < self.x.saturating_add(self.width)
+            && y < self.y.saturating_add(self.height)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConstraintError {
-    MinimumExceedsMaximum { min: GridSize, max: GridSize },
-    CoordinateRangeExceeded { size: GridSize },
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiColor {
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
+    pub alpha: u8,
 }
 
-impl fmt::Display for ConstraintError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::MinimumExceedsMaximum { min, max } => {
-                write!(
-                    formatter,
-                    "minimum size {min:?} exceeds maximum size {max:?}"
-                )
-            }
-            Self::CoordinateRangeExceeded { size } => {
-                write!(
-                    formatter,
-                    "size {size:?} exceeds the signed UI coordinate range"
-                )
-            }
-        }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiPixelOffset {
+    pub x: i32,
+    pub y: i32,
+}
+impl UiPixelOffset {
+    pub const fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
     }
 }
-
-impl Error for ConstraintError {}
-
-pub trait TextLayout {
-    fn size(&self) -> GridSize;
-}
-
-pub trait TextLayouter {
-    type Layout: TextLayout;
-    type Error;
-
-    fn layout_text(
-        &mut self,
-        content: &str,
-        constraints: Constraints,
-    ) -> Result<Self::Layout, Self::Error>;
-}
-
-pub trait PaintTarget<S, L> {
-    type Error;
-
-    fn paint_text(
-        &mut self,
-        content: &str,
-        layout: &L,
-        bounds: GridRect,
-        clip: GridRect,
-    ) -> Result<(), Self::Error>;
-
-    fn paint_border(&mut self, bounds: GridRect, clip: GridRect) -> Result<(), Self::Error>;
-
-    fn paint_surface(
-        &mut self,
-        surface: &S,
-        bounds: GridRect,
-        clip: GridRect,
-    ) -> Result<(), Self::Error>;
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Text {
-    content: String,
-}
-
-impl Text {
-    pub fn new(content: impl Into<String>) -> Self {
+impl UiColor {
+    pub const fn new(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
         Self {
-            content: content.into(),
+            red,
+            green,
+            blue,
+            alpha,
         }
     }
-
-    pub fn content(&self) -> &str {
-        &self.content
-    }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Row<S> {
-    children: Vec<Node<S>>,
-    gap: u32,
-}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UiId(pub u32);
 
-impl<S> Row<S> {
-    pub fn new(children: Vec<Node<S>>) -> Self {
-        Self { children, gap: 0 }
-    }
-
-    pub fn with_gap(mut self, gap: u32) -> Self {
-        self.gap = gap;
-        self
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Column<S> {
-    children: Vec<Node<S>>,
-    gap: u32,
-}
-
-impl<S> Column<S> {
-    pub fn new(children: Vec<Node<S>>) -> Self {
-        Self { children, gap: 0 }
-    }
-
-    pub fn with_gap(mut self, gap: u32) -> Self {
-        self.gap = gap;
-        self
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Border<S> {
-    child: Box<Node<S>>,
-}
-
-impl<S> Border<S> {
-    pub fn new(child: impl Into<Node<S>>) -> Self {
-        Self {
-            child: Box::new(child.into()),
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UiContentId(String);
+impl UiContentId {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiBuildError> {
+        let value = value.into();
+        if value.is_empty() {
+            Err(UiBuildError::EmptyContentId)
+        } else {
+            Ok(Self(value))
         }
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -204,758 +115,1015 @@ pub struct Insets {
 }
 
 impl Insets {
-    pub const fn new(left: u32, top: u32, right: u32, bottom: u32) -> Self {
+    pub const fn horizontal(self) -> u32 {
+        self.left.saturating_add(self.right)
+    }
+    pub const fn vertical(self) -> u32 {
+        self.top.saturating_add(self.bottom)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiBorder {
+    pub widths: Insets,
+    pub color: UiColor,
+}
+impl UiBorder {
+    pub const fn is_visible(self) -> bool {
+        self.widths.left != 0
+            || self.widths.top != 0
+            || self.widths.right != 0
+            || self.widths.bottom != 0
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiBorderRadius {
+    pub top_left: u32,
+    pub top_right: u32,
+    pub bottom_right: u32,
+    pub bottom_left: u32,
+}
+impl UiBorderRadius {
+    pub const fn all(radius: u32) -> Self {
         Self {
-            left,
-            top,
-            right,
-            bottom,
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
         }
     }
-
+    pub const fn is_zero(self) -> bool {
+        self.top_left == 0 && self.top_right == 0 && self.bottom_right == 0 && self.bottom_left == 0
+    }
+    pub fn clamped(self, bounds: UiRect) -> Self {
+        let maximum = bounds.width.min(bounds.height) / 2;
+        Self {
+            top_left: self.top_left.min(maximum),
+            top_right: self.top_right.min(maximum),
+            bottom_right: self.bottom_right.min(maximum),
+            bottom_left: self.bottom_left.min(maximum),
+        }
+    }
+    /// Returns the inner corner radii after a border consumes the outer box.
+    /// A circular shader mask uses the larger adjacent edge at each corner.
+    pub fn inset(self, border: Insets) -> Self {
+        Self {
+            top_left: self.top_left.saturating_sub(border.left.max(border.top)),
+            top_right: self.top_right.saturating_sub(border.right.max(border.top)),
+            bottom_right: self
+                .bottom_right
+                .saturating_sub(border.right.max(border.bottom)),
+            bottom_left: self
+                .bottom_left
+                .saturating_sub(border.left.max(border.bottom)),
+        }
+    }
+}
+impl Insets {
     pub const fn all(value: u32) -> Self {
-        Self::new(value, value, value, value)
+        Self {
+            left: value,
+            top: value,
+            right: value,
+            bottom: value,
+        }
     }
-
     pub const fn symmetric(horizontal: u32, vertical: u32) -> Self {
-        Self::new(horizontal, vertical, horizontal, vertical)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Padding<S> {
-    insets: Insets,
-    child: Box<Node<S>>,
-}
-
-impl<S> Padding<S> {
-    pub fn new(insets: Insets, child: impl Into<Node<S>>) -> Self {
         Self {
-            insets,
-            child: Box::new(child.into()),
+            left: horizontal,
+            top: vertical,
+            right: horizontal,
+            bottom: vertical,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Spacer {
-    size: GridSize,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Dimension {
+    #[default]
+    Auto,
+    Px(u32),
+    /// A fraction of the containing content box, represented as `units / base`.
+    Ratio { units: u32, base: u32 },
+    Fill,
 }
-
-impl Spacer {
-    pub const fn new(size: GridSize) -> Self {
-        Self { size }
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum HorizontalAlign {
-    Start,
-    Center,
-    End,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum VerticalAlign {
-    Start,
-    Center,
-    End,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Align<S> {
-    horizontal: HorizontalAlign,
-    vertical: VerticalAlign,
-    child: Box<Node<S>>,
-}
-
-impl<S> Align<S> {
-    pub fn new(
-        horizontal: HorizontalAlign,
-        vertical: VerticalAlign,
-        child: impl Into<Node<S>>,
-    ) -> Self {
-        Self {
-            horizontal,
-            vertical,
-            child: Box::new(child.into()),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SurfaceView<S> {
-    surface: S,
-    size: GridSize,
-}
-
-impl<S> SurfaceView<S> {
-    pub const fn new(surface: S, size: GridSize) -> Self {
-        Self { surface, size }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Node<S> {
-    Text(Text),
-    Row(Row<S>),
-    Column(Column<S>),
-    Border(Border<S>),
-    Padding(Padding<S>),
-    Spacer(Spacer),
-    Align(Align<S>),
-    SurfaceView(SurfaceView<S>),
-}
-
-impl<S> From<Text> for Node<S> {
-    fn from(value: Text) -> Self {
-        Self::Text(value)
-    }
-}
-
-impl<S> From<Row<S>> for Node<S> {
-    fn from(value: Row<S>) -> Self {
-        Self::Row(value)
-    }
-}
-
-impl<S> From<Column<S>> for Node<S> {
-    fn from(value: Column<S>) -> Self {
-        Self::Column(value)
-    }
-}
-
-impl<S> From<Border<S>> for Node<S> {
-    fn from(value: Border<S>) -> Self {
-        Self::Border(value)
-    }
-}
-
-impl<S> From<Padding<S>> for Node<S> {
-    fn from(value: Padding<S>) -> Self {
-        Self::Padding(value)
-    }
-}
-
-impl<S> From<Spacer> for Node<S> {
-    fn from(value: Spacer) -> Self {
-        Self::Spacer(value)
-    }
-}
-
-impl<S> From<Align<S>> for Node<S> {
-    fn from(value: Align<S>) -> Self {
-        Self::Align(value)
-    }
-}
-
-impl<S> From<SurfaceView<S>> for Node<S> {
-    fn from(value: SurfaceView<S>) -> Self {
-        Self::SurfaceView(value)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Ui<S> {
-    root: Node<S>,
-}
-
-impl<S> Ui<S> {
-    pub fn new(root: impl Into<Node<S>>) -> Self {
-        Self { root: root.into() }
-    }
-
-    pub fn measure<'a, T>(
-        &'a self,
-        constraints: Constraints,
-        text_layouter: &mut T,
-    ) -> Result<Measured<'a, S, T::Layout>, LayoutError<T::Error>>
-    where
-        T: TextLayouter,
-    {
-        Ok(Measured {
-            root: measure_node(&self.root, constraints, text_layouter)?,
-        })
-    }
-
-    pub fn layout<'a, T>(
-        &'a self,
-        constraints: Constraints,
-        text_layouter: &mut T,
-    ) -> Result<Frame<'a, S, T::Layout>, LayoutError<T::Error>>
-    where
-        T: TextLayouter,
-    {
-        Ok(self.measure(constraints, text_layouter)?.layout())
-    }
-}
-
-pub struct Measured<'a, S, L> {
-    root: MeasuredNode<'a, S, L>,
-}
-
-impl<'a, S, L> Measured<'a, S, L> {
-    pub fn size(&self) -> GridSize {
-        self.root.size()
-    }
-
-    pub fn layout(self) -> Frame<'a, S, L> {
-        let size = self.root.size();
-        Frame {
-            size,
-            root: place_node(self.root, GridPos::new(0, 0)),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum LayoutError<E> {
-    TextLayout { source: E },
-    TextLayoutOutOfBounds { size: GridSize, max: GridSize },
-}
-
-impl<E: fmt::Display> fmt::Display for LayoutError<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::TextLayout { source } => write!(formatter, "text layout failed: {source}"),
-            Self::TextLayoutOutOfBounds { size, max } => {
-                write!(
-                    formatter,
-                    "text layout size {size:?} exceeds maximum {max:?}"
-                )
-            }
-        }
-    }
-}
-
-impl<E: Error + 'static> Error for LayoutError<E> {}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LayoutKind {
-    Text,
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FlexDirection {
     Row,
+    #[default]
     Column,
-    Border,
-    Padding,
-    Spacer,
-    Align,
-    SurfaceView,
+    Stack,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MainAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CrossAlign {
+    #[default]
+    Start,
+    Center,
+    End,
+    Stretch,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Position {
+    #[default]
+    Flow,
+    Absolute {
+        left: u32,
+        top: u32,
+    },
+    /// Absolute placement in a logical canvas. This is deliberately expressed
+    /// with `UiSize`, rather than a Grid type, so UI remains renderer-neutral.
+    AbsoluteRatio {
+        left: u32,
+        top: u32,
+        base: UiSize,
+    },
 }
 
-pub struct Frame<'a, S, L> {
-    size: GridSize,
-    root: PlacedNode<'a, S, L>,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UiTextSize {
+    Px(u32),
+    Ratio {
+        units: u32,
+        base: u32,
+        minimum: u32,
+        maximum: u32,
+    },
 }
-
-impl<S, L> Frame<'_, S, L> {
-    pub const fn size(&self) -> GridSize {
-        self.size
-    }
-
-    pub fn entries(&self) -> Vec<(LayoutKind, GridRect)> {
-        let mut entries = Vec::new();
-        self.root.collect_entries(&mut entries);
-        entries
-    }
-
-    pub fn paint<P>(&self, target: &mut P) -> Result<(), PaintError<P::Error>>
-    where
-        P: PaintTarget<S, L>,
-    {
-        self.paint_clipped(GridRect::new(GridPos::new(0, 0), self.size), target)
-    }
-
-    pub fn paint_clipped<P>(
-        &self,
-        clip: GridRect,
-        target: &mut P,
-    ) -> Result<(), PaintError<P::Error>>
-    where
-        P: PaintTarget<S, L>,
-    {
-        let Some(clip) = clip.intersection(GridRect::new(GridPos::new(0, 0), self.size)) else {
-            return Ok(());
-        };
-        self.root.paint(clip, target)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum PaintError<E> {
-    Target { source: E },
-}
-
-impl<E: fmt::Display> fmt::Display for PaintError<E> {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl UiTextSize {
+    fn resolve(self, basis: u32) -> u32 {
         match self {
-            Self::Target { source } => write!(formatter, "paint target failed: {source}"),
+            Self::Px(size) => size,
+            Self::Ratio {
+                units,
+                base,
+                minimum,
+                maximum,
+            } => (basis.saturating_mul(units) / base).clamp(minimum, maximum),
         }
     }
 }
 
-impl<E: Error + 'static> Error for PaintError<E> {}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UiStyle {
+    pub width: Dimension,
+    pub height: Dimension,
+    pub min_size: UiSize,
+    pub max_size: Option<UiSize>,
+    /// Fits this node to an integer-scaled, centered logical canvas.
+    pub logical_canvas: Option<UiSize>,
+    pub margin: Insets,
+    pub border: UiBorder,
+    pub padding: Insets,
+    pub border_radius: UiBorderRadius,
+    pub gap: u32,
+    pub direction: FlexDirection,
+    pub main_align: MainAlign,
+    pub cross_align: CrossAlign,
+    pub position: Position,
+    pub clip: bool,
+    pub interactive: bool,
+}
+impl Default for UiStyle {
+    fn default() -> Self {
+        Self {
+            width: Dimension::Auto,
+            height: Dimension::Auto,
+            min_size: UiSize::default(),
+            max_size: None,
+            logical_canvas: None,
+            margin: Insets::default(),
+            border: UiBorder::default(),
+            padding: Insets::default(),
+            border_radius: UiBorderRadius::default(),
+            gap: 0,
+            direction: FlexDirection::Column,
+            main_align: MainAlign::Start,
+            cross_align: CrossAlign::Start,
+            position: Position::Flow,
+            clip: false,
+            interactive: false,
+        }
+    }
+}
+impl UiStyle {
+    pub fn fixed(width: u32, height: u32) -> Self {
+        Self {
+            width: Dimension::Px(width),
+            height: Dimension::Px(height),
+            ..Self::default()
+        }
+    }
+}
 
-enum MeasuredNode<'a, S, L> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UiContent {
+    Empty,
+    Fill(UiColor),
+    Image(UiContentId),
+    ImageTinted {
+        content: UiContentId,
+        tint: UiColor,
+    },
+    ImageStyled {
+        content: UiContentId,
+        tint: UiColor,
+        pixel_offset: UiPixelOffset,
+    },
     Text {
-        content: &'a str,
-        layout: L,
-        size: GridSize,
+        content: String,
+        color: UiColor,
+        font_size: u32,
     },
-    Row {
-        children: Vec<Self>,
-        gaps: Vec<u32>,
-        size: GridSize,
-    },
-    Column {
-        children: Vec<Self>,
-        gaps: Vec<u32>,
-        size: GridSize,
-    },
-    Border {
-        child: Box<Self>,
-        size: GridSize,
-    },
-    Padding {
-        insets: Insets,
-        child: Box<Self>,
-        size: GridSize,
-    },
-    Spacer {
-        size: GridSize,
-    },
-    Align {
-        horizontal: HorizontalAlign,
-        vertical: VerticalAlign,
-        child: Box<Self>,
-        size: GridSize,
-    },
-    SurfaceView {
-        surface: &'a S,
-        size: GridSize,
+    TextScaled {
+        content: String,
+        color: UiColor,
+        font_size: UiTextSize,
     },
 }
-
-impl<S, L> MeasuredNode<'_, S, L> {
-    fn size(&self) -> GridSize {
-        match self {
-            Self::Text { size, .. }
-            | Self::Row { size, .. }
-            | Self::Column { size, .. }
-            | Self::Border { size, .. }
-            | Self::Padding { size, .. }
-            | Self::Spacer { size }
-            | Self::Align { size, .. }
-            | Self::SurfaceView { size, .. } => *size,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiNode {
+    pub id: UiId,
+    pub style: UiStyle,
+    pub content: UiContent,
+    pub children: Vec<UiNode>,
+}
+impl UiNode {
+    pub fn new(id: UiId) -> Self {
+        Self {
+            id,
+            style: UiStyle::default(),
+            content: UiContent::Empty,
+            children: Vec::new(),
         }
+    }
+    pub fn with_style(mut self, style: UiStyle) -> Self {
+        self.style = style;
+        self
+    }
+    pub fn with_content(mut self, content: UiContent) -> Self {
+        self.content = content;
+        self
+    }
+    pub fn with_children(mut self, children: impl IntoIterator<Item = UiNode>) -> Self {
+        self.children = children.into_iter().collect();
+        self
     }
 }
 
-fn measure_node<'a, S, T>(
-    node: &'a Node<S>,
-    constraints: Constraints,
-    text_layouter: &mut T,
-) -> Result<MeasuredNode<'a, S, T::Layout>, LayoutError<T::Error>>
-where
-    T: TextLayouter,
-{
-    match node {
-        Node::Text(text) => {
-            let layout = text_layouter
-                .layout_text(text.content(), constraints)
-                .map_err(|source| LayoutError::TextLayout { source })?;
-            let layout_size = layout.size();
-            if layout_size.cols > constraints.max.cols || layout_size.rows > constraints.max.rows {
-                return Err(LayoutError::TextLayoutOutOfBounds {
-                    size: layout_size,
-                    max: constraints.max,
-                });
-            }
-            Ok(MeasuredNode::Text {
-                content: text.content(),
-                layout,
-                size: constraints.constrain(layout_size),
-            })
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiTree {
+    root: UiNode,
+}
+impl UiTree {
+    pub fn new(root: UiNode) -> Result<Self, UiBuildError> {
+        let mut ids = BTreeSet::new();
+        validate_node(&root, &mut ids)?;
+        Ok(Self { root })
+    }
+    pub fn root(&self) -> &UiNode {
+        &self.root
+    }
+    pub fn resolve(&self, viewport: UiSize) -> Result<UiFrame, UiLayoutError> {
+        resolve_tree(&self.root, viewport)
+    }
+}
+fn validate_node(node: &UiNode, ids: &mut BTreeSet<UiId>) -> Result<(), UiBuildError> {
+    if !ids.insert(node.id) {
+        return Err(UiBuildError::DuplicateId(node.id));
+    }
+    validate_style(node.id, node.style)?;
+    validate_content(node.id, &node.content)?;
+    for child in &node.children {
+        validate_node(child, ids)?;
+    }
+    Ok(())
+}
+
+fn validate_content(id: UiId, content: &UiContent) -> Result<(), UiBuildError> {
+    if let UiContent::TextScaled {
+        font_size: UiTextSize::Ratio { base: 0, .. },
+        ..
+    } = content
+    {
+        return Err(UiBuildError::ZeroTextSizeBase(id));
+    }
+    Ok(())
+}
+
+fn validate_style(id: UiId, style: UiStyle) -> Result<(), UiBuildError> {
+    for dimension in [style.width, style.height] {
+        if let Dimension::Ratio { base: 0, .. } = dimension {
+            return Err(UiBuildError::ZeroRatioBase(id));
         }
-        Node::Row(row) => measure_linear(
-            &row.children,
-            row.gap,
-            constraints,
-            text_layouter,
-            Axis::Horizontal,
-        ),
-        Node::Column(column) => measure_linear(
-            &column.children,
-            column.gap,
-            constraints,
-            text_layouter,
-            Axis::Vertical,
-        ),
-        Node::Border(border) => {
-            let inner_max = subtract_size(constraints.max, GridSize::new(2, 2));
-            let child = measure_node(
-                &border.child,
-                constraints.loosened_with_max(inner_max),
-                text_layouter,
-            )?;
-            let desired = add_size(child.size(), GridSize::new(2, 2));
-            Ok(MeasuredNode::Border {
-                child: Box::new(child),
-                size: constraints.constrain(desired),
-            })
-        }
-        Node::Padding(padding) => {
-            let inset_size = GridSize::new(
-                padding.insets.left.saturating_add(padding.insets.right),
-                padding.insets.top.saturating_add(padding.insets.bottom),
-            );
-            let inner_max = subtract_size(constraints.max, inset_size);
-            let child = measure_node(
-                &padding.child,
-                constraints.loosened_with_max(inner_max),
-                text_layouter,
-            )?;
-            let desired = add_size(child.size(), inset_size);
-            Ok(MeasuredNode::Padding {
-                insets: padding.insets,
-                child: Box::new(child),
-                size: constraints.constrain(desired),
-            })
-        }
-        Node::Spacer(spacer) => Ok(MeasuredNode::Spacer {
-            size: constraints.constrain(spacer.size),
-        }),
-        Node::Align(align) => {
-            let child = measure_node(
-                &align.child,
-                constraints.loosened_with_max(constraints.max),
-                text_layouter,
-            )?;
-            Ok(MeasuredNode::Align {
-                horizontal: align.horizontal,
-                vertical: align.vertical,
-                child: Box::new(child),
-                size: constraints.max,
-            })
-        }
-        Node::SurfaceView(view) => Ok(MeasuredNode::SurfaceView {
-            surface: &view.surface,
-            size: constraints.constrain(view.size),
-        }),
+    }
+    if let Position::AbsoluteRatio { base, .. } = style.position
+        && (base.width == 0 || base.height == 0)
+    {
+        return Err(UiBuildError::ZeroRatioBase(id));
+    }
+    if let Some(canvas) = style.logical_canvas
+        && (canvas.width == 0 || canvas.height == 0)
+    {
+        return Err(UiBuildError::ZeroLogicalCanvas(id));
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UiDrawCommand {
+    Fill {
+        bounds: UiRect,
+        color: UiColor,
+        border_radius: UiBorderRadius,
+        clip: UiRect,
+    },
+    Image {
+        bounds: UiRect,
+        content: UiContentId,
+        tint: UiColor,
+        pixel_offset: UiPixelOffset,
+        border_radius: UiBorderRadius,
+        clip: UiRect,
+    },
+    Text {
+        bounds: UiRect,
+        content: String,
+        color: UiColor,
+        font_size: u32,
+        clip: UiRect,
+    },
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UiHitRegion {
+    pub id: UiId,
+    pub bounds: UiRect,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiFrame {
+    viewport: UiSize,
+    commands: Vec<UiDrawCommand>,
+    hits: Vec<UiHitRegion>,
+}
+impl UiFrame {
+    pub const fn viewport(&self) -> UiSize {
+        self.viewport
+    }
+    pub fn commands(&self) -> &[UiDrawCommand] {
+        &self.commands
+    }
+    pub fn hit_regions(&self) -> &[UiHitRegion] {
+        &self.hits
+    }
+    pub fn hit_test(&self, x: u32, y: u32) -> Option<UiId> {
+        self.hits
+            .iter()
+            .rev()
+            .find(|region| region.bounds.contains(x, y))
+            .map(|region| region.id)
     }
 }
 
-#[derive(Clone, Copy)]
-enum Axis {
-    Horizontal,
-    Vertical,
-}
-
-fn measure_linear<'a, S, T>(
-    nodes: &'a [Node<S>],
-    requested_gap: u32,
-    constraints: Constraints,
-    text_layouter: &mut T,
-    axis: Axis,
-) -> Result<MeasuredNode<'a, S, T::Layout>, LayoutError<T::Error>>
-where
-    T: TextLayouter,
-{
-    let main_max = main(constraints.max, axis);
-    let gap_count = u32::try_from(nodes.len().saturating_sub(1)).unwrap_or(u32::MAX);
-    let mut gap_budget = requested_gap.saturating_mul(gap_count).min(main_max);
-    let mut gaps = Vec::with_capacity(nodes.len().saturating_sub(1));
-    for _ in 1..nodes.len() {
-        let gap = requested_gap.min(gap_budget);
-        gaps.push(gap);
-        gap_budget -= gap;
-    }
-
-    let total_gaps: u32 = gaps.iter().copied().sum();
-    let mut remaining = main_max - total_gaps;
-    let mut cross_size = 0;
-    let mut children = Vec::with_capacity(nodes.len());
-    for node in nodes {
-        let child_max = with_main(constraints.max, axis, remaining);
-        let child = measure_node(
-            node,
-            constraints.loosened_with_max(child_max),
-            text_layouter,
-        )?;
-        remaining -= main(child.size(), axis);
-        cross_size = cross_size.max(cross(child.size(), axis));
-        children.push(child);
-    }
-
-    let used_main = main_max - remaining;
-    let desired = from_axes(used_main, cross_size, axis);
-    let size = constraints.constrain(desired);
-    Ok(match axis {
-        Axis::Horizontal => MeasuredNode::Row {
-            children,
-            gaps,
-            size,
-        },
-        Axis::Vertical => MeasuredNode::Column {
-            children,
-            gaps,
-            size,
-        },
+fn resolve_tree(root: &UiNode, viewport: UiSize) -> Result<UiFrame, UiLayoutError> {
+    let root_bounds = UiRect::new(0, 0, viewport.width, viewport.height);
+    let mut commands = Vec::new();
+    let mut hits = Vec::new();
+    resolve_node(
+        root,
+        root_bounds,
+        viewport,
+        root_bounds,
+        &mut commands,
+        &mut hits,
+    )?;
+    Ok(UiFrame {
+        viewport,
+        commands,
+        hits,
     })
 }
-
-fn main(size: GridSize, axis: Axis) -> u32 {
-    match axis {
-        Axis::Horizontal => size.cols,
-        Axis::Vertical => size.rows,
+fn resolve_node(
+    node: &UiNode,
+    offered: UiRect,
+    ratio_basis: UiSize,
+    inherited_clip: UiRect,
+    commands: &mut Vec<UiDrawCommand>,
+    hits: &mut Vec<UiHitRegion>,
+) -> Result<(), UiLayoutError> {
+    let bounds = constrain(node, offered, ratio_basis)?;
+    let clip = if node.style.clip {
+        inherited_clip
+            .intersect(bounds)
+            .unwrap_or(UiRect::default())
+    } else {
+        inherited_clip
+    };
+    if bounds.is_empty() || clip.is_empty() {
+        return Ok(());
     }
-}
-
-fn cross(size: GridSize, axis: Axis) -> u32 {
-    match axis {
-        Axis::Horizontal => size.rows,
-        Axis::Vertical => size.cols,
+    let radius = node.style.border_radius.clamped(bounds);
+    if node.style.border.is_visible() {
+        commands.push(UiDrawCommand::Fill {
+            bounds,
+            color: node.style.border.color,
+            border_radius: radius,
+            clip,
+        });
     }
-}
-
-fn with_main(size: GridSize, axis: Axis, value: u32) -> GridSize {
-    match axis {
-        Axis::Horizontal => GridSize::new(value, size.rows),
-        Axis::Vertical => GridSize::new(size.cols, value),
-    }
-}
-
-fn from_axes(main: u32, cross: u32, axis: Axis) -> GridSize {
-    match axis {
-        Axis::Horizontal => GridSize::new(main, cross),
-        Axis::Vertical => GridSize::new(cross, main),
-    }
-}
-
-fn add_size(left: GridSize, right: GridSize) -> GridSize {
-    GridSize::new(
-        left.cols.saturating_add(right.cols).min(MAX_COORDINATE),
-        left.rows.saturating_add(right.rows).min(MAX_COORDINATE),
-    )
-}
-
-fn subtract_size(size: GridSize, amount: GridSize) -> GridSize {
-    GridSize::new(
-        size.cols.saturating_sub(amount.cols),
-        size.rows.saturating_sub(amount.rows),
-    )
-}
-
-enum PlacedNode<'a, S, L> {
-    Text {
-        content: &'a str,
-        layout: L,
-        bounds: GridRect,
-    },
-    Row {
-        children: Vec<Self>,
-        bounds: GridRect,
-    },
-    Column {
-        children: Vec<Self>,
-        bounds: GridRect,
-    },
-    Border {
-        child: Box<Self>,
-        bounds: GridRect,
-    },
-    Padding {
-        child: Box<Self>,
-        bounds: GridRect,
-    },
-    Spacer {
-        bounds: GridRect,
-    },
-    Align {
-        child: Box<Self>,
-        bounds: GridRect,
-    },
-    SurfaceView {
-        surface: &'a S,
-        bounds: GridRect,
-    },
-}
-
-impl<'a, S, L> PlacedNode<'a, S, L> {
-    fn bounds(&self) -> GridRect {
-        match self {
-            Self::Text { bounds, .. }
-            | Self::Row { bounds, .. }
-            | Self::Column { bounds, .. }
-            | Self::Border { bounds, .. }
-            | Self::Padding { bounds, .. }
-            | Self::Spacer { bounds }
-            | Self::Align { bounds, .. }
-            | Self::SurfaceView { bounds, .. } => *bounds,
-        }
-    }
-
-    fn kind(&self) -> LayoutKind {
-        match self {
-            Self::Text { .. } => LayoutKind::Text,
-            Self::Row { .. } => LayoutKind::Row,
-            Self::Column { .. } => LayoutKind::Column,
-            Self::Border { .. } => LayoutKind::Border,
-            Self::Padding { .. } => LayoutKind::Padding,
-            Self::Spacer { .. } => LayoutKind::Spacer,
-            Self::Align { .. } => LayoutKind::Align,
-            Self::SurfaceView { .. } => LayoutKind::SurfaceView,
-        }
-    }
-
-    fn collect_entries(&self, entries: &mut Vec<(LayoutKind, GridRect)>) {
-        entries.push((self.kind(), self.bounds()));
-        match self {
-            Self::Row { children, .. } | Self::Column { children, .. } => {
-                for child in children {
-                    child.collect_entries(entries);
-                }
-            }
-            Self::Border { child, .. }
-            | Self::Padding { child, .. }
-            | Self::Align { child, .. } => child.collect_entries(entries),
-            Self::Text { .. } | Self::Spacer { .. } | Self::SurfaceView { .. } => {}
-        }
-    }
-
-    fn paint<P>(&self, parent_clip: GridRect, target: &mut P) -> Result<(), PaintError<P::Error>>
-    where
-        P: PaintTarget<S, L>,
-    {
-        let Some(clip) = parent_clip.intersection(self.bounds()) else {
-            return Ok(());
-        };
-        match self {
-            Self::Text {
-                content,
-                layout,
-                bounds,
-            } => target
-                .paint_text(content, layout, *bounds, clip)
-                .map_err(|source| PaintError::Target { source }),
-            Self::Row { children, .. } | Self::Column { children, .. } => {
-                for child in children {
-                    child.paint(clip, target)?;
-                }
-                Ok(())
-            }
-            Self::Border { child, bounds } => {
-                target
-                    .paint_border(*bounds, clip)
-                    .map_err(|source| PaintError::Target { source })?;
-                child.paint(clip, target)
-            }
-            Self::Padding { child, .. } | Self::Align { child, .. } => child.paint(clip, target),
-            Self::Spacer { .. } => Ok(()),
-            Self::SurfaceView { surface, bounds } => target
-                .paint_surface(surface, *bounds, clip)
-                .map_err(|source| PaintError::Target { source }),
-        }
-    }
-}
-
-fn place_node<S, L>(measured: MeasuredNode<'_, S, L>, origin: GridPos) -> PlacedNode<'_, S, L> {
-    let bounds = GridRect::new(origin, measured.size());
-    match measured {
-        MeasuredNode::Text {
-            content, layout, ..
-        } => PlacedNode::Text {
+    let paint_bounds = inset(bounds, node.style.border.widths);
+    let content_radius = radius.inset(node.style.border.widths).clamped(paint_bounds);
+    match &node.content {
+        UiContent::Empty => {}
+        UiContent::Fill(color) => commands.push(UiDrawCommand::Fill {
+            bounds: paint_bounds,
+            color: *color,
+            border_radius: content_radius,
+            clip,
+        }),
+        UiContent::Image(content) => commands.push(UiDrawCommand::Image {
+            bounds: paint_bounds,
+            content: content.clone(),
+            tint: UiColor::new(255, 255, 255, 255),
+            pixel_offset: UiPixelOffset::default(),
+            border_radius: content_radius,
+            clip,
+        }),
+        UiContent::ImageTinted { content, tint } => commands.push(UiDrawCommand::Image {
+            bounds: paint_bounds,
+            content: content.clone(),
+            tint: *tint,
+            pixel_offset: UiPixelOffset::default(),
+            border_radius: content_radius,
+            clip,
+        }),
+        UiContent::ImageStyled {
             content,
-            layout,
-            bounds,
-        },
-        MeasuredNode::Row { children, gaps, .. } => PlacedNode::Row {
-            children: place_linear(children, gaps, origin, Axis::Horizontal),
-            bounds,
-        },
-        MeasuredNode::Column { children, gaps, .. } => PlacedNode::Column {
-            children: place_linear(children, gaps, origin, Axis::Vertical),
-            bounds,
-        },
-        MeasuredNode::Border { child, .. } => PlacedNode::Border {
-            child: Box::new(place_node(
-                *child,
-                offset(origin, bounds.size.cols.min(1), bounds.size.rows.min(1)),
-            )),
-            bounds,
-        },
-        MeasuredNode::Padding { insets, child, .. } => PlacedNode::Padding {
-            child: Box::new(place_node(
-                *child,
-                offset(
-                    origin,
-                    insets.left.min(bounds.size.cols),
-                    insets.top.min(bounds.size.rows),
-                ),
-            )),
-            bounds,
-        },
-        MeasuredNode::Spacer { .. } => PlacedNode::Spacer { bounds },
-        MeasuredNode::Align {
-            horizontal,
-            vertical,
-            child,
-            ..
+            tint,
+            pixel_offset,
+        } => commands.push(UiDrawCommand::Image {
+            bounds: paint_bounds,
+            content: content.clone(),
+            tint: *tint,
+            pixel_offset: *pixel_offset,
+            border_radius: radius.clamped(paint_bounds),
+            clip,
+        }),
+        UiContent::Text {
+            content,
+            color,
+            font_size,
+        } => commands.push(UiDrawCommand::Text {
+            bounds: paint_bounds,
+            content: content.clone(),
+            color: *color,
+            font_size: *font_size,
+            clip,
+        }),
+        UiContent::TextScaled {
+            content,
+            color,
+            font_size,
+        } => commands.push(UiDrawCommand::Text {
+            bounds: paint_bounds,
+            content: content.clone(),
+            color: *color,
+            font_size: font_size.resolve(ratio_basis.height),
+            clip,
+        }),
+    }
+    if node.style.interactive {
+        hits.push(UiHitRegion {
+            id: node.id,
+            bounds: bounds.intersect(clip).unwrap_or_default(),
+        });
+    }
+    layout_children(
+        node,
+        inset(paint_bounds, node.style.padding),
+        clip,
+        commands,
+        hits,
+    )
+}
+
+fn inset(bounds: UiRect, insets: Insets) -> UiRect {
+    UiRect::new(
+        bounds.x.saturating_add(insets.left),
+        bounds.y.saturating_add(insets.top),
+        bounds.width.saturating_sub(insets.horizontal()),
+        bounds.height.saturating_sub(insets.vertical()),
+    )
+}
+fn constrain(
+    node: &UiNode,
+    offered: UiRect,
+    ratio_basis: UiSize,
+) -> Result<UiRect, UiLayoutError> {
+    let intrinsic = intrinsic_size(node, ratio_basis);
+    let width = dimension(node.style.width, ratio_basis.width, intrinsic.width);
+    let height = dimension(node.style.height, ratio_basis.height, intrinsic.height);
+    let width = width.max(node.style.min_size.width);
+    let height = height.max(node.style.min_size.height);
+    let (width, height) = match node.style.max_size {
+        Some(max) => (width.min(max.width), height.min(max.height)),
+        None => (width, height),
+    };
+    let width = width.min(offered.width);
+    let height = height.min(offered.height);
+    if let Some(canvas) = node.style.logical_canvas {
+        let scale = (offered.width / canvas.width).min(offered.height / canvas.height);
+        let width = canvas.width.saturating_mul(scale);
+        let height = canvas.height.saturating_mul(scale);
+        return Ok(UiRect::new(
+            offered.x.saturating_add(offered.width.saturating_sub(width) / 2),
+            offered.y.saturating_add(offered.height.saturating_sub(height) / 2),
+            width,
+            height,
+        ));
+    }
+    Ok(UiRect::new(offered.x, offered.y, width, height))
+}
+fn intrinsic_size(node: &UiNode, ratio_basis: UiSize) -> UiSize {
+    match &node.content {
+        UiContent::Text {
+            content, font_size, ..
+        } => UiSize::new(
+            (content.chars().count() as u32).saturating_mul((*font_size).max(1) / 2 + 1),
+            font_size.saturating_add(4),
+        ),
+        UiContent::TextScaled {
+            content, font_size, ..
         } => {
-            let child_size = child.size();
-            let col = alignment_offset(bounds.size.cols, child_size.cols, horizontal);
-            let row = vertical_alignment_offset(bounds.size.rows, child_size.rows, vertical);
-            PlacedNode::Align {
-                child: Box::new(place_node(*child, offset(origin, col, row))),
-                bounds,
+            let font_size = font_size.resolve(ratio_basis.height);
+            UiSize::new(
+                (content.chars().count() as u32).saturating_mul(font_size.max(1) / 2 + 1),
+                font_size.saturating_add(4),
+            )
+        }
+        UiContent::Image(_) | UiContent::ImageTinted { .. } | UiContent::ImageStyled { .. } => {
+            UiSize::new(1, 1)
+        }
+        _ => UiSize::default(),
+    }
+}
+fn dimension(dimension: Dimension, offered: u32, intrinsic: u32) -> u32 {
+    match dimension {
+        Dimension::Auto => intrinsic,
+        Dimension::Px(value) => value,
+        Dimension::Ratio { units, base } => offered.saturating_mul(units) / base,
+        Dimension::Fill => offered,
+    }
+}
+fn layout_children(
+    node: &UiNode,
+    content: UiRect,
+    clip: UiRect,
+    commands: &mut Vec<UiDrawCommand>,
+    hits: &mut Vec<UiHitRegion>,
+) -> Result<(), UiLayoutError> {
+    let flow: Vec<_> = node
+        .children
+        .iter()
+        .filter(|child| matches!(child.style.position, Position::Flow))
+        .collect();
+    let horizontal = matches!(node.style.direction, FlexDirection::Row);
+    let stacked = matches!(node.style.direction, FlexDirection::Stack);
+    let main_available = if horizontal {
+        content.width
+    } else {
+        content.height
+    };
+    let cross_available = if horizontal {
+        content.height
+    } else {
+        content.width
+    };
+    let gap_total = node
+        .style
+        .gap
+        .saturating_mul(flow.len().saturating_sub(1) as u32);
+    let fixed: u32 = flow
+        .iter()
+        .map(|child| {
+            let size = intrinsic_size(child, content.size());
+            let main_dimension = if horizontal {
+                child.style.width
+            } else {
+                child.style.height
+            };
+            match main_dimension {
+                Dimension::Px(value) => {
+                    value.saturating_add(main_margin(child.style.margin, horizontal))
+                }
+                Dimension::Auto => {
+                    if horizontal {
+                        size.width
+                            .saturating_add(main_margin(child.style.margin, horizontal))
+                    } else {
+                        size.height
+                            .saturating_add(main_margin(child.style.margin, horizontal))
+                    }
+                }
+                Dimension::Ratio { .. } => dimension(main_dimension, main_available, 0)
+                    .saturating_add(main_margin(child.style.margin, horizontal)),
+                Dimension::Fill => 0,
+            }
+        })
+        .sum();
+    let required_minimum = flow
+        .iter()
+        .map(|child| {
+            if horizontal {
+                child.style.min_size.width
+            } else {
+                child.style.min_size.height
+            }
+        })
+        .sum::<u32>()
+        .saturating_add(gap_total);
+    if required_minimum > main_available && !stacked {
+        return Err(UiLayoutError::InsufficientSpace { id: node.id });
+    }
+    let fills = flow
+        .iter()
+        .filter(|child| {
+            matches!(
+                if horizontal {
+                    child.style.width
+                } else {
+                    child.style.height
+                },
+                Dimension::Fill
+            )
+        })
+        .count() as u32;
+    let remaining = main_available.saturating_sub(fixed.saturating_add(gap_total));
+    let fill = if fills == 0 { 0 } else { remaining / fills };
+    let extra = if fills == 0 {
+        remaining
+    } else {
+        remaining % fills
+    };
+    let used = fixed
+        .saturating_add(gap_total)
+        .saturating_add(fill.saturating_mul(fills));
+    let start = match node.style.main_align {
+        MainAlign::Start | MainAlign::SpaceBetween => 0,
+        MainAlign::Center => extra / 2,
+        MainAlign::End => extra,
+    };
+    let distributed_gap =
+        if matches!(node.style.main_align, MainAlign::SpaceBetween) && flow.len() > 1 {
+            node.style
+                .gap
+                .saturating_add(extra / (flow.len() as u32 - 1))
+        } else {
+            node.style.gap
+        };
+    let mut cursor = start;
+    for child in flow {
+        let intrinsic = intrinsic_size(child, content.size());
+        let margin_before = if horizontal {
+            child.style.margin.left
+        } else {
+            child.style.margin.top
+        };
+        let margin_after = if horizontal {
+            child.style.margin.right
+        } else {
+            child.style.margin.bottom
+        };
+        cursor = cursor.saturating_add(margin_before);
+        let main = match if horizontal {
+            child.style.width
+        } else {
+            child.style.height
+        } {
+            Dimension::Px(value) => value,
+            Dimension::Auto => {
+                if horizontal {
+                    intrinsic.width
+                } else {
+                    intrinsic.height
+                }
+            }
+            Dimension::Ratio { .. } => dimension(
+                if horizontal {
+                    child.style.width
+                } else {
+                    child.style.height
+                },
+                main_available,
+                0,
+            ),
+            Dimension::Fill => fill,
+        };
+        let cross_dimension = if horizontal {
+            child.style.height
+        } else {
+            child.style.width
+        };
+        let cross_margin = cross_margin(child.style.margin, horizontal);
+        let mut cross = dimension(
+            cross_dimension,
+            cross_available.saturating_sub(cross_margin),
+            if horizontal {
+                intrinsic.height
+            } else {
+                intrinsic.width
+            },
+        );
+        if matches!(node.style.cross_align, CrossAlign::Stretch)
+            && matches!(cross_dimension, Dimension::Auto | Dimension::Fill)
+        {
+            cross = cross_available.saturating_sub(cross_margin);
+        }
+        let cross_offset = match node.style.cross_align {
+            CrossAlign::Start | CrossAlign::Stretch => 0,
+            CrossAlign::Center => {
+                cross_available.saturating_sub(cross.saturating_add(cross_margin)) / 2
+            }
+            CrossAlign::End => cross_available.saturating_sub(cross.saturating_add(cross_margin)),
+        };
+        let offered = if stacked {
+            content
+        } else if horizontal {
+            UiRect::new(
+                content.x.saturating_add(cursor),
+                content
+                    .y
+                    .saturating_add(cross_offset)
+                    .saturating_add(child.style.margin.top),
+                main,
+                cross,
+            )
+        } else {
+            UiRect::new(
+                content
+                    .x
+                    .saturating_add(cross_offset)
+                    .saturating_add(child.style.margin.left),
+                content.y.saturating_add(cursor),
+                cross,
+                main,
+            )
+        };
+        let offered = if horizontal {
+            UiRect::new(
+                offered.x,
+                offered.y,
+                offered.width.min(main_available.saturating_sub(cursor)),
+                offered.height,
+            )
+        } else {
+            UiRect::new(
+                offered.x,
+                offered.y,
+                offered.width,
+                offered.height.min(main_available.saturating_sub(cursor)),
+            )
+        };
+        resolve_node(child, offered, content.size(), clip, commands, hits)?;
+        if !stacked {
+            cursor = cursor
+                .saturating_add(main)
+                .saturating_add(margin_after)
+                .saturating_add(distributed_gap);
+        }
+    }
+    for child in node
+        .children
+        .iter()
+        .filter(|child| {
+            matches!(
+                child.style.position,
+                Position::Absolute { .. } | Position::AbsoluteRatio { .. }
+            )
+        })
+    {
+        let (left, top) = match child.style.position {
+            Position::Absolute { left, top } => (left, top),
+            Position::AbsoluteRatio { left, top, base } => (
+                content.width.saturating_mul(left) / base.width,
+                content.height.saturating_mul(top) / base.height,
+            ),
+            Position::Flow => unreachable!(),
+        };
+        let offered = UiRect::new(
+            content.x.saturating_add(left),
+            content.y.saturating_add(top),
+            content.width.saturating_sub(left),
+            content.height.saturating_sub(top),
+        );
+        resolve_node(child, offered, content.size(), clip, commands, hits)?;
+    }
+    let _ = used;
+    Ok(())
+}
+
+const fn main_margin(margin: Insets, horizontal: bool) -> u32 {
+    if horizontal {
+        margin.horizontal()
+    } else {
+        margin.vertical()
+    }
+}
+const fn cross_margin(margin: Insets, horizontal: bool) -> u32 {
+    if horizontal {
+        margin.vertical()
+    } else {
+        margin.horizontal()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UiBuildError {
+    EmptyContentId,
+    DuplicateId(UiId),
+    ZeroRatioBase(UiId),
+    ZeroLogicalCanvas(UiId),
+    ZeroTextSizeBase(UiId),
+}
+impl fmt::Display for UiBuildError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::EmptyContentId => f.write_str("UI content id must not be empty"),
+            Self::DuplicateId(id) => write!(f, "UI node id {:?} is duplicated", id),
+            Self::ZeroRatioBase(id) => write!(f, "UI node {:?} has a zero ratio base", id),
+            Self::ZeroLogicalCanvas(id) => {
+                write!(f, "UI node {:?} has a zero logical canvas", id)
+            }
+            Self::ZeroTextSizeBase(id) => {
+                write!(f, "UI node {:?} has a zero text-size base", id)
             }
         }
-        MeasuredNode::SurfaceView { surface, .. } => PlacedNode::SurfaceView { surface, bounds },
     }
 }
-
-fn place_linear<S, L>(
-    children: Vec<MeasuredNode<'_, S, L>>,
-    gaps: Vec<u32>,
-    origin: GridPos,
-    axis: Axis,
-) -> Vec<PlacedNode<'_, S, L>> {
-    let mut offset_main = 0;
-    children
-        .into_iter()
-        .enumerate()
-        .map(|(index, child)| {
-            let child_main = main(child.size(), axis);
-            let child_origin = match axis {
-                Axis::Horizontal => offset(origin, offset_main, 0),
-                Axis::Vertical => offset(origin, 0, offset_main),
-            };
-            offset_main += child_main;
-            if let Some(gap) = gaps.get(index) {
-                offset_main += gap;
+impl Error for UiBuildError {}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum UiLayoutError {
+    InsufficientSpace { id: UiId },
+}
+impl fmt::Display for UiLayoutError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InsufficientSpace { id } => {
+                write!(f, "UI node {:?} does not fit its container", id)
             }
-            place_node(child, child_origin)
-        })
-        .collect()
-}
-
-fn offset(origin: GridPos, cols: u32, rows: u32) -> GridPos {
-    GridPos::new(origin.col + cols as i32, origin.row + rows as i32)
-}
-
-fn alignment_offset(outer: u32, inner: u32, alignment: HorizontalAlign) -> u32 {
-    let remaining = outer.saturating_sub(inner);
-    match alignment {
-        HorizontalAlign::Start => 0,
-        HorizontalAlign::Center => remaining / 2,
-        HorizontalAlign::End => remaining,
+        }
     }
 }
+impl Error for UiLayoutError {}
 
-fn vertical_alignment_offset(outer: u32, inner: u32, alignment: VerticalAlign) -> u32 {
-    let remaining = outer.saturating_sub(inner);
-    match alignment {
-        VerticalAlign::Start => 0,
-        VerticalAlign::Center => remaining / 2,
-        VerticalAlign::End => remaining,
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn fill(id: u32, style: UiStyle) -> UiNode {
+        UiNode::new(UiId(id))
+            .with_style(style)
+            .with_content(UiContent::Fill(UiColor::new(1, 2, 3, 255)))
+    }
+    #[test]
+    fn row_allocates_fill_and_aligns_children() {
+        let tree = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Row,
+                    gap: 10,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    fill(2, UiStyle::fixed(20, 20)),
+                    fill(
+                        3,
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(20),
+                            ..UiStyle::default()
+                        },
+                    ),
+                ]),
+        )
+        .unwrap();
+        let frame = tree.resolve(UiSize::new(100, 40)).unwrap();
+        match &frame.commands()[1] {
+            UiDrawCommand::Fill { bounds, .. } => assert_eq!(*bounds, UiRect::new(30, 0, 70, 20)),
+            _ => panic!(),
+        }
+    }
+    #[test]
+    fn clipping_and_topmost_hit_are_deterministic() {
+        let interactive = UiStyle {
+            width: Dimension::Px(30),
+            height: Dimension::Px(30),
+            position: Position::Absolute { left: 10, top: 10 },
+            interactive: true,
+            ..UiStyle::default()
+        };
+        let tree = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    clip: true,
+                    direction: FlexDirection::Stack,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    fill(2, interactive),
+                    fill(
+                        3,
+                        UiStyle {
+                            interactive: true,
+                            ..interactive
+                        },
+                    ),
+                ]),
+        )
+        .unwrap();
+        let frame = tree.resolve(UiSize::new(20, 20)).unwrap();
+        assert_eq!(frame.hit_test(15, 15), Some(UiId(3)));
+        assert_eq!(frame.hit_test(25, 15), None);
+    }
+    #[test]
+    fn logical_canvas_coordinates_resolve_without_grid_types() {
+        let tree = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Stack,
+                    ..UiStyle::default()
+                })
+                .with_children([fill(
+                    2,
+                    UiStyle {
+                        width: Dimension::Ratio { units: 10, base: 32 },
+                        height: Dimension::Ratio { units: 4, base: 24 },
+                        position: Position::AbsoluteRatio {
+                            left: 10,
+                            top: 3,
+                            base: UiSize::new(32, 24),
+                        },
+                        ..UiStyle::default()
+                    },
+                )]),
+        )
+        .unwrap();
+
+        let frame = tree.resolve(UiSize::new(640, 480)).unwrap();
+        match &frame.commands()[0] {
+            UiDrawCommand::Fill { bounds, .. } => {
+                assert_eq!(*bounds, UiRect::new(200, 60, 200, 80));
+            }
+            _ => panic!(),
+        }
+    }
+    #[test]
+    fn duplicate_ids_and_conflicting_minimum_rows_are_errors() {
+        assert_eq!(
+            UiTree::new(UiNode::new(UiId(1)).with_children([UiNode::new(UiId(1))])),
+            Err(UiBuildError::DuplicateId(UiId(1)))
+        );
+        let tree = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Row,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    fill(
+                        2,
+                        UiStyle {
+                            min_size: UiSize::new(8, 1),
+                            ..UiStyle::fixed(8, 1)
+                        },
+                    ),
+                    fill(
+                        3,
+                        UiStyle {
+                            min_size: UiSize::new(8, 1),
+                            ..UiStyle::fixed(8, 1)
+                        },
+                    ),
+                ]),
+        )
+        .unwrap();
+        assert!(matches!(
+            tree.resolve(UiSize::new(10, 2)),
+            Err(UiLayoutError::InsufficientSpace { .. })
+        ));
     }
 }

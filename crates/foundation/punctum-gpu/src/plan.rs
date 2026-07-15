@@ -2,9 +2,12 @@ use std::{error::Error, fmt};
 
 use punctum_grid::{GridPos, GridRect, GridSize, Patch, PatchKind, Surface};
 
-use crate::{GpuAtlas, GpuCell, GpuClip, GpuImage, PixelRect, ResourceId, Viewport};
+use crate::{
+    GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPixelImage, PixelOffset, PixelRect, PixelSize,
+    ResourceId, Viewport,
+};
 
-pub const INSTANCE_STRIDE: u64 = 48;
+pub const INSTANCE_STRIDE: u64 = 64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SubmissionMode {
@@ -20,6 +23,8 @@ pub struct InstanceData {
     pub atlas_rect: [u32; 4],
     pub tint: [u8; 4],
     pub visible: u32,
+    /// Top-left, top-right, bottom-right, bottom-left, in physical pixels.
+    pub corner_radii: [u32; 4],
 }
 
 pub fn plan_composite(
@@ -83,6 +88,7 @@ pub fn plan_composite(
             atlas_rect: [rect.x, rect.y, rect.width, rect.height],
             tint: image.tint.to_array(),
             visible: 1,
+            corner_radii: [0; 4],
         });
     }
 
@@ -99,6 +105,79 @@ pub fn plan_composite(
         mode: SubmissionMode::Replace,
         viewport,
         scissor: plan_scissor(size, viewport, clip),
+        instance_count,
+        uploads,
+    })
+}
+
+/// Plans standalone pixel rectangles without allocating a grid surface.
+///
+/// The existing GPU shader is reused with one target pixel per logical cell.
+/// This keeps the pixel path independent from `Surface` allocation while retaining
+/// the atlas, tint, and instance encoding contracts.
+pub fn plan_pixels(
+    images: &[GpuPixelImage],
+    atlas: &GpuAtlas,
+    max_instances: u32,
+    target_size: PixelSize,
+) -> Result<SubmissionPlan, GpuPlanError> {
+    let instance_count =
+        u32::try_from(images.len()).map_err(|_| GpuPlanError::PixelInstanceCountOverflow {
+            images: images.len(),
+            maximum: max_instances,
+        })?;
+    if instance_count > max_instances {
+        return Err(GpuPlanError::PixelInstanceCountOverflow {
+            images: images.len(),
+            maximum: max_instances,
+        });
+    }
+    let viewport = Viewport::new(target_size, PixelOffset::new(0, 0), PixelSize::new(1, 1))
+        .expect("one pixel cells are valid");
+    let grid_size = GridSize::new(target_size.width, target_size.height);
+    let mut ordered: Vec<_> = images.iter().enumerate().collect();
+    ordered.sort_by_key(|(index, image)| (image.z_index, *index));
+    let mut instances = Vec::with_capacity(images.len());
+    for (_, image) in ordered {
+        if image.bounds.size().is_empty() || !pixel_rect_fits(image.bounds, target_size) {
+            return Err(GpuPlanError::PixelImageOutOfBounds {
+                bounds: image.bounds,
+                target_size,
+            });
+        }
+        let rect = atlas
+            .resource(image.resource)
+            .ok_or(GpuPlanError::MissingPixelResource {
+                bounds: image.bounds,
+                resource: image.resource,
+            })?;
+        instances.push(InstanceData {
+            grid_position: [image.bounds.x, image.bounds.y],
+            grid_span: [image.bounds.width, image.bounds.height],
+            pixel_offset: [image.pixel_offset.x, image.pixel_offset.y],
+            atlas_rect: [rect.x, rect.y, rect.width, rect.height],
+            tint: image.tint.to_array(),
+            visible: 1,
+            corner_radii: image.corner_radii,
+        });
+    }
+    let uploads = (!instances.is_empty())
+        .then_some(InstanceUpload {
+            first_slot: 0,
+            instances,
+        })
+        .into_iter()
+        .collect();
+    Ok(SubmissionPlan {
+        grid_size,
+        mode: SubmissionMode::Replace,
+        viewport,
+        scissor: (!target_size.is_empty()).then_some(PixelRect::new(
+            0,
+            0,
+            target_size.width,
+            target_size.height,
+        )),
         instance_count,
         uploads,
     })
@@ -218,6 +297,7 @@ fn plan_cell(
             atlas_rect: [0; 4],
             tint: [0; 4],
             visible: 0,
+            corner_radii: [0; 4],
         }),
         GpuCell::Sprite { resource, tint } => {
             let rect = atlas
@@ -228,8 +308,9 @@ fn plan_cell(
                 grid_span: [1, 1],
                 pixel_offset: [0, 0],
                 atlas_rect: [rect.x, rect.y, rect.width, rect.height],
-                tint: tint.to_array(),
-                visible: 1,
+            tint: tint.to_array(),
+            visible: 1,
+            corner_radii: [0; 4],
             })
         }
     }
@@ -242,6 +323,11 @@ fn rect_fits_grid(rect: GridRect, size: GridSize) -> bool {
         && rect.origin.row >= 0
         && right <= i64::from(size.cols)
         && bottom <= i64::from(size.rows)
+}
+
+fn pixel_rect_fits(rect: PixelRect, size: PixelSize) -> bool {
+    u64::from(rect.x) + u64::from(rect.width) <= u64::from(size.width)
+        && u64::from(rect.y) + u64::from(rect.height) <= u64::from(size.height)
 }
 
 fn plan_scissor(size: GridSize, viewport: Viewport, clip: GpuClip) -> Option<PixelRect> {
@@ -300,6 +386,18 @@ pub enum GpuPlanError {
         position: GridPos,
         resource: ResourceId,
     },
+    PixelInstanceCountOverflow {
+        images: usize,
+        maximum: u32,
+    },
+    PixelImageOutOfBounds {
+        bounds: PixelRect,
+        target_size: PixelSize,
+    },
+    MissingPixelResource {
+        bounds: PixelRect,
+        resource: ResourceId,
+    },
 }
 
 impl fmt::Display for GpuPlanError {
@@ -326,6 +424,21 @@ impl fmt::Display for GpuPlanError {
             Self::MissingResource { position, resource } => write!(
                 formatter,
                 "GPU resource {resource:?} is missing for cell {position:?}"
+            ),
+            Self::PixelInstanceCountOverflow { images, maximum } => write!(
+                formatter,
+                "{images} pixel images exceeds the GPU instance limit {maximum}"
+            ),
+            Self::PixelImageOutOfBounds {
+                bounds,
+                target_size,
+            } => write!(
+                formatter,
+                "pixel image {bounds:?} is empty or outside target {target_size:?}"
+            ),
+            Self::MissingPixelResource { bounds, resource } => write!(
+                formatter,
+                "GPU resource {resource:?} is missing for pixel image {bounds:?}"
             ),
         }
     }

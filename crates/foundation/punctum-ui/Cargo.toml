@@ -5,8 +5,5 @@ edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
-[dependencies]
-punctum-grid = { workspace = true }
-
 [lib]
 path = "src/lib.rs"

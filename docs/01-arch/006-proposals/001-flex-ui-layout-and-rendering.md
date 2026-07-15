@@ -1,8 +1,8 @@
 # Flex UI 布局与 GPU 渲染改造方案
 
-> 状态：提案草案  
-> 日期：2026-07-16  
-> 范围：大世界 UI 的布局与渲染边界。本文不实现 crate，也不改变游戏规则。
+> 状态：已采纳，第二阶段实施中
+> 日期：2026-07-16
+> 范围：大世界 UI 的布局与渲染边界。大地图和地图编辑器保留 Grid；所有游戏运行时页面与覆盖层使用 Pixel UI。
 
 ## 结论
 
@@ -10,11 +10,24 @@
 
 `punctum-ui` 的布局计算必须是纯 Rust 逻辑。它不直接依赖 `wgpu`、窗口、输入设备或游戏状态。
 
-同时扩展 `punctum-gpu`，使其能提交像素坐标的 UI 四边形、图片和裁剪区域。不能只增加 Flex crate，因为现有 `punctum-gpu` 的图像和提交模型本身仍以 Grid 为中心。
+同时扩展 `punctum-gpu`，使其能提交像素坐标的 UI 四边形和图片。裁剪区域先保留在 UI 绘制命令中，逐命令 GPU scissor 是下一阶段工作。不能只增加 Flex crate，因为现有 `punctum-gpu` 的图像和提交模型本身仍以 Grid 为中心。
 
 地图继续使用 Grid。大世界 UI、图鉴、背包、队伍、经济、势力和情报页面使用新 UI 模型。两个模型在 native plan 和 GPU adapter 中按层组合。
 
-首个迁移对象是现有图鉴页面。它是一个独立、密集、非地图的页面，能验证布局、文字、图片、裁剪和键盘焦点，不会同时改变地图或对战。
+首个迁移对象是图鉴页面。它已经使用新 UI 树重建，验证了布局、文字、图片、命中区域和键盘焦点；地图和对战仍使用原有路径。
+
+## 当前实现
+
+| 项目 | 当前实现 |
+| --- | --- |
+| `punctum-ui` | 纯 Rust 像素 UI 树。提供 `UiSize`、`UiRect`、`UiColor`、`UiId`、`UiTree`、受限行列 Flex、叠放、内边距、对齐、裁剪绘制命令和最上层命中测试。它不依赖 Grid、GPU、窗口或游戏状态。 |
+| `punctum-gpu` | 提供 `GpuPixelImage` 和 `plan_pixels`。像素矩形直接生成实例计划，不分配 Grid `Surface`。现有 shader 使用一个像素一个逻辑单元的 viewport，因此复用图集、颜色和实例编码。 |
+| `game-native-plan` | 提供 `FramePlan::from_ui_frame`。它是内容 ID 到资源 ID、UI 颜色到 GPU 颜色、UI 文字到 native 标签的唯一转换边界。 |
+| 图鉴 | `game-view::project_pokedex` 返回 `UiTree`，`game-scene-view` 将它解析为 `SceneFrame::Ui`，`game-host` 再走 `FramePlan::from_ui_frame`。图鉴不再创建固定 32×24 的 `GameView` 或 `Surface`。 |
+
+当前像素提交已经足以渲染全屏专注页面。第二阶段补齐盒子模型、圆角、像素批次和 Grid/Pixel 同帧合成，并迁移战斗与命令控制台。
+
+页面迁移的硬性验收条件是视觉等价。Flex、盒子模型和圆角只能改善实现边界与缩放行为，不能改变现有页面的构图、层级、颜色或信息密度。实施细节见 [实施记录](001-flex-ui-layout-and-rendering-implementation-log.md)。
 
 ## 背景与问题
 
@@ -121,7 +134,7 @@ native_plan --> gpu : 地图后绘制 UI
 
 ### 位置与依赖
 
-建议位置：`crates/foundation/punctum-ui`。
+位置：`crates/foundation/punctum-ui`。
 
 它是一个纯计划 crate。第一版只依赖 Rust 标准库，不持有 GPU device、窗口句柄、事件循环、输入设备或 `punctum-gpu` 类型。
 
@@ -134,7 +147,7 @@ native_plan --> gpu : 地图后绘制 UI
 | 概念 | 职责 |
 | --- | --- |
 | `UiId` | 节点的稳定类型安全标识。不同页面和命中区域不使用裸整数或字符串混传。 |
-| `UiTree` | 有且仅有一个根节点的 UI 树。负责节点关系和结构不变量。 |
+| `UiTree` | 有且仅有一个根节点的 UI 树。构造时拒绝重复 `UiId`。 |
 | `UiNode` | 样式、内容、子节点和可选交互语义。外部不能直接破坏树关系。 |
 | `UiStyle` | Flex 子集、尺寸、间距、对齐、定位、可见性和裁剪规则。 |
 | `UiSize`、`UiRect`、`UiColor` | 与渲染后端无关的像素几何和颜色值。 |
@@ -171,16 +184,27 @@ native_plan --> gpu : 地图后绘制 UI
 
 第一版明确不支持：自动换行、负边距、基线排版、CSS 百分比兼容、选择器、样式继承和浏览器级别的溢出策略。
 
+### 盒子模型与圆角
+
+`UiStyle` 使用确定性的 border-box 模型。`width` 和 `height` 表示节点外框。布局先从外框扣除 `border` 和 `padding`，子节点只在剩余的 content box 内排布。
+
+| 字段 | 含义 |
+| --- | --- |
+| `margin` | 节点与相邻 flow 节点之间的外边距。它参与父容器的主轴空间计算。 |
+| `border` | 四边的像素宽度和颜色。它占用外框空间。 |
+| `padding` | 内容区与边框之间的内边距。它占用外框空间。 |
+| `border_radius` | 四个角的像素半径。它不改变外框尺寸，不参与 Flex 分配。 |
+
+圆角由 `UiDrawCommand` 显式携带。`game-native-plan` 把圆角填充映射到白色圆角遮罩，把圆角图片映射到相同的遮罩路径；布局 crate 不知道图集或 shader。半径必须被限制为外框短边的一半。命中区域和子树裁剪使用圆角的外接矩形；精确曲线命中不是第一阶段目标。
+
 ### 不变量与错误
 
-布局树的正常失败必须以结构化 `Result` 返回。至少区分：
+布局树的正常失败必须以结构化 `Result` 返回。当前版本至少区分：
 
 - 重复 `UiId`。
-- 根节点缺失。
-- 子节点引用不存在。
-- 树出现环或一个节点有多个父节点。
-- 尺寸约束冲突。
-- 计算过程中的整数溢出。
+- 布局空间不足。
+
+当前实现使用递归节点模型，因此没有“根缺失”“子节点引用不存在”“环”或“多个父节点”这类外部输入形态。若未来改为节点表和引用关系，必须补充这些错误分类和测试。
 
 无效外部输入不能通过 `panic!` 处理。`panic!` 只用于 crate 内部不变量已经被构造器保证却仍被破坏的编程错误。
 
@@ -192,18 +216,18 @@ native_plan --> gpu : 地图后绘制 UI
 
 ### 新增像素提交模型
 
-新增独立的像素路径，避免为了 UI 破坏已有 Grid API：
+新增像素路径，避免为了 UI 破坏已有 Grid API：
 
 | 新概念 | 用途 |
 | --- | --- |
-| `GpuPixelImage` 或 `GpuPixelQuad` | 使用 `PixelRect` 表示目标区域，而非 `GridRect`。 |
-| `PixelClip` | 以屏幕像素矩形定义裁剪区域。 |
-| `PixelSubmissionPlan` | 像素四边形、绘制顺序、scissor 和实例上传计划。 |
-| `plan_pixels` | 将已经解析资源的像素绘制项映射为实例计划。 |
+| `GpuPixelImage` | 使用 `PixelRect` 表示目标区域，而非 `GridRect`。已实现。 |
+| `plan_pixels` | 将已经解析资源的像素绘制项映射为实例计划。已实现。 |
+| `PixelClip` | 以屏幕像素矩形定义裁剪区域。待与每命令 scissor 批次一起实现。 |
+| `PixelSubmissionPlan` | 像素四边形、绘制顺序、scissor 和实例上传计划。待在 Grid/像素同帧合成阶段从现有计划中拆出。 |
 
-`PixelSubmissionPlan` 应独立于现有 `SubmissionPlan`，避免给 Grid 计划加入无意义的可选字段，也避免把一个像素当作一个 Grid cell。后者会导致大 viewport 分配巨大的 Surface，性能和语义都不正确。
+当前 `plan_pixels` 复用实例计划和 shader，但不分配 `Surface`。在同帧合成阶段必须拆出 `PixelSubmissionPlan`，避免给 Grid 计划加入无意义的可选字段，也避免把一个像素当作一个 Grid cell。
 
-`punctum-wgpu` 或承接它的 native adapter 需要支持两个提交路径：Grid 实例和像素实例。两者可以共用图集、颜色、GPU 生命周期和帧同步；不要求第一版共用相同的实例格式或 shader。
+当前全屏 UI 页面复用现有 native adapter 和 shader。后续同帧合成需要让 `punctum-wgpu` 支持 Grid 实例和像素实例顺序提交；两者可以共用图集、颜色、GPU 生命周期和帧同步。
 
 ## `game-native-plan` 与展示层迁移
 
@@ -231,31 +255,33 @@ World UI
 
 ## 迁移步骤
 
-### 1. 先扩展像素 GPU 计划
+### 1. 先扩展像素 GPU 计划（完成）
 
 在不修改 `game-view` 页面逻辑的前提下，为 `punctum-gpu` 和 native adapter 增加像素矩形实例、裁剪和提交测试。
 
-完成标准：一个无 Grid Surface 的纯像素矩形和图像帧能被计划、编码并在 native target 绘制；现有 Grid 测试保持通过。
+完成标准：一个无 Grid Surface 的纯像素矩形和图像帧能被计划、编码并在 native target 绘制；现有 Grid 测试保持通过。已由 `plan_pixels` 和 `FramePlan::from_ui_frame` 覆盖。
 
-### 2. 创建 `punctum-ui` 并验证布局核心
+### 2. 创建 `punctum-ui` 并验证布局核心（完成）
 
 创建 `UiTree`、Flex 子集、`UiFrame`、绘制列表和命中测试。只用 fixture 和内存数据测试，不启动 GPU。
 
 完成标准：行、列、剩余空间分配、最小/最大尺寸、间距、对齐、绝对覆盖、裁剪和最上层命中都有确定性测试；无效树返回结构化错误。
 
-### 3. 图鉴作为首个专注页面
+### 3. 图鉴作为首个专注页面（完成）
 
 用 `punctum-ui` 重建现有图鉴页面。保留现有数据源和导航行为，不重写业务规则。
 
-完成标准：图鉴不再依赖 `game-view` 的固定 Grid Canvas；窗口尺寸变化不会依赖人工行列坐标；键盘导航、文字、图片和返回地图仍可用。
+完成标准：图鉴不再依赖固定 Grid Canvas；窗口尺寸变化不会依赖人工行列坐标；键盘导航、文字、图片和返回地图仍可用。图鉴的 UI 状态仍由 `PresentationState::pokedex` 保存，关闭行为没有变化。
 
-### 4. 合成世界地图与轻量 UI
+### 4. 合成世界地图与轻量 UI（第二阶段）
 
 让地图 Grid 计划与像素 UI 计划在同一帧组合。先实现 `L1` 情境信息、`L2` 现场交互和一个 `L3` 快速面板。
 
 完成标准：地图保留现有移动和镜头行为；像素 UI 可覆盖地图、可裁剪、可命中；关闭面板后回到相同地图状态。
 
-### 5. 迁移专注页面
+### 5. 迁移已有游戏页面（第二阶段）
+
+图鉴已经完成。战斗、队伍选择、招式菜单和命令控制台必须改为 `UiTree`。命令控制台在地图场景中作为 Pixel 覆盖层与 Grid 地图同帧提交；战斗作为 Pixel 专注页面提交。大地图和地图编辑器不迁移。
 
 按复杂度迁移队伍详情与培育、报纸与情报、经济与贸易、势力关系。背包和队伍摘要可先使用同一 UI 树的轻量变体。
 
@@ -272,10 +298,10 @@ World UI
 | 层级 | 验收重点 |
 | --- | --- |
 | `punctum-ui` 单元测试 | 布局确定性、尺寸约束、裁剪、命中、错误分类。 |
-| `punctum-gpu` 单元与契约测试 | 像素实例编码、scissor、绘制顺序、资源缺失、溢出。 |
-| native plan 测试 | Grid 计划和像素计划可同时存在，地图先于 UI 提交。 |
+| `punctum-gpu` 单元与契约测试 | 像素实例、资源缺失、溢出和稳定绘制顺序。 |
+| native plan 测试 | 无 `Surface` 的 UI 帧可转换为像素实例；Grid 计划保持可用。 |
 | `game-ui` 测试 | 导航状态不会改变 `GameSession`，焦点和返回链受限。 |
-| 真实运行验收 | 图鉴、地图 HUD 和一个面板在 native target 中可见、可输入、窗口缩放后无重叠或截断。 |
+| 真实运行验收 | 图鉴在 native target 中可见、可输入、窗口缩放后无重叠或截断；地图 HUD 和面板属于阶段 4。 |
 
 每个迁移阶段结束时运行对应 crate 测试；在第 3、4、5 阶段完成时运行 `cargo test --workspace`。GPU 运行验收需要实际 native target，不以纯单元测试代替。
 
@@ -292,11 +318,11 @@ World UI
 
 ## 本提案的默认决策
 
-- 新 package 的候选名称为 `punctum-ui`，位置为 `crates/foundation/`。
+- package 名称为 `punctum-ui`，位置为 `crates/foundation/`。
 - Flex 是受限的纯布局算法，不是 GPU 计算任务。
 - `punctum-gpu` 扩展像素提交能力，不废弃 Grid API。
-- 图鉴是第一个迁移页面。
-- 地图 Grid 与像素 UI 并存，并由 native plan 按层合成。
+- 图鉴是第一个已迁移页面。
+- 地图 Grid 与像素 UI 的同帧按层合成留待阶段 4；当前专注页面可单独走像素路径。
 - UI 浏览不推进离散世界时钟。
 
-除非后续明确批准，本提案不授权创建 crate、修改 Cargo workspace、改变 `punctum-gpu` 公共 API 或重构既有页面。
+本提案已经授权并完成第一阶段实现。后续阶段仍需按本文的完成标准分别验收。

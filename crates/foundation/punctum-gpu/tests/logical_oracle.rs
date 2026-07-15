@@ -1,7 +1,7 @@
 use punctum_gpu::{
-    GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPlanError, GpuResource, InstanceData, PixelOffset,
-    PixelRect, PixelSize, ResourceId, Rgba8, SubmissionMode, Viewport, plan_composite, plan_patch,
-    plan_surface,
+    GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPixelImage, GpuPlanError, GpuResource, InstanceData,
+    PixelOffset, PixelRect, PixelSize, ResourceId, Rgba8, SubmissionMode, Viewport, plan_composite,
+    plan_patch, plan_pixels, plan_surface,
 };
 use punctum_grid::{GridPos, GridRect, GridSize, Surface, diff};
 
@@ -67,6 +67,7 @@ fn surface_plan_resolves_resources_and_preserves_row_major_slots() {
             atlas_rect: [0, 0, 2, 2],
             tint: [255, 0, 0, 128],
             visible: 1,
+            corner_radii: [0; 4],
         }
     );
     assert_eq!(
@@ -78,6 +79,7 @@ fn surface_plan_resolves_resources_and_preserves_row_major_slots() {
             atlas_rect: [0; 4],
             tint: [0; 4],
             visible: 0,
+            corner_radii: [0; 4],
         }
     );
     assert_eq!(plan.uploads[0].instances[2].grid_position, [2, 0]);
@@ -345,4 +347,48 @@ fn clip_returns_none_when_mapped_grid_is_outside_the_framebuffer() {
             None
         );
     }
+}
+
+#[test]
+fn pixel_plan_avoids_surface_allocation_and_keeps_stable_z_order() {
+    let plan = plan_pixels(
+        &[
+            GpuPixelImage::new(
+                PixelRect::new(20, 5, 4, 3),
+                ResourceId(1),
+                Rgba8::new(1, 2, 3, 255),
+                4,
+            ),
+            GpuPixelImage::new(
+                PixelRect::new(1, 2, 6, 7),
+                ResourceId(2),
+                Rgba8::new(4, 5, 6, 255),
+                1,
+            ),
+        ],
+        &atlas(),
+        2,
+        PixelSize::new(32, 24),
+    )
+    .unwrap();
+
+    assert_eq!(plan.grid_size, GridSize::new(32, 24));
+    assert_eq!(plan.viewport.cell_size, PixelSize::new(1, 1));
+    assert_eq!(plan.instance_count, 2);
+    assert_eq!(plan.uploads[0].instances[0].grid_position, [1, 2]);
+    assert_eq!(plan.uploads[0].instances[1].grid_position, [20, 5]);
+    assert!(matches!(
+        plan_pixels(
+            &[GpuPixelImage::new(
+                PixelRect::new(31, 23, 2, 2),
+                ResourceId(1),
+                Rgba8::default(),
+                0,
+            )],
+            &atlas(),
+            1,
+            PixelSize::new(32, 24),
+        ),
+        Err(GpuPlanError::PixelImageOutOfBounds { .. })
+    ));
 }

@@ -288,6 +288,41 @@ pub struct GpuImage {
     pub z_index: i32,
 }
 
+/// A textured rectangle positioned directly in target pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GpuPixelImage {
+    pub bounds: PixelRect,
+    pub pixel_offset: PixelOffset,
+    pub corner_radii: [u32; 4],
+    pub resource: ResourceId,
+    pub tint: Rgba8,
+    pub z_index: i32,
+}
+
+impl GpuPixelImage {
+    pub const fn new(bounds: PixelRect, resource: ResourceId, tint: Rgba8, z_index: i32) -> Self {
+        Self {
+            bounds,
+            pixel_offset: PixelOffset::new(0, 0),
+            corner_radii: [0; 4],
+            resource,
+            tint,
+            z_index,
+        }
+    }
+
+    pub const fn with_pixel_offset(mut self, pixel_offset: PixelOffset) -> Self {
+        self.pixel_offset = pixel_offset;
+        self
+    }
+
+    /// Corner radii are ordered top-left, top-right, bottom-right, bottom-left.
+    pub const fn with_corner_radii(mut self, corner_radii: [u32; 4]) -> Self {
+        self.corner_radii = corner_radii;
+        self
+    }
+}
+
 impl GpuImage {
     pub const fn new(bounds: GridRect, resource: ResourceId, tint: Rgba8, z_index: i32) -> Self {
         Self {

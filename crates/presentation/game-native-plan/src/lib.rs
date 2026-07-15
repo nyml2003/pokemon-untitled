@@ -7,10 +7,11 @@ use std::{collections::BTreeMap, error::Error, fmt};
 use game_assets::{AssetKey, DecodedImage};
 use game_view::{GameView, LayerKind, ViewCell};
 use punctum_gpu::{
-    GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPlanError, PixelSize, ResourceId, Rgba8,
-    SubmissionPlan, Viewport as GridViewport, plan_composite,
+    GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPixelImage, GpuPlanError, PixelOffset, PixelRect, PixelSize,
+    ResourceId, Rgba8, SubmissionPlan, Viewport as GridViewport, plan_composite, plan_pixels,
 };
 use punctum_grid::{GridSize, Surface};
+use punctum_ui::{UiDrawCommand, UiFrame};
 
 pub struct NativeAssets {
     atlas: GpuAtlas,
@@ -82,6 +83,8 @@ pub struct NativeTextLabel {
     pub height: u32,
     pub content: String,
     pub color: Rgba8,
+    /// Pixel UI supplies this value; Grid labels derive it from `TextScale`.
+    pub font_size: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,13 +148,131 @@ impl TextScale {
     }
 }
 
-pub struct FramePlan {
+pub struct FramePass {
     gpu: SubmissionPlan,
     labels: Vec<NativeTextLabel>,
     text_scale: TextScale,
 }
 
+impl FramePass {
+    pub fn viewport(&self) -> GridViewport {
+        self.gpu.viewport
+    }
+
+    pub fn gpu(&self) -> &SubmissionPlan {
+        &self.gpu
+    }
+
+    pub fn labels(&self) -> &[NativeTextLabel] {
+        &self.labels
+    }
+
+    pub fn text_scale(&self) -> TextScale {
+        self.text_scale
+    }
+}
+
+pub struct FramePlan {
+    passes: Vec<FramePass>,
+}
+
 impl FramePlan {
+    /// Converts an already-resolved pixel UI frame at the adapter boundary.
+    /// The UI crate stays independent from atlas IDs and GPU plans.
+    pub fn from_ui_frame(
+        frame: &UiFrame,
+        assets: &NativeAssets,
+        text_scale: TextScale,
+    ) -> Result<Self, FramePlanError> {
+        let white_key = AssetKey::new("solid/white").expect("the white asset key is valid");
+        let white = assets
+            .resource(&white_key)
+            .ok_or(FramePlanError::UnknownAsset(white_key))?;
+        let mut images = Vec::new();
+        let mut labels = Vec::new();
+        for (z_index, command) in frame.commands().iter().enumerate() {
+            match command {
+                UiDrawCommand::Fill {
+                    bounds,
+                    color,
+                    border_radius,
+                    clip,
+                } => {
+                    if let Some(bounds) = ui_visible_bounds(*bounds, *clip) {
+                        images.push(
+                            GpuPixelImage::new(
+                                bounds,
+                                white,
+                                Rgba8::new(color.red, color.green, color.blue, color.alpha),
+                                z_index as i32,
+                            )
+                            .with_corner_radii(ui_corner_radii(*border_radius, bounds)),
+                        );
+                    }
+                }
+                UiDrawCommand::Image {
+                    bounds,
+                    content,
+                    tint,
+                    pixel_offset,
+                    border_radius,
+                    clip,
+                    ..
+                } => {
+                    if let Some(bounds) = ui_visible_bounds(*bounds, *clip) {
+                        let key = AssetKey::new(content.as_str()).map_err(|_| {
+                            FramePlanError::InvalidUiContent(content.as_str().to_owned())
+                        })?;
+                        let resource = assets
+                            .resource(&key)
+                            .ok_or(FramePlanError::UnknownAsset(key))?;
+                        images.push(
+                            GpuPixelImage::new(
+                                bounds,
+                                resource,
+                                Rgba8::new(tint.red, tint.green, tint.blue, tint.alpha),
+                                z_index as i32,
+                            )
+                            .with_pixel_offset(PixelOffset::new(pixel_offset.x, pixel_offset.y))
+                            .with_corner_radii(ui_corner_radii(*border_radius, bounds)),
+                        );
+                    }
+                }
+                UiDrawCommand::Text {
+                    bounds,
+                    content,
+                    color,
+                    font_size,
+                    clip,
+                    ..
+                } => {
+                    if let Some(bounds) = ui_visible_bounds(*bounds, *clip) {
+                        labels.push(NativeTextLabel {
+                            col: bounds.x,
+                            row: bounds.y,
+                            width: bounds.width,
+                            height: bounds.height,
+                            content: content.clone(),
+                            color: Rgba8::new(color.red, color.green, color.blue, color.alpha),
+                            font_size: Some(*font_size),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(Self::single(
+            plan_pixels(
+                &images,
+                &assets.atlas,
+                u32::MAX,
+                PixelSize::new(frame.viewport().width, frame.viewport().height),
+            )
+            .map_err(FramePlanError::Gpu)?,
+            labels,
+            text_scale,
+        ))
+    }
+
     pub fn from_game_view(
         view: &GameView,
         assets: &NativeAssets,
@@ -214,6 +335,7 @@ impl FramePlan {
                 height: label.height,
                 content: label.content.clone(),
                 color: label.color,
+                font_size: None,
             }));
         }
         let surface = Surface::from_cells(size, cells)
@@ -242,28 +364,64 @@ impl FramePlan {
         labels: impl IntoIterator<Item = NativeTextLabel>,
         text_scale: TextScale,
     ) -> Result<Self, GpuPlanError> {
-        Ok(Self {
-            gpu: plan_composite(surface, images, atlas, max_instances, viewport, clip)?,
-            labels: labels.into_iter().collect(),
+        Ok(Self::single(
+            plan_composite(surface, images, atlas, max_instances, viewport, clip)?,
+            labels.into_iter().collect(),
             text_scale,
-        })
+        ))
     }
 
-    pub const fn viewport(&self) -> GridViewport {
-        self.gpu.viewport
+    fn single(gpu: SubmissionPlan, labels: Vec<NativeTextLabel>, text_scale: TextScale) -> Self {
+        Self {
+            passes: vec![FramePass {
+                gpu,
+                labels,
+                text_scale,
+            }],
+        }
     }
 
-    pub const fn gpu(&self) -> &SubmissionPlan {
-        &self.gpu
+    /// Keeps independent viewport mappings separate while rendering them in order.
+    pub fn compose(mut base: Self, overlay: Self) -> Self {
+        base.passes.extend(overlay.passes);
+        base
+    }
+
+    pub fn passes(&self) -> &[FramePass] {
+        &self.passes
+    }
+
+    pub fn viewport(&self) -> GridViewport {
+        self.passes[0].viewport()
+    }
+
+    pub fn gpu(&self) -> &SubmissionPlan {
+        self.passes[0].gpu()
     }
 
     pub fn labels(&self) -> &[NativeTextLabel] {
-        &self.labels
+        self.passes[0].labels()
     }
 
-    pub const fn text_scale(&self) -> TextScale {
-        self.text_scale
+    pub fn text_scale(&self) -> TextScale {
+        self.passes[0].text_scale()
     }
+}
+
+fn ui_corner_radii(radius: punctum_ui::UiBorderRadius, bounds: PixelRect) -> [u32; 4] {
+    let maximum = bounds.width.min(bounds.height) / 2;
+    [
+        radius.top_left.min(maximum),
+        radius.top_right.min(maximum),
+        radius.bottom_right.min(maximum),
+        radius.bottom_left.min(maximum),
+    ]
+}
+
+fn ui_visible_bounds(bounds: punctum_ui::UiRect, clip: punctum_ui::UiRect) -> Option<PixelRect> {
+    bounds
+        .intersect(clip)
+        .map(|rect| PixelRect::new(rect.x, rect.y, rect.width, rect.height))
 }
 
 #[derive(Debug)]
@@ -274,6 +432,7 @@ pub enum FramePlanError {
         actual: GridSize,
     },
     UnknownAsset(AssetKey),
+    InvalidUiContent(String),
     Gpu(GpuPlanError),
 }
 
@@ -286,6 +445,9 @@ impl fmt::Display for FramePlanError {
                 "product layer surface {actual:?} does not match {expected:?}"
             ),
             Self::UnknownAsset(key) => write!(formatter, "unknown asset key {}", key.as_str()),
+            Self::InvalidUiContent(content) => {
+                write!(formatter, "invalid UI content key {content}")
+            }
             Self::Gpu(error) => write!(formatter, "cannot plan product frame: {error}"),
         }
     }
@@ -317,6 +479,7 @@ mod tests {
             height: 2,
             content: "label".into(),
             color: Rgba8::new(255, 255, 255, 255),
+            font_size: None,
         };
 
         let bounds = text_bounds(&label, viewport).unwrap();
@@ -499,5 +662,76 @@ mod tests {
         for error in [unknown, gpu] {
             assert!(!error.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn resolved_ui_frame_uses_pixel_instances_without_a_grid_surface() {
+        use punctum_ui::{Dimension, UiColor, UiContent, UiId, UiNode, UiSize, UiStyle, UiTree};
+
+        let tree = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Fill(UiColor::new(4, 5, 6, 255))),
+        )
+        .unwrap();
+        let ui = tree.resolve(UiSize::new(80, 60)).unwrap();
+        let frame = FramePlan::from_ui_frame(&ui, &assets(), TextScale::new(1, 1, 12, 12)).unwrap();
+
+        assert_eq!(frame.viewport().target_size, PixelSize::new(80, 60));
+        assert_eq!(frame.viewport().cell_size, PixelSize::new(1, 1));
+        assert_eq!(frame.gpu().grid_size, GridSize::new(80, 60));
+        assert_eq!(frame.gpu().instance_count, 1);
+    }
+
+    #[test]
+    fn pixel_ui_keeps_per_corner_radius_for_fills_and_images() {
+        use punctum_ui::{
+            Dimension, UiBorderRadius, UiColor, UiContent, UiContentId, UiId, UiNode, UiSize,
+            UiStyle, UiTree,
+        };
+
+        let tree = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    UiNode::new(UiId(2))
+                        .with_style(UiStyle {
+                            width: Dimension::Px(40),
+                            height: Dimension::Px(20),
+                            border_radius: UiBorderRadius {
+                                top_left: 30,
+                                top_right: 3,
+                                bottom_right: 8,
+                                bottom_left: 1,
+                            },
+                            ..UiStyle::default()
+                        })
+                        .with_content(UiContent::Fill(UiColor::new(1, 2, 3, 255))),
+                    UiNode::new(UiId(3))
+                        .with_style(UiStyle {
+                            width: Dimension::Px(30),
+                            height: Dimension::Px(12),
+                            border_radius: UiBorderRadius::all(9),
+                            ..UiStyle::default()
+                        })
+                        .with_content(UiContent::Image(
+                            UiContentId::new("sprite/player").unwrap(),
+                        )),
+                ]),
+        )
+        .unwrap();
+        let ui = tree.resolve(UiSize::new(80, 60)).unwrap();
+        let frame = FramePlan::from_ui_frame(&ui, &assets(), TextScale::new(1, 1, 12, 12)).unwrap();
+        let instances = &frame.gpu().uploads[0].instances;
+        assert_eq!(instances[0].corner_radii, [10, 3, 8, 1]);
+        assert_eq!(instances[1].corner_radii, [6, 6, 6, 6]);
     }
 }

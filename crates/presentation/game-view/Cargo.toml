@@ -12,6 +12,7 @@ game-data = { path = "../../domain/game-data" }
 game-ui = { path = "../game-ui" }
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }
+punctum-ui = { workspace = true }
 world-application = { path = "../../application/world-application" }
 
 [lib]

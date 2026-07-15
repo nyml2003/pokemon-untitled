@@ -13,7 +13,7 @@ use game_native_target::{
     FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, WinitCommittedTextSnapshot,
     WinitKeyEventSnapshot, normalize_committed_text, normalize_key_event,
 };
-use game_scene_view::{SceneViewInput, game_viewport, project_scene};
+use game_scene_view::{SceneFrame, SceneViewInput, game_viewport, project_scene};
 use game_session::{GameCommand, GameError, GameEvents, GameSession};
 use game_ui::{GameConsole, PresentationAction, PresentationState, PresentationUpdate};
 use map::load_map;
@@ -118,7 +118,7 @@ impl CreatureGameApp {
             .presentation
             .is_console_open()
             .then(|| self.presentation.console_view());
-        let view = match project_scene(SceneViewInput {
+        let projected = match project_scene(SceneViewInput {
             game: &game_snapshot,
             presentation,
             console: console.as_ref(),
@@ -127,7 +127,7 @@ impl CreatureGameApp {
             map_catalog: &self.map_catalog,
             viewport,
         }) {
-            Ok(projected) => projected.view,
+            Ok(projected) => projected,
             Err(error) => {
                 eprintln!("game scene projection failed: {error}");
                 event_loop.exit();
@@ -137,7 +137,36 @@ impl CreatureGameApp {
         let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
             return;
         };
-        let plan = match FramePlan::from_game_view(&view, &self.assets, viewport, GAME_TEXT_SCALE) {
+        let plan_result = match projected.frame {
+            SceneFrame::Grid(view) => {
+                FramePlan::from_game_view(&view, &self.assets, viewport, GAME_TEXT_SCALE)
+            }
+            SceneFrame::Ui(frame) => {
+                FramePlan::from_ui_frame(&frame, &self.assets, TextScale::new(1, 1, 16, 28))
+            }
+            SceneFrame::GridWithUi { base, overlay } => FramePlan::from_game_view(
+                &base,
+                &self.assets,
+                viewport,
+                GAME_TEXT_SCALE,
+            )
+            .and_then(|base| {
+                FramePlan::from_ui_frame(&overlay, &self.assets, TextScale::new(1, 1, 16, 28))
+                    .map(|overlay| FramePlan::compose(base, overlay))
+            }),
+            SceneFrame::UiWithUi { base, overlay } => {
+                FramePlan::from_ui_frame(&base, &self.assets, TextScale::new(1, 1, 16, 28))
+                    .and_then(|base| {
+                        FramePlan::from_ui_frame(
+                            &overlay,
+                            &self.assets,
+                            TextScale::new(1, 1, 16, 28),
+                        )
+                        .map(|overlay| FramePlan::compose(base, overlay))
+                    })
+            }
+        };
+        let plan = match plan_result {
             Ok(plan) => plan,
             Err(error) => {
                 eprintln!("game GPU planning failed: {error}");
