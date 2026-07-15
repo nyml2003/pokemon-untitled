@@ -3,8 +3,10 @@
 use std::collections::BTreeSet;
 
 use battle_application::{
-    Accuracy, MAX_MOVES, Move, MoveCategory, MoveId, Pokemon, PokemonId, PokemonType, StatBlock,
-    StatProjectionError, TEAM_SIZE, Team, TrainingValues, ValidationError, calculate_gen3_stats,
+    Ability, Accuracy, BattleStat, EffectTarget, MAX_MOVES, MajorStatusKind, Move, MoveCategory,
+    MoveEffect, MoveId, Pokemon, PokemonId, PokemonType, StageChanges, StatBlock,
+    StatProjectionError, TEAM_SIZE, Team, TrainingValues, ValidationError, Weather,
+    WeatherAccuracyModifier, WeatherMoveModifier, calculate_gen3_stats,
 };
 use game_data::{
     CurrentDataSet, DamageClass as DataDamageClass, MoveId as DataMoveId, PokemonFormId,
@@ -161,8 +163,8 @@ fn compatible_move_ids(data: &CurrentDataSet, pokemon: PokemonFormId) -> Vec<Dat
             data.can_learn_at_level(pokemon, entry.move_id, DEMO_LEVEL)
                 .then_some(())?;
             let battle_move = data.move_by_id(entry.move_id)?;
-            battle_move.power.filter(|power| *power > 0)?;
             battle_move.pp.filter(|pp| *pp > 0)?;
+            (battle_move.power.is_some() || move_effect(battle_move).is_some()).then_some(())?;
             is_supported_type(data, battle_move.move_type).then_some(entry.move_id)
         })
         .collect::<BTreeSet<_>>()
@@ -252,41 +254,251 @@ fn build_pokemon(
         member.level,
         member.training,
     )?;
-    Pokemon::new(
-        PokemonId::new(format!("{prefix}-form-{}", member.pokemon_form_id.0))?,
-        &record.display_name.localized,
-        member.level,
-        primary_type,
-        secondary_type,
-        calculated.max_hp(),
-        calculated.max_hp(),
-        calculated.battle(),
-        moves,
-    )
-    .map_err(Into::into)
+    let ability = record
+        .abilities
+        .iter()
+        .filter(|entry| !entry.is_hidden)
+        .find_map(|entry| data.ability_by_id(entry.ability_id))
+        .and_then(battle_ability);
+    let build = |ability| match ability {
+        Some(ability) => Pokemon::new_with_ability(
+            PokemonId::new(format!("{prefix}-form-{}", member.pokemon_form_id.0))?,
+            &record.display_name.localized,
+            member.level,
+            primary_type,
+            secondary_type,
+            calculated.max_hp(),
+            calculated.max_hp(),
+            calculated.battle(),
+            moves,
+            ability,
+        ),
+        None => Pokemon::new(
+            PokemonId::new(format!("{prefix}-form-{}", member.pokemon_form_id.0))?,
+            &record.display_name.localized,
+            member.level,
+            primary_type,
+            secondary_type,
+            calculated.max_hp(),
+            calculated.max_hp(),
+            calculated.battle(),
+            moves,
+        ),
+    };
+    build(ability).map_err(Into::into)
+}
+
+fn battle_ability(record: &game_data::AbilityRecord) -> Option<Ability> {
+    match record.identifier.as_str() {
+        "air-lock" => Some(Ability::AirLock),
+        "arena-trap" => Some(Ability::ArenaTrap),
+        "battle-armor" => Some(Ability::BattleArmor),
+        "blaze" => Some(Ability::Blaze),
+        "chlorophyll" => Some(Ability::Chlorophyll),
+        "clear-body" => Some(Ability::ClearBody),
+        "cloud-nine" => Some(Ability::CloudNine),
+        "compound-eyes" => Some(Ability::CompoundEyes),
+        "drizzle" => Some(Ability::Drizzle),
+        "drought" => Some(Ability::Drought),
+        "early-bird" => Some(Ability::EarlyBird),
+        "flash-fire" => Some(Ability::FlashFire),
+        "guts" => Some(Ability::Guts),
+        "huge-power" => Some(Ability::HugePower),
+        "hyper-cutter" => Some(Ability::HyperCutter),
+        "hustle" => Some(Ability::Hustle),
+        "immunity" => Some(Ability::Immunity),
+        "intimidate" => Some(Ability::Intimidate),
+        "inner-focus" => Some(Ability::InnerFocus),
+        "keen-eye" => Some(Ability::KeenEye),
+        "insomnia" => Some(Ability::Insomnia),
+        "levitate" => Some(Ability::Levitate),
+        "limber" => Some(Ability::Limber),
+        "liquid-ooze" => Some(Ability::LiquidOoze),
+        "magma-armor" => Some(Ability::MagmaArmor),
+        "marvel-scale" => Some(Ability::MarvelScale),
+        "natural-cure" => Some(Ability::NaturalCure),
+        "overgrow" => Some(Ability::Overgrow),
+        "pressure" => Some(Ability::Pressure),
+        "pure-power" => Some(Ability::PurePower),
+        "rain-dish" => Some(Ability::RainDish),
+        "rock-head" => Some(Ability::RockHead),
+        "sand-stream" => Some(Ability::SandStream),
+        "sand-veil" => Some(Ability::SandVeil),
+        "serene-grace" => Some(Ability::SereneGrace),
+        "shell-armor" => Some(Ability::ShellArmor),
+        "shed-skin" => Some(Ability::ShedSkin),
+        "shield-dust" => Some(Ability::ShieldDust),
+        "shadow-tag" => Some(Ability::ShadowTag),
+        "synchronize" => Some(Ability::Synchronize),
+        "speed-boost" => Some(Ability::SpeedBoost),
+        "swift-swim" => Some(Ability::SwiftSwim),
+        "swarm" => Some(Ability::Swarm),
+        "thick-fat" => Some(Ability::ThickFat),
+        "torrent" => Some(Ability::Torrent),
+        "vital-spirit" => Some(Ability::VitalSpirit),
+        "volt-absorb" => Some(Ability::VoltAbsorb),
+        "water-absorb" => Some(Ability::WaterAbsorb),
+        "water-veil" => Some(Ability::WaterVeil),
+        "white-smoke" => Some(Ability::WhiteSmoke),
+        _ => None,
+    }
 }
 
 fn battle_move(data: &CurrentDataSet, id: DataMoveId) -> Result<Move, RosterError> {
     let record = data.move_by_id(id).ok_or(RosterError::MissingMove(id))?;
-    let power = record.power.ok_or(RosterError::MissingMovePower(id))?;
     let pp = record.pp.ok_or(RosterError::MissingMovePp(id))?;
+    let category = battle_move_category(record.damage_class);
+    let effect = move_effect(record).unwrap_or(MoveEffect::None);
+    let power = match category {
+        MoveCategory::Status => 0,
+        MoveCategory::Physical | MoveCategory::Special => record
+            .power
+            .or_else(|| effect.permits_zero_power().then_some(0))
+            .ok_or(RosterError::MissingMovePower(id))?,
+    };
     let accuracy = record
         .accuracy
         .map(Accuracy::percent)
         .transpose()?
         .unwrap_or(Accuracy::AlwaysHit);
-    Move::new_with_category(
+    Move::new_with_category_and_effect(
         MoveId::new(format!("pokeapi-move-{}", id.0))?,
         &record.display_name.localized,
         battle_type(data, record.move_type)?,
-        battle_move_category(record.damage_class),
+        category,
         power,
         accuracy,
         pp,
         pp,
         record.priority,
+        effect,
     )
+    .map(|battle_move| {
+        let battle_move = match weather_accuracy(record) {
+            Some(modifier) => battle_move.with_weather_accuracy(modifier),
+            None => battle_move,
+        };
+        match weather_move(record) {
+            Some(modifier) => battle_move.with_weather_move(modifier),
+            None => battle_move,
+        }
+    })
     .map_err(Into::into)
+}
+
+fn weather_accuracy(record: &game_data::MoveRecord) -> Option<WeatherAccuracyModifier> {
+    match record.identifier.as_str() {
+        "thunder" => Some(WeatherAccuracyModifier::Thunder),
+        _ => None,
+    }
+}
+
+fn weather_move(record: &game_data::MoveRecord) -> Option<WeatherMoveModifier> {
+    match record.identifier.as_str() {
+        "weather-ball" => Some(WeatherMoveModifier::WeatherBall),
+        _ => None,
+    }
+}
+
+fn move_effect(record: &game_data::MoveRecord) -> Option<MoveEffect> {
+    match record.effect_id? {
+        2 => major_status_effect(record, MajorStatusKind::Sleep),
+        3 => major_status_effect(record, MajorStatusKind::Poison),
+        34 => major_status_effect(record, MajorStatusKind::BadlyPoisoned),
+        5 | 168 => major_status_effect(record, MajorStatusKind::Burn),
+        6 => major_status_effect(record, MajorStatusKind::Freeze),
+        7 | 68 => major_status_effect(record, MajorStatusKind::Paralysis),
+        11 => stage_effect(EffectTarget::User, BattleStat::Attack, 1),
+        12 => stage_effect(EffectTarget::User, BattleStat::Defense, 1),
+        17 => stage_effect(EffectTarget::User, BattleStat::Evasion, 1),
+        19 => stage_effect(EffectTarget::Opponent, BattleStat::Attack, -1),
+        20 => stage_effect(EffectTarget::Opponent, BattleStat::Defense, -1),
+        21 => stage_effect(EffectTarget::Opponent, BattleStat::Speed, -1),
+        24 => stage_effect(EffectTarget::Opponent, BattleStat::Accuracy, -1),
+        25 => stage_effect(EffectTarget::Opponent, BattleStat::Evasion, -1),
+        26 => Some(MoveEffect::haze()),
+        32 | 159 => MoveEffect::flinch_target(record.effect_chance.unwrap_or(100)).ok(),
+        42 => Some(MoveEffect::fixed_damage_amount(40)),
+        69 => stage_effect_with_chance(record, EffectTarget::Opponent, BattleStat::Attack, -1),
+        70 => stage_effect_with_chance(record, EffectTarget::Opponent, BattleStat::Defense, -1),
+        71 => stage_effect_with_chance(record, EffectTarget::Opponent, BattleStat::Speed, -1),
+        72 => stage_effect_with_chance(
+            record,
+            EffectTarget::Opponent,
+            BattleStat::SpecialAttack,
+            -1,
+        ),
+        73 => stage_effect_with_chance(
+            record,
+            EffectTarget::Opponent,
+            BattleStat::SpecialDefense,
+            -1,
+        ),
+        74 => stage_effect_with_chance(record, EffectTarget::Opponent, BattleStat::Accuracy, -1),
+        33 => MoveEffect::heal_user(1, 2).ok(),
+        38 => Some(MoveEffect::rest()),
+        4 => MoveEffect::drain_user(1, 2).ok(),
+        52 => stage_effect(EffectTarget::User, BattleStat::Defense, 2),
+        53 => stage_effect(EffectTarget::User, BattleStat::Speed, 2),
+        54 => stage_effect(EffectTarget::User, BattleStat::SpecialAttack, 2),
+        55 => stage_effect(EffectTarget::User, BattleStat::SpecialDefense, 2),
+        59 => stage_effect(EffectTarget::Opponent, BattleStat::Attack, -2),
+        60 => stage_effect(EffectTarget::Opponent, BattleStat::Defense, -2),
+        61 => stage_effect(EffectTarget::Opponent, BattleStat::Speed, -2),
+        62 => stage_effect(EffectTarget::Opponent, BattleStat::SpecialAttack, -2),
+        63 => stage_effect(EffectTarget::Opponent, BattleStat::SpecialDefense, -2),
+        80 => Some(MoveEffect::create_substitute()),
+        88 => Some(MoveEffect::fixed_damage_user_level()),
+        49 => MoveEffect::recoil_user(1, 4).ok(),
+        112 => Some(MoveEffect::protect_user()),
+        116 => Some(MoveEffect::start_weather(Weather::Sandstorm)),
+        137 => Some(MoveEffect::start_weather(Weather::Rain)),
+        138 => Some(MoveEffect::start_weather(Weather::Sun)),
+        144 => Some(MoveEffect::copy_target_stages()),
+        165 => Some(MoveEffect::start_weather(Weather::Hail)),
+        199 => MoveEffect::recoil_user(1, 3).ok(),
+        194 => Some(MoveEffect::refresh()),
+        131 => Some(MoveEffect::fixed_damage_amount(20)),
+        212 => StageChanges::new(0, 0, 1, 1, 0, 0, 0)
+            .ok()
+            .map(|changes| MoveEffect::change_stages(EffectTarget::User, changes)),
+        278 => StageChanges::new(1, 0, 0, 0, 0, 1, 0)
+            .ok()
+            .map(|changes| MoveEffect::change_stages(EffectTarget::User, changes)),
+        // Growth raises Special Attack by one stage in generation three.
+        317 => stage_effect(EffectTarget::User, BattleStat::SpecialAttack, 1),
+        328 => StageChanges::new(1, 0, 1, 0, 0, 0, 0)
+            .ok()
+            .map(|changes| MoveEffect::change_stages(EffectTarget::User, changes)),
+        _ => None,
+    }
+}
+
+fn major_status_effect(
+    record: &game_data::MoveRecord,
+    status: MajorStatusKind,
+) -> Option<MoveEffect> {
+    MoveEffect::inflict_major_status(status, record.effect_chance.unwrap_or(100)).ok()
+}
+
+fn stage_effect(target: EffectTarget, stat: BattleStat, amount: i8) -> Option<MoveEffect> {
+    StageChanges::single(stat, amount)
+        .ok()
+        .map(|changes| MoveEffect::change_stages(target, changes))
+}
+
+fn stage_effect_with_chance(
+    record: &game_data::MoveRecord,
+    target: EffectTarget,
+    stat: BattleStat,
+    amount: i8,
+) -> Option<MoveEffect> {
+    MoveEffect::change_stages_with_chance(
+        target,
+        StageChanges::single(stat, amount).ok()?,
+        record.effect_chance.unwrap_or(100),
+    )
+    .ok()
 }
 
 const fn battle_move_category(damage_class: DataDamageClass) -> MoveCategory {
@@ -378,9 +590,19 @@ mod tests {
         pp: Option<u8>,
         learnable: bool,
     ) -> CurrentDataSet {
+        minimal_data_with_category(type_name, power, pp, learnable, DamageClass::Status)
+    }
+
+    fn minimal_data_with_category(
+        type_name: &str,
+        power: Option<u16>,
+        pp: Option<u8>,
+        learnable: bool,
+        damage_class: DamageClass,
+    ) -> CurrentDataSet {
         CurrentDataSet::new(
             DataSetMetadata {
-                schema_version: "current-data-set-v2".into(),
+                schema_version: "current-data-set-v4".into(),
                 source_repository: "test".into(),
                 source_commit: "test".into(),
                 generator_version: "test".into(),
@@ -401,6 +623,7 @@ mod tests {
                     speed: 45,
                 },
                 types: vec![TypeId(1)],
+                abilities: vec![],
                 display_name: LocalizedName {
                     localized: "One".into(),
                     english: "One".into(),
@@ -427,8 +650,11 @@ mod tests {
                 accuracy: None,
                 pp,
                 priority: 0,
-                damage_class: DamageClass::Status,
+                damage_class,
+                effect_id: Some(1),
+                effect_chance: None,
             }],
+            vec![],
             vec![TypeRecord {
                 id: TypeId(1),
                 identifier: type_name.into(),
@@ -598,10 +824,13 @@ mod tests {
             battle_move(&data, DataMoveId(999)),
             Err(RosterError::MissingMove(DataMoveId(999)))
         ));
+        let missing_power =
+            minimal_data_with_category("normal", None, Some(1), true, DamageClass::Physical);
         assert!(matches!(
-            battle_move(&minimal_data("normal", None, Some(1), true), DataMoveId(1)),
+            battle_move(&missing_power, DataMoveId(1)),
             Err(RosterError::MissingMovePower(DataMoveId(1)))
         ));
+        assert!(battle_move(&minimal_data("normal", None, Some(1), true), DataMoveId(1)).is_ok());
         assert!(matches!(
             battle_move(&minimal_data("normal", Some(1), None, true), DataMoveId(1)),
             Err(RosterError::MissingMovePp(DataMoveId(1)))
@@ -628,5 +857,102 @@ mod tests {
             RosterError::InvalidTraining(_)
         ));
         assert_ne!(RosterRng::new(0).next(), 0);
+    }
+
+    #[test]
+    fn supported_non_damage_effects_keep_their_gen_three_semantics() {
+        let mut record = minimal_data("normal", None, Some(20), true)
+            .move_by_id(DataMoveId(1))
+            .unwrap()
+            .clone();
+
+        record.effect_id = Some(19);
+        assert!(matches!(
+            move_effect(&record),
+            Some(MoveEffect::ChangeStages {
+                target: EffectTarget::Opponent,
+                changes,
+            }) if changes.get(BattleStat::Attack) == -1
+        ));
+
+        record.effect_id = Some(212);
+        assert!(matches!(
+            move_effect(&record),
+            Some(MoveEffect::ChangeStages {
+                target: EffectTarget::User,
+                changes,
+            }) if changes.get(BattleStat::SpecialAttack) == 1
+                && changes.get(BattleStat::SpecialDefense) == 1
+        ));
+
+        record.effect_id = Some(33);
+        assert_eq!(move_effect(&record), MoveEffect::heal_user(1, 2).ok());
+        record.effect_id = Some(42);
+        assert_eq!(
+            move_effect(&record),
+            Some(MoveEffect::fixed_damage_amount(40))
+        );
+        record.effect_id = Some(88);
+        assert_eq!(
+            move_effect(&record),
+            Some(MoveEffect::fixed_damage_user_level())
+        );
+        record.effect_id = Some(131);
+        assert_eq!(
+            move_effect(&record),
+            Some(MoveEffect::fixed_damage_amount(20))
+        );
+        record.effect_id = Some(32);
+        record.effect_chance = Some(30);
+        assert_eq!(move_effect(&record), MoveEffect::flinch_target(30).ok());
+        record.effect_id = Some(159);
+        record.effect_chance = Some(100);
+        assert_eq!(move_effect(&record), MoveEffect::flinch_target(100).ok());
+        record.effect_id = Some(112);
+        assert_eq!(move_effect(&record), Some(MoveEffect::protect_user()));
+        record.effect_id = Some(80);
+        assert_eq!(move_effect(&record), Some(MoveEffect::create_substitute()));
+        record.effect_id = Some(26);
+        assert_eq!(move_effect(&record), Some(MoveEffect::haze()));
+        record.effect_id = Some(38);
+        assert_eq!(move_effect(&record), Some(MoveEffect::rest()));
+        record.effect_id = Some(194);
+        assert_eq!(move_effect(&record), Some(MoveEffect::refresh()));
+        record.effect_id = Some(4);
+        assert_eq!(move_effect(&record), MoveEffect::drain_user(1, 2).ok());
+        record.effect_id = Some(49);
+        assert_eq!(move_effect(&record), MoveEffect::recoil_user(1, 4).ok());
+        record.effect_id = Some(199);
+        assert_eq!(move_effect(&record), MoveEffect::recoil_user(1, 3).ok());
+        record.effect_chance = Some(10);
+        record.effect_id = Some(73);
+        assert_eq!(
+            move_effect(&record),
+            MoveEffect::change_stages_with_chance(
+                EffectTarget::Opponent,
+                StageChanges::single(BattleStat::SpecialDefense, -1).unwrap(),
+                10,
+            )
+            .ok()
+        );
+        record.effect_id = Some(137);
+        assert_eq!(
+            move_effect(&record),
+            Some(MoveEffect::start_weather(Weather::Rain))
+        );
+        record.effect_id = Some(144);
+        assert_eq!(move_effect(&record), Some(MoveEffect::copy_target_stages()));
+        record.identifier = "thunder".into();
+        assert_eq!(
+            weather_accuracy(&record),
+            Some(WeatherAccuracyModifier::Thunder)
+        );
+        record.identifier = "weather-ball".into();
+        assert_eq!(
+            weather_move(&record),
+            Some(WeatherMoveModifier::WeatherBall)
+        );
+        record.effect_id = Some(58);
+        assert_eq!(move_effect(&record), None);
     }
 }

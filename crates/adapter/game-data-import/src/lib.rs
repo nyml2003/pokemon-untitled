@@ -25,6 +25,9 @@ const INPUT_FILES: &[&str] = &[
     "pokemon_types.csv",
     "pokemon.csv",
     "pokemon_moves.csv",
+    "abilities.csv",
+    "ability_names.csv",
+    "pokemon_abilities.csv",
 ];
 
 pub fn import_directory(

@@ -1,4 +1,7 @@
-use crate::{PokemonType, model::Pokemon};
+use crate::{
+    Ability, Accuracy, BattleStat, MoveCategory, PokemonType, Weather, WeatherAccuracyModifier,
+    WeatherMoveModifier, model::Pokemon,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DamageCategory {
@@ -57,6 +60,42 @@ pub const fn type_effectiveness(
         None => SingleTypeFactor::Normal,
     };
     combine_factors(first, second)
+}
+
+pub(crate) const fn weather_adjusted_accuracy(
+    modifier: Option<WeatherAccuracyModifier>,
+    accuracy: Accuracy,
+    weather: Option<Weather>,
+) -> Accuracy {
+    match (modifier, weather) {
+        (Some(WeatherAccuracyModifier::Thunder), Some(Weather::Rain)) => Accuracy::AlwaysHit,
+        (Some(WeatherAccuracyModifier::Thunder), Some(Weather::Sun)) => Accuracy::Percent(50),
+        _ => accuracy,
+    }
+}
+
+pub(crate) const fn weather_adjusted_move(
+    modifier: Option<WeatherMoveModifier>,
+    power: u16,
+    move_type: PokemonType,
+    category: MoveCategory,
+    weather: Option<Weather>,
+) -> (u16, PokemonType, MoveCategory) {
+    match (modifier, weather) {
+        (Some(WeatherMoveModifier::WeatherBall), Some(Weather::Hail)) => {
+            (power * 2, PokemonType::Ice, MoveCategory::Special)
+        }
+        (Some(WeatherMoveModifier::WeatherBall), Some(Weather::Rain)) => {
+            (power * 2, PokemonType::Water, MoveCategory::Special)
+        }
+        (Some(WeatherMoveModifier::WeatherBall), Some(Weather::Sandstorm)) => {
+            (power * 2, PokemonType::Rock, MoveCategory::Physical)
+        }
+        (Some(WeatherMoveModifier::WeatherBall), Some(Weather::Sun)) => {
+            (power * 2, PokemonType::Fire, MoveCategory::Special)
+        }
+        _ => (power, move_type, category),
+    }
 }
 
 const fn combine_factors(first: SingleTypeFactor, second: SingleTypeFactor) -> TypeEffectiveness {
@@ -125,6 +164,7 @@ pub(crate) const fn single_type_factor(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn calculate_damage(
     attacker: &Pokemon,
     defender: &Pokemon,
@@ -133,14 +173,9 @@ pub(crate) fn calculate_damage(
     category: DamageCategory,
     critical: bool,
     random_percent: u8,
+    weather: Option<Weather>,
 ) -> u64 {
-    let (attack, defense) = match category {
-        DamageCategory::Physical => (attacker.stats().attack(), defender.stats().defense()),
-        DamageCategory::Special => (
-            attacker.stats().special_attack(),
-            defender.stats().special_defense(),
-        ),
-    };
+    let (attack, defense) = damage_stats(attacker, defender, category, critical);
 
     // Level, power, and stats are bounded by u8/u16 inputs, so this chain is
     // below u64::MAX even after every generation-three modifier is applied.
@@ -168,6 +203,71 @@ pub(crate) fn calculate_damage(
             };
         }
     }
+    if let Some(weather) = weather {
+        damage =
+            match (weather, move_type) {
+                (Weather::Rain, Some(PokemonType::Water))
+                | (Weather::Sun, Some(PokemonType::Fire)) => damage * 3 / 2,
+                (Weather::Rain, Some(PokemonType::Fire))
+                | (Weather::Sun, Some(PokemonType::Water)) => damage / 2,
+                _ => damage,
+            };
+    }
+    if low_hp_type_boost_applies(attacker, move_type) {
+        damage = damage * 3 / 2;
+    }
+    if thick_fat_applies(defender, move_type) {
+        damage /= 2;
+    }
     damage = damage * u64::from(random_percent) / 100;
     damage.max(1)
+}
+
+pub(crate) fn low_hp_type_boost_applies(
+    attacker: &Pokemon,
+    move_type: Option<PokemonType>,
+) -> bool {
+    attacker.current_hp() * 3 <= attacker.max_hp()
+        && matches!(
+            (attacker.ability(), move_type),
+            (Some(Ability::Blaze), Some(PokemonType::Fire))
+                | (Some(Ability::Overgrow), Some(PokemonType::Grass))
+                | (Some(Ability::Swarm), Some(PokemonType::Bug))
+                | (Some(Ability::Torrent), Some(PokemonType::Water))
+        )
+}
+
+pub(crate) fn thick_fat_applies(defender: &Pokemon, move_type: Option<PokemonType>) -> bool {
+    defender.ability() == Some(Ability::ThickFat)
+        && matches!(move_type, Some(PokemonType::Fire | PokemonType::Ice))
+}
+
+fn damage_stats(
+    attacker: &Pokemon,
+    defender: &Pokemon,
+    category: DamageCategory,
+    critical: bool,
+) -> (u16, u16) {
+    let (attack_stat, defense_stat) = match category {
+        DamageCategory::Physical => (BattleStat::Attack, BattleStat::Defense),
+        DamageCategory::Special => (BattleStat::SpecialAttack, BattleStat::SpecialDefense),
+    };
+    let ignore_stages =
+        critical && attacker.stages().get(attack_stat) <= defender.stages().get(defense_stat);
+    if ignore_stages {
+        return match category {
+            DamageCategory::Physical => (attacker.physical_attack(), defender.stats().defense()),
+            DamageCategory::Special => (
+                attacker.stats().special_attack(),
+                defender.stats().special_defense(),
+            ),
+        };
+    }
+    match category {
+        DamageCategory::Physical => (attacker.effective_attack(), defender.effective_defense()),
+        DamageCategory::Special => (
+            attacker.effective_special_attack(),
+            defender.effective_special_defense(),
+        ),
+    }
 }

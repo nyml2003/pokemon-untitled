@@ -12,8 +12,11 @@ pub use battle::{
     DamageSource, IllegalActionReason, ReplacementSides, SubmitOutcome, UsedMove,
 };
 pub use model::{
-    Accuracy, BattleStats, MAX_MOVES, Move, MoveCategory, MoveId, MoveSlot, Pokemon, PokemonId,
-    PokemonType, Side, TEAM_SIZE, Team, TeamSlot, ValidationError,
+    Ability, Accuracy, BattleStat, BattleStats, EffectTarget, FixedDamage, MAX_MOVES,
+    MAX_STAT_STAGE, MIN_STAT_STAGE, MajorStatus, MajorStatusKind, Move, MoveCategory, MoveEffect,
+    MoveId, MoveSlot, Pokemon, PokemonId, PokemonType, Side, StageChanges, StatStages, TEAM_SIZE,
+    Team, TeamSlot, ValidationError, Weather, WeatherAccuracyModifier, WeatherMoveModifier,
+    WeatherState,
 };
 pub use rules::{DamageCategory, TypeEffectiveness, damage_category, type_effectiveness};
 pub use stats::{

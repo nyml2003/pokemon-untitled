@@ -1,8 +1,9 @@
 use battle_domain::{
-    Action, Battle, BattleEvent as DomainEvent, BattleOutcome as DomainBattleOutcome, BattlePhase,
-    DamageSource as DomainDamageSource, Move, MoveCategory, MoveId, MoveSlot, Pokemon, PokemonId,
-    PokemonType, Side, SubmitOutcome as DomainSubmitOutcome, TEAM_SIZE, TeamSlot,
-    TypeEffectiveness, UsedMove as DomainUsedMove,
+    Ability, Action, Battle, BattleEvent as DomainEvent, BattleOutcome as DomainBattleOutcome,
+    BattlePhase, BattleStat, DamageSource as DomainDamageSource, MajorStatus, MajorStatusKind,
+    Move, MoveCategory, MoveId, MoveSlot, Pokemon, PokemonId, PokemonType, Side, StatStages,
+    SubmitOutcome as DomainSubmitOutcome, TEAM_SIZE, TeamSlot, TypeEffectiveness,
+    UsedMove as DomainUsedMove, Weather, WeatherState,
 };
 
 use crate::Accuracy;
@@ -25,6 +26,7 @@ pub struct BattleObservation {
     viewer: Side,
     turn: u32,
     phase: BattlePhase,
+    weather: Option<WeatherState>,
     own: OwnSideObservation,
     opponent: OpponentSideObservation,
 }
@@ -40,6 +42,10 @@ impl BattleObservation {
 
     pub const fn phase(&self) -> BattlePhase {
         self.phase
+    }
+
+    pub const fn weather(&self) -> Option<WeatherState> {
+        self.weather
     }
 
     pub const fn own(&self) -> &OwnSideObservation {
@@ -97,6 +103,9 @@ pub struct RevealedPokemonObservation {
     secondary_type: Option<PokemonType>,
     max_hp: u32,
     current_hp: u32,
+    substitute_hp: Option<u32>,
+    major_status: Option<MajorStatus>,
+    stages: StatStages,
     revealed_moves: Vec<RevealedMoveObservation>,
 }
 
@@ -129,6 +138,18 @@ impl RevealedPokemonObservation {
         self.current_hp
     }
 
+    pub const fn substitute_hp(&self) -> Option<u32> {
+        self.substitute_hp
+    }
+
+    pub const fn major_status(&self) -> Option<MajorStatus> {
+        self.major_status
+    }
+
+    pub const fn stages(&self) -> StatStages {
+        self.stages
+    }
+
     pub const fn is_fainted(&self) -> bool {
         self.current_hp == 0
     }
@@ -147,6 +168,9 @@ pub struct RevealedCombatant {
     secondary_type: Option<PokemonType>,
     max_hp: u32,
     current_hp: u32,
+    substitute_hp: Option<u32>,
+    major_status: Option<MajorStatus>,
+    stages: StatStages,
 }
 
 impl RevealedCombatant {
@@ -176,6 +200,18 @@ impl RevealedCombatant {
 
     pub const fn current_hp(&self) -> u32 {
         self.current_hp
+    }
+
+    pub const fn substitute_hp(&self) -> Option<u32> {
+        self.substitute_hp
+    }
+
+    pub const fn major_status(&self) -> Option<MajorStatus> {
+        self.major_status
+    }
+
+    pub const fn stages(&self) -> StatStages {
+        self.stages
     }
 }
 
@@ -237,6 +273,19 @@ pub enum DamageSource {
         participant: Participant,
         pokemon: PokemonId,
     },
+    Ability {
+        participant: Participant,
+        pokemon: PokemonId,
+        ability: Ability,
+    },
+    Status {
+        participant: Participant,
+        pokemon: PokemonId,
+        status: MajorStatus,
+    },
+    Weather {
+        weather: Weather,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -265,6 +314,104 @@ pub enum BattleEvent {
         pokemon: PokemonId,
         move_slot: MoveSlot,
         remaining: u8,
+    },
+    StatusApplied {
+        participant: Participant,
+        pokemon: PokemonId,
+        status: MajorStatus,
+    },
+    StatusFailed {
+        participant: Participant,
+        target: Participant,
+        pokemon: PokemonId,
+        status: MajorStatusKind,
+    },
+    StatusPreventsAction {
+        participant: Participant,
+        pokemon: PokemonId,
+        status: MajorStatus,
+    },
+    StatusCured {
+        participant: Participant,
+        pokemon: PokemonId,
+        status: MajorStatusKind,
+    },
+    StatusAdvanced {
+        participant: Participant,
+        pokemon: PokemonId,
+        status: MajorStatus,
+    },
+    ProtectionActivated {
+        participant: Participant,
+        pokemon: PokemonId,
+    },
+    ProtectionFailed {
+        participant: Participant,
+        pokemon: PokemonId,
+    },
+    MoveBlocked {
+        participant: Participant,
+        target: Participant,
+        pokemon: PokemonId,
+    },
+    SubstituteCreated {
+        participant: Participant,
+        pokemon: PokemonId,
+        substitute_hp: u32,
+        current_hp: u32,
+    },
+    SubstituteBlocked {
+        participant: Participant,
+        target: Participant,
+        pokemon: PokemonId,
+    },
+    SubstituteDamaged {
+        participant: Participant,
+        pokemon: PokemonId,
+        amount: u32,
+        remaining_hp: u32,
+    },
+    SubstituteBroke {
+        participant: Participant,
+        pokemon: PokemonId,
+    },
+    WeatherStarted {
+        weather: Weather,
+        turns_remaining: Option<u8>,
+    },
+    WeatherUpdated {
+        weather: Weather,
+        turns_remaining: u8,
+    },
+    WeatherEnded {
+        weather: Weather,
+    },
+    AbilityActivated {
+        participant: Participant,
+        pokemon: PokemonId,
+        ability: Ability,
+    },
+    Flinched {
+        participant: Participant,
+        pokemon: PokemonId,
+    },
+    StatStageChanged {
+        participant: Participant,
+        pokemon: PokemonId,
+        stat: BattleStat,
+        change: i8,
+        stage: i8,
+    },
+    Healed {
+        participant: Participant,
+        pokemon: PokemonId,
+        amount: u32,
+        current_hp: u32,
+    },
+    EffectFailed {
+        participant: Participant,
+        target: Participant,
+        pokemon: PokemonId,
     },
     Missed {
         participant: Participant,
@@ -380,6 +527,7 @@ pub(crate) fn observe(battle: &Battle, viewer: Side) -> BattleObservation {
         viewer,
         turn: battle.turn_number(),
         phase: battle.phase(),
+        weather: battle.weather(),
         own: OwnSideObservation {
             active_slot: battle.active_slot(viewer),
             members: battle.team(viewer).members().clone(),
@@ -465,6 +613,9 @@ fn revealed_pokemon(
         secondary_type: pokemon.secondary_type(),
         max_hp: pokemon.max_hp(),
         current_hp: pokemon.current_hp(),
+        substitute_hp: pokemon.substitute_hp(),
+        major_status: pokemon.major_status(),
+        stages: pokemon.stages(),
         revealed_moves: revealed_moves(battle, side, pokemon),
     }
 }
@@ -489,6 +640,9 @@ fn revealed_pokemon_at(
         secondary_type: pokemon.secondary_type(),
         max_hp: pokemon.max_hp(),
         current_hp,
+        substitute_hp: pokemon.substitute_hp(),
+        major_status: pokemon.major_status(),
+        stages: pokemon.stages(),
     }
 }
 
@@ -581,6 +735,166 @@ fn observe_event(battle: &Battle, event: &DomainEvent, viewer: Side) -> Option<B
             pokemon: pokemon.clone(),
             move_slot: *move_slot,
             remaining: *remaining,
+        },
+        DomainEvent::StatusApplied {
+            side,
+            pokemon,
+            status,
+        } => BattleEvent::StatusApplied {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            status: *status,
+        },
+        DomainEvent::StatusFailed {
+            side,
+            target_side,
+            target,
+            status,
+        } => BattleEvent::StatusFailed {
+            participant: participant(*side, viewer),
+            target: participant(*target_side, viewer),
+            pokemon: target.clone(),
+            status: *status,
+        },
+        DomainEvent::StatusPreventsAction {
+            side,
+            pokemon,
+            status,
+        } => BattleEvent::StatusPreventsAction {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            status: *status,
+        },
+        DomainEvent::StatusCured {
+            side,
+            pokemon,
+            status,
+        } => BattleEvent::StatusCured {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            status: *status,
+        },
+        DomainEvent::StatusAdvanced {
+            side,
+            pokemon,
+            status,
+        } => BattleEvent::StatusAdvanced {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            status: *status,
+        },
+        DomainEvent::ProtectionActivated { side, pokemon } => BattleEvent::ProtectionActivated {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+        },
+        DomainEvent::ProtectionFailed { side, pokemon } => BattleEvent::ProtectionFailed {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+        },
+        DomainEvent::MoveBlocked {
+            side,
+            target_side,
+            target,
+        } => BattleEvent::MoveBlocked {
+            participant: participant(*side, viewer),
+            target: participant(*target_side, viewer),
+            pokemon: target.clone(),
+        },
+        DomainEvent::SubstituteCreated {
+            side,
+            pokemon,
+            substitute_hp,
+            current_hp,
+        } => BattleEvent::SubstituteCreated {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            substitute_hp: *substitute_hp,
+            current_hp: *current_hp,
+        },
+        DomainEvent::SubstituteBlocked {
+            side,
+            target_side,
+            target,
+        } => BattleEvent::SubstituteBlocked {
+            participant: participant(*side, viewer),
+            target: participant(*target_side, viewer),
+            pokemon: target.clone(),
+        },
+        DomainEvent::SubstituteDamaged {
+            side,
+            pokemon,
+            amount,
+            remaining_hp,
+        } => BattleEvent::SubstituteDamaged {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            amount: *amount,
+            remaining_hp: *remaining_hp,
+        },
+        DomainEvent::SubstituteBroke { side, pokemon } => BattleEvent::SubstituteBroke {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+        },
+        DomainEvent::WeatherStarted {
+            weather,
+            turns_remaining,
+        } => BattleEvent::WeatherStarted {
+            weather: *weather,
+            turns_remaining: *turns_remaining,
+        },
+        DomainEvent::WeatherUpdated {
+            weather,
+            turns_remaining,
+        } => BattleEvent::WeatherUpdated {
+            weather: *weather,
+            turns_remaining: *turns_remaining,
+        },
+        DomainEvent::WeatherEnded { weather } => BattleEvent::WeatherEnded { weather: *weather },
+        DomainEvent::AbilityActivated {
+            side,
+            pokemon,
+            ability,
+        } => BattleEvent::AbilityActivated {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            ability: *ability,
+        },
+        DomainEvent::Flinched { side, pokemon } => BattleEvent::Flinched {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+        },
+        DomainEvent::StatStageChanged {
+            side,
+            pokemon,
+            stat,
+            change,
+            stage,
+        } => BattleEvent::StatStageChanged {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            stat: *stat,
+            change: *change,
+            stage: *stage,
+        },
+        DomainEvent::Healed {
+            side,
+            pokemon,
+            amount,
+            current_hp,
+        } => BattleEvent::Healed {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            amount: *amount,
+            current_hp: *current_hp,
+        },
+        DomainEvent::EffectFailed {
+            side,
+            target_side,
+            target,
+        } => BattleEvent::EffectFailed {
+            participant: participant(*side, viewer),
+            target: participant(*target_side, viewer),
+            pokemon: target.clone(),
         },
         DomainEvent::Missed {
             side,
@@ -687,6 +1001,25 @@ fn observe_damage_source(
             participant: participant(*side, viewer),
             pokemon: pokemon.clone(),
         },
+        DomainDamageSource::Ability {
+            side,
+            pokemon,
+            ability,
+        } => DamageSource::Ability {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            ability: *ability,
+        },
+        DomainDamageSource::Status {
+            side,
+            pokemon,
+            status,
+        } => DamageSource::Status {
+            participant: participant(*side, viewer),
+            pokemon: pokemon.clone(),
+            status: *status,
+        },
+        DomainDamageSource::Weather { weather } => DamageSource::Weather { weather: *weather },
     }
 }
 

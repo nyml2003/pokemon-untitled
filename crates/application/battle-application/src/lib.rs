@@ -5,12 +5,14 @@
 mod observation;
 
 pub use battle_domain::{
-    Accuracy, Action, BattleError, BattleOutcome, BattlePhase, BattleStats, CalculatedStats,
-    EffortValues, IllegalActionReason, IndividualValues, MAX_EFFORT_VALUE, MAX_INDIVIDUAL_VALUE,
-    MAX_MOVES, MAX_TOTAL_EFFORT_VALUE, Move, MoveCategory, MoveId, MoveSlot, Nature, NonHpStat,
-    Pokemon, PokemonId, PokemonType, ReplacementSides, Side, StatBlock, StatName,
-    StatProjectionError, TEAM_SIZE, Team, TeamSlot, TrainingValues, TypeEffectiveness,
-    ValidationError, calculate_gen3_stats,
+    Ability, Accuracy, Action, BattleError, BattleOutcome, BattlePhase, BattleStat, BattleStats,
+    CalculatedStats, EffectTarget, EffortValues, IllegalActionReason, IndividualValues,
+    MAX_EFFORT_VALUE, MAX_INDIVIDUAL_VALUE, MAX_MOVES, MAX_STAT_STAGE, MAX_TOTAL_EFFORT_VALUE,
+    MIN_STAT_STAGE, MajorStatus, MajorStatusKind, Move, MoveCategory, MoveEffect, MoveId, MoveSlot,
+    Nature, NonHpStat, Pokemon, PokemonId, PokemonType, ReplacementSides, Side, StageChanges,
+    StatBlock, StatName, StatProjectionError, StatStages, TEAM_SIZE, Team, TeamSlot,
+    TrainingValues, TypeEffectiveness, ValidationError, Weather, WeatherAccuracyModifier,
+    WeatherMoveModifier, WeatherState, calculate_gen3_stats,
 };
 pub use observation::{
     BattleEvent, BattleObservation, BattleTransition, DamageSource, ObservedBattleOutcome,

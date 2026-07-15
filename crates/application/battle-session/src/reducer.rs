@@ -1,7 +1,8 @@
 use battle_application::{
-    BattleEvent, BattleObservation, BattleTransition, ObservedBattleOutcome, Participant, Pokemon,
-    PokemonId, PokemonType, RevealedCombatant, RevealedPokemonObservation, TypeEffectiveness,
-    UsedMove,
+    Ability, BattleEvent, BattleObservation, BattleStat, BattleTransition, MajorStatus,
+    MajorStatusKind, ObservedBattleOutcome, Participant, Pokemon, PokemonId, PokemonType,
+    RevealedCombatant, RevealedPokemonObservation, StatStages, TypeEffectiveness, UsedMove,
+    Weather, WeatherState,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -19,6 +20,9 @@ pub struct CombatantScene {
     secondary_type: Option<PokemonType>,
     current_hp: u32,
     max_hp: u32,
+    substitute_hp: Option<u32>,
+    major_status: Option<MajorStatus>,
+    stages: StatStages,
     condition: CombatantCondition,
 }
 
@@ -51,8 +55,20 @@ impl CombatantScene {
         self.max_hp
     }
 
+    pub const fn substitute_hp(&self) -> Option<u32> {
+        self.substitute_hp
+    }
+
     pub const fn condition(&self) -> CombatantCondition {
         self.condition
+    }
+
+    pub const fn major_status(&self) -> Option<MajorStatus> {
+        self.major_status
+    }
+
+    pub const fn stages(&self) -> StatStages {
+        self.stages
     }
 }
 
@@ -60,6 +76,7 @@ impl CombatantScene {
 pub struct BattleScene {
     own: CombatantScene,
     opponent: CombatantScene,
+    weather: Option<WeatherState>,
 }
 
 impl BattleScene {
@@ -69,6 +86,10 @@ impl BattleScene {
 
     pub const fn opponent(&self) -> &CombatantScene {
         &self.opponent
+    }
+
+    pub const fn weather(&self) -> Option<WeatherState> {
+        self.weather
     }
 
     fn combatant_mut(&mut self, participant: Participant) -> &mut CombatantScene {
@@ -94,6 +115,81 @@ pub enum BattleCue {
     DamageApplied {
         participant: Participant,
         amount: u32,
+    },
+    StatusApplied {
+        participant: Participant,
+        status: MajorStatus,
+    },
+    StatusFailed {
+        participant: Participant,
+        target: Participant,
+        status: MajorStatusKind,
+    },
+    StatusPreventsAction {
+        participant: Participant,
+        status: MajorStatus,
+    },
+    StatusCured {
+        participant: Participant,
+        status: MajorStatusKind,
+    },
+    StatStageChanged {
+        participant: Participant,
+        stat: BattleStat,
+        change: i8,
+        stage: i8,
+    },
+    Healed {
+        participant: Participant,
+        amount: u32,
+    },
+    EffectFailed {
+        participant: Participant,
+        target: Participant,
+    },
+    ProtectionActivated {
+        participant: Participant,
+    },
+    ProtectionFailed {
+        participant: Participant,
+    },
+    MoveBlocked {
+        participant: Participant,
+        target: Participant,
+    },
+    SubstituteCreated {
+        participant: Participant,
+        substitute_hp: u32,
+    },
+    SubstituteBlocked {
+        participant: Participant,
+        target: Participant,
+    },
+    SubstituteDamaged {
+        participant: Participant,
+        amount: u32,
+        remaining_hp: u32,
+    },
+    SubstituteBroke {
+        participant: Participant,
+    },
+    WeatherStarted {
+        weather: Weather,
+        turns_remaining: Option<u8>,
+    },
+    WeatherUpdated {
+        weather: Weather,
+        turns_remaining: u8,
+    },
+    WeatherEnded {
+        weather: Weather,
+    },
+    AbilityActivated {
+        participant: Participant,
+        ability: Ability,
+    },
+    Flinched {
+        participant: Participant,
     },
     Missed {
         participant: Participant,
@@ -154,6 +250,7 @@ pub fn scene_from_observation(observation: &BattleObservation) -> BattleScene {
     BattleScene {
         own: scene_from_pokemon(own),
         opponent: scene_from_revealed(observation.opponent().active()),
+        weather: observation.weather(),
     }
 }
 
@@ -240,6 +337,235 @@ impl BattleSceneReducer {
                     amount: *amount,
                 }
             }
+            BattleEvent::StatusApplied {
+                participant,
+                pokemon,
+                status,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene.combatant_mut(*participant).major_status = Some(*status);
+                BattleCue::StatusApplied {
+                    participant: *participant,
+                    status: *status,
+                }
+            }
+            BattleEvent::StatusFailed {
+                participant,
+                target,
+                pokemon,
+                status,
+            } => {
+                self.ensure_active(*target, pokemon)?;
+                BattleCue::StatusFailed {
+                    participant: *participant,
+                    target: *target,
+                    status: *status,
+                }
+            }
+            BattleEvent::StatusPreventsAction {
+                participant,
+                pokemon,
+                status,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene.combatant_mut(*participant).major_status = Some(*status);
+                BattleCue::StatusPreventsAction {
+                    participant: *participant,
+                    status: *status,
+                }
+            }
+            BattleEvent::StatusCured {
+                participant,
+                pokemon,
+                status,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene.combatant_mut(*participant).major_status = None;
+                BattleCue::StatusCured {
+                    participant: *participant,
+                    status: *status,
+                }
+            }
+            BattleEvent::StatusAdvanced {
+                participant,
+                pokemon,
+                status,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene.combatant_mut(*participant).major_status = Some(*status);
+                return Ok(None);
+            }
+            BattleEvent::StatStageChanged {
+                participant,
+                pokemon,
+                stat,
+                change,
+                stage,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene
+                    .combatant_mut(*participant)
+                    .stages
+                    .set(*stat, *stage)
+                    .expect("domain events contain valid stat stages");
+                BattleCue::StatStageChanged {
+                    participant: *participant,
+                    stat: *stat,
+                    change: *change,
+                    stage: *stage,
+                }
+            }
+            BattleEvent::Healed {
+                participant,
+                pokemon,
+                amount,
+                current_hp,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene.combatant_mut(*participant).current_hp = *current_hp;
+                BattleCue::Healed {
+                    participant: *participant,
+                    amount: *amount,
+                }
+            }
+            BattleEvent::EffectFailed {
+                participant,
+                target,
+                pokemon,
+            } => {
+                self.ensure_active(*target, pokemon)?;
+                BattleCue::EffectFailed {
+                    participant: *participant,
+                    target: *target,
+                }
+            }
+            BattleEvent::ProtectionActivated {
+                participant,
+                pokemon,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                BattleCue::ProtectionActivated {
+                    participant: *participant,
+                }
+            }
+            BattleEvent::ProtectionFailed {
+                participant,
+                pokemon,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                BattleCue::ProtectionFailed {
+                    participant: *participant,
+                }
+            }
+            BattleEvent::MoveBlocked {
+                participant,
+                target,
+                pokemon,
+            } => {
+                self.ensure_active(*target, pokemon)?;
+                BattleCue::MoveBlocked {
+                    participant: *participant,
+                    target: *target,
+                }
+            }
+            BattleEvent::SubstituteCreated {
+                participant,
+                pokemon,
+                substitute_hp,
+                current_hp,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                let combatant = self.scene.combatant_mut(*participant);
+                combatant.substitute_hp = Some(*substitute_hp);
+                combatant.current_hp = *current_hp;
+                BattleCue::SubstituteCreated {
+                    participant: *participant,
+                    substitute_hp: *substitute_hp,
+                }
+            }
+            BattleEvent::SubstituteBlocked {
+                participant,
+                target,
+                pokemon,
+            } => {
+                self.ensure_active(*target, pokemon)?;
+                BattleCue::SubstituteBlocked {
+                    participant: *participant,
+                    target: *target,
+                }
+            }
+            BattleEvent::SubstituteDamaged {
+                participant,
+                pokemon,
+                amount,
+                remaining_hp,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene.combatant_mut(*participant).substitute_hp =
+                    (*remaining_hp > 0).then_some(*remaining_hp);
+                BattleCue::SubstituteDamaged {
+                    participant: *participant,
+                    amount: *amount,
+                    remaining_hp: *remaining_hp,
+                }
+            }
+            BattleEvent::SubstituteBroke {
+                participant,
+                pokemon,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                self.scene.combatant_mut(*participant).substitute_hp = None;
+                BattleCue::SubstituteBroke {
+                    participant: *participant,
+                }
+            }
+            BattleEvent::WeatherStarted {
+                weather,
+                turns_remaining,
+            } => {
+                self.scene.weather = Some(match turns_remaining {
+                    Some(turns) => WeatherState::with_turns(*weather, *turns),
+                    None => WeatherState::permanent(*weather),
+                });
+                BattleCue::WeatherStarted {
+                    weather: *weather,
+                    turns_remaining: *turns_remaining,
+                }
+            }
+            BattleEvent::WeatherUpdated {
+                weather,
+                turns_remaining,
+            } => {
+                self.scene.weather = Some(WeatherState::with_turns(*weather, *turns_remaining));
+                BattleCue::WeatherUpdated {
+                    weather: *weather,
+                    turns_remaining: *turns_remaining,
+                }
+            }
+            BattleEvent::WeatherEnded { weather } => {
+                self.scene.weather = None;
+                BattleCue::WeatherEnded { weather: *weather }
+            }
+            BattleEvent::AbilityActivated {
+                participant,
+                pokemon,
+                ability,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                BattleCue::AbilityActivated {
+                    participant: *participant,
+                    ability: *ability,
+                }
+            }
+            BattleEvent::Flinched {
+                participant,
+                pokemon,
+            } => {
+                self.ensure_active(*participant, pokemon)?;
+                BattleCue::Flinched {
+                    participant: *participant,
+                }
+            }
             BattleEvent::Missed { participant, .. } => BattleCue::Missed {
                 participant: *participant,
             },
@@ -323,6 +649,9 @@ fn scene_from_pokemon(pokemon: &Pokemon) -> CombatantScene {
         secondary_type: pokemon.secondary_type(),
         current_hp: pokemon.current_hp(),
         max_hp: pokemon.max_hp(),
+        substitute_hp: pokemon.substitute_hp(),
+        major_status: pokemon.major_status(),
+        stages: pokemon.stages(),
         condition: condition(pokemon.current_hp()),
     }
 }
@@ -336,6 +665,9 @@ fn scene_from_revealed(pokemon: &RevealedPokemonObservation) -> CombatantScene {
         secondary_type: pokemon.secondary_type(),
         current_hp: pokemon.current_hp(),
         max_hp: pokemon.max_hp(),
+        substitute_hp: pokemon.substitute_hp(),
+        major_status: pokemon.major_status(),
+        stages: pokemon.stages(),
         condition: condition(pokemon.current_hp()),
     }
 }
@@ -349,6 +681,9 @@ fn scene_from_combatant(pokemon: &RevealedCombatant) -> CombatantScene {
         secondary_type: pokemon.secondary_type(),
         current_hp: pokemon.current_hp(),
         max_hp: pokemon.max_hp(),
+        substitute_hp: pokemon.substitute_hp(),
+        major_status: pokemon.major_status(),
+        stages: pokemon.stages(),
         condition: condition(pokemon.current_hp()),
     }
 }
@@ -374,6 +709,9 @@ mod tests {
             secondary_type: None,
             current_hp: hp,
             max_hp: 100,
+            substitute_hp: None,
+            major_status: None,
+            stages: StatStages::neutral(),
             condition: condition(hp),
         }
     }
@@ -382,6 +720,7 @@ mod tests {
         BattleScene {
             own: combatant("own", 100),
             opponent: combatant("opponent", 100),
+            weather: None,
         }
     }
 

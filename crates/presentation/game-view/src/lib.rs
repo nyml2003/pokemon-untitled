@@ -3,8 +3,9 @@
 #![forbid(unsafe_code)]
 
 use battle_session::{
-    Action, BattleCue, BattleInteraction, BattleObservation, BattleSessionSnapshot, MoveCategory,
-    ObservedBattleOutcome, Participant, Pokemon, PokemonType, TypeEffectiveness, UsedMove,
+    Ability, Action, BattleCue, BattleInteraction, BattleObservation, BattleSessionSnapshot,
+    MoveCategory, ObservedBattleOutcome, Participant, Pokemon, PokemonType, TypeEffectiveness,
+    UsedMove,
 };
 use game_assets::AssetKey;
 use game_data::PokedexData;
@@ -684,6 +685,112 @@ fn battle_message(snapshot: &BattleSessionSnapshot) -> String {
             combatant_name(scene, *participant),
             amount
         ),
+        Some(BattleCue::StatusApplied {
+            participant,
+            status,
+        }) => format!(
+            "{} {}了。",
+            combatant_name(scene, *participant),
+            major_status_message(*status)
+        ),
+        Some(BattleCue::StatusFailed { .. }) => "但是失败了。".into(),
+        Some(BattleCue::StatusPreventsAction {
+            participant,
+            status,
+        }) => format!(
+            "{} 因{}无法行动。",
+            combatant_name(scene, *participant),
+            major_status_reason(*status)
+        ),
+        Some(BattleCue::StatusCured {
+            participant,
+            status,
+        }) => format!(
+            "{} 从{}中恢复了。",
+            combatant_name(scene, *participant),
+            major_status_kind_message(*status)
+        ),
+        Some(BattleCue::StatStageChanged {
+            participant,
+            stat,
+            change,
+            stage: _,
+        }) => format!(
+            "{} 的{}{}了。",
+            combatant_name(scene, *participant),
+            battle_stat_message(*stat),
+            if *change > 0 { "提高" } else { "降低" }
+        ),
+        Some(BattleCue::Healed {
+            participant,
+            amount,
+        }) => format!(
+            "{} 回复了 {} 点 HP。",
+            combatant_name(scene, *participant),
+            amount
+        ),
+        Some(BattleCue::EffectFailed { .. }) => "但是失败了。".into(),
+        Some(BattleCue::ProtectionActivated { participant }) => {
+            format!("{} 进入了守住状态。", combatant_name(scene, *participant))
+        }
+        Some(BattleCue::ProtectionFailed { participant }) => {
+            format!("{} 的守住失败了。", combatant_name(scene, *participant))
+        }
+        Some(BattleCue::MoveBlocked { target, .. }) => {
+            format!("{} 守住了攻击！", combatant_name(scene, *target))
+        }
+        Some(BattleCue::SubstituteCreated {
+            participant,
+            substitute_hp,
+        }) => format!(
+            "{} 制造了替身（{} HP）。",
+            combatant_name(scene, *participant),
+            substitute_hp
+        ),
+        Some(BattleCue::SubstituteBlocked { target, .. }) => {
+            format!("{} 的替身挡住了招式。", combatant_name(scene, *target))
+        }
+        Some(BattleCue::SubstituteDamaged {
+            participant,
+            amount,
+            remaining_hp,
+        }) => format!(
+            "{} 的替身受到了 {} 点伤害（剩余 {}）。",
+            combatant_name(scene, *participant),
+            amount,
+            remaining_hp
+        ),
+        Some(BattleCue::SubstituteBroke { participant }) => {
+            format!("{} 的替身消失了。", combatant_name(scene, *participant))
+        }
+        Some(BattleCue::WeatherStarted {
+            weather,
+            turns_remaining,
+        }) => match turns_remaining {
+            Some(turns) => format!("{}开始了，剩余 {turns} 回合。", weather_message(*weather)),
+            None => format!("{}开始了。", weather_message(*weather)),
+        },
+        Some(BattleCue::WeatherUpdated {
+            weather,
+            turns_remaining,
+        }) => format!(
+            "{}，剩余 {turns_remaining} 回合。",
+            weather_message(*weather)
+        ),
+        Some(BattleCue::WeatherEnded { weather }) => {
+            format!("{}停止了。", weather_message(*weather))
+        }
+        Some(BattleCue::AbilityActivated {
+            participant,
+            ability,
+        }) => format!(
+            "{} 的{}发动了！",
+            combatant_name(scene, *participant),
+            ability_message(*ability)
+        ),
+        Some(BattleCue::Flinched { participant }) => {
+            format!("{} 畏缩了。", combatant_name(scene, *participant))
+        }
         Some(BattleCue::Missed { .. }) => "攻击没有命中。".into(),
         Some(BattleCue::Critical { .. }) => "会心一击！".into(),
         Some(BattleCue::Effectiveness { effectiveness, .. }) => {
@@ -700,6 +807,115 @@ fn battle_message(snapshot: &BattleSessionSnapshot) -> String {
             BattleInteraction::PlaybackLocked => String::new(),
             BattleInteraction::Finished(prompt) => outcome_message(prompt.outcome()).into(),
         },
+    }
+}
+
+fn major_status_message(status: battle_session::MajorStatus) -> &'static str {
+    match status {
+        battle_session::MajorStatus::Burn => "烧伤",
+        battle_session::MajorStatus::BadlyPoisoned { .. } => "剧毒",
+        battle_session::MajorStatus::Freeze => "冰冻",
+        battle_session::MajorStatus::Paralysis => "麻痹",
+        battle_session::MajorStatus::Poison => "中毒",
+        battle_session::MajorStatus::Sleep { .. } => "睡着",
+    }
+}
+
+fn major_status_reason(status: battle_session::MajorStatus) -> &'static str {
+    match status {
+        battle_session::MajorStatus::Freeze => "冰冻",
+        battle_session::MajorStatus::Paralysis => "麻痹",
+        battle_session::MajorStatus::Sleep { .. } => "睡眠",
+        battle_session::MajorStatus::BadlyPoisoned { .. }
+        | battle_session::MajorStatus::Burn
+        | battle_session::MajorStatus::Poison => "状态",
+    }
+}
+
+fn major_status_kind_message(status: battle_session::MajorStatusKind) -> &'static str {
+    match status {
+        battle_session::MajorStatusKind::Burn => "烧伤",
+        battle_session::MajorStatusKind::BadlyPoisoned => "剧毒",
+        battle_session::MajorStatusKind::Freeze => "冰冻",
+        battle_session::MajorStatusKind::Paralysis => "麻痹",
+        battle_session::MajorStatusKind::Poison => "中毒",
+        battle_session::MajorStatusKind::Sleep => "睡眠",
+    }
+}
+
+fn battle_stat_message(stat: battle_session::BattleStat) -> &'static str {
+    match stat {
+        battle_session::BattleStat::Attack => "攻击",
+        battle_session::BattleStat::Defense => "防御",
+        battle_session::BattleStat::SpecialAttack => "特攻",
+        battle_session::BattleStat::SpecialDefense => "特防",
+        battle_session::BattleStat::Speed => "速度",
+        battle_session::BattleStat::Accuracy => "命中率",
+        battle_session::BattleStat::Evasion => "闪避率",
+    }
+}
+
+fn weather_message(weather: battle_session::Weather) -> &'static str {
+    match weather {
+        battle_session::Weather::Hail => "冰雹",
+        battle_session::Weather::Rain => "下雨",
+        battle_session::Weather::Sandstorm => "沙暴",
+        battle_session::Weather::Sun => "阳光强烈",
+    }
+}
+
+fn ability_message(ability: Ability) -> &'static str {
+    match ability {
+        Ability::AirLock => "气闸",
+        Ability::ArenaTrap => "沙穴",
+        Ability::BattleArmor => "战斗盔甲",
+        Ability::Blaze => "猛火",
+        Ability::Chlorophyll => "叶绿素",
+        Ability::ClearBody => "清晰之躯",
+        Ability::CloudNine => "无关天气",
+        Ability::CompoundEyes => "复眼",
+        Ability::Drizzle => "降雨",
+        Ability::Drought => "日照",
+        Ability::EarlyBird => "早起",
+        Ability::FlashFire => "闪火",
+        Ability::Guts => "根性",
+        Ability::HugePower => "大力士",
+        Ability::HyperCutter => "怪力钳",
+        Ability::Hustle => "活力",
+        Ability::Immunity => "免疫",
+        Ability::Intimidate => "威吓",
+        Ability::InnerFocus => "精神力",
+        Ability::KeenEye => "锐利目光",
+        Ability::Insomnia => "不眠",
+        Ability::Levitate => "飘浮",
+        Ability::Limber => "柔软",
+        Ability::LiquidOoze => "污泥浆",
+        Ability::MagmaArmor => "熔岩铠甲",
+        Ability::MarvelScale => "神奇鳞片",
+        Ability::NaturalCure => "自然回复",
+        Ability::Overgrow => "茂盛",
+        Ability::Pressure => "压迫感",
+        Ability::PurePower => "瑜伽之力",
+        Ability::RainDish => "雨盘",
+        Ability::RockHead => "坚硬脑袋",
+        Ability::SandStream => "扬沙",
+        Ability::SandVeil => "沙隐",
+        Ability::SereneGrace => "天恩",
+        Ability::ShellArmor => "硬壳盔甲",
+        Ability::ShedSkin => "蜕皮",
+        Ability::ShieldDust => "鳞粉",
+        Ability::ShadowTag => "踩影",
+        Ability::SpeedBoost => "加速",
+        Ability::Synchronize => "同步",
+        Ability::SwiftSwim => "悠游自如",
+        Ability::Swarm => "虫之预感",
+        Ability::ThickFat => "厚脂肪",
+        Ability::Torrent => "激流",
+        Ability::VitalSpirit => "干劲",
+        Ability::VoltAbsorb => "蓄电",
+        Ability::WaterAbsorb => "蓄水",
+        Ability::WaterVeil => "水幕",
+        Ability::WhiteSmoke => "白色烟雾",
     }
 }
 

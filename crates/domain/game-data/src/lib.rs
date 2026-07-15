@@ -20,6 +20,7 @@ id_type!(PokemonFormId, u32);
 id_type!(SpeciesId, u32);
 id_type!(MoveId, u32);
 id_type!(TypeId, u16);
+id_type!(AbilityId, u16);
 
 const POKEDEX_MAGIC: &[u8; 4] = b"PKDX";
 const POKEDEX_VERSION: u16 = 1;
@@ -221,8 +222,23 @@ pub struct PokemonRecord {
     pub is_default: bool,
     pub base_stats: BaseStats,
     pub types: Vec<TypeId>,
+    pub abilities: Vec<PokemonAbility>,
     pub display_name: LocalizedName,
     pub learnset: Vec<LearnsetEntry>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PokemonAbility {
+    pub ability_id: AbilityId,
+    pub is_hidden: bool,
+    pub slot: u8,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AbilityRecord {
+    pub id: AbilityId,
+    pub identifier: String,
+    pub display_name: LocalizedName,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
@@ -269,6 +285,8 @@ pub struct MoveRecord {
     pub pp: Option<u8>,
     pub priority: i8,
     pub damage_class: DamageClass,
+    pub effect_id: Option<u16>,
+    pub effect_chance: Option<u8>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -276,6 +294,7 @@ pub struct CurrentDataSet {
     metadata: DataSetMetadata,
     pokemon: Vec<PokemonRecord>,
     moves: Vec<MoveRecord>,
+    abilities: Vec<AbilityRecord>,
     types: Vec<TypeRecord>,
 }
 
@@ -284,12 +303,14 @@ impl CurrentDataSet {
         metadata: DataSetMetadata,
         pokemon: Vec<PokemonRecord>,
         moves: Vec<MoveRecord>,
+        abilities: Vec<AbilityRecord>,
         types: Vec<TypeRecord>,
     ) -> Result<Self, DataLoadError> {
         let data = Self {
             metadata,
             pokemon,
             moves,
+            abilities,
             types,
         };
         data.validate()?;
@@ -334,6 +355,13 @@ impl CurrentDataSet {
             .map(|index| &self.types[index])
     }
 
+    pub fn ability_by_id(&self, id: AbilityId) -> Option<&AbilityRecord> {
+        self.abilities
+            .binary_search_by_key(&id, |record| record.id)
+            .ok()
+            .map(|index| &self.abilities[index])
+    }
+
     pub fn learnset(&self, id: PokemonFormId) -> Option<&[LearnsetEntry]> {
         self.pokemon(id).map(|record| record.learnset.as_slice())
     }
@@ -374,8 +402,12 @@ impl CurrentDataSet {
         self.types.iter()
     }
 
+    pub fn ability_iter(&self) -> impl Iterator<Item = &AbilityRecord> {
+        self.abilities.iter()
+    }
+
     fn validate(&self) -> Result<(), DataLoadError> {
-        if self.metadata.schema_version != "current-data-set-v2" {
+        if self.metadata.schema_version != "current-data-set-v4" {
             return Err(DataLoadError::UnsupportedSchema(
                 self.metadata.schema_version.clone(),
             ));
@@ -387,6 +419,10 @@ impl CurrentDataSet {
         }
         validate_sorted("pokemon", self.pokemon.iter().map(|record| record.id.0))?;
         validate_sorted("moves", self.moves.iter().map(|record| record.id.0))?;
+        validate_sorted(
+            "abilities",
+            self.abilities.iter().map(|record| record.id.0 as u32),
+        )?;
         validate_sorted("types", self.types.iter().map(|record| record.id.0 as u32))?;
         for pokemon in &self.pokemon {
             if pokemon.types.is_empty() || pokemon.types.len() > 2 {
@@ -411,6 +447,22 @@ impl CurrentDataSet {
                     "pokemon {} references an unknown type",
                     pokemon.id.0
                 )));
+            }
+            let mut previous_ability_slot = None;
+            for ability in &pokemon.abilities {
+                if self.ability_by_id(ability.ability_id).is_none() {
+                    return Err(DataLoadError::InvalidRecord(format!(
+                        "pokemon {} references an unknown ability",
+                        pokemon.id.0
+                    )));
+                }
+                if previous_ability_slot.is_some_and(|previous| ability.slot <= previous) {
+                    return Err(DataLoadError::InvalidRecord(format!(
+                        "pokemon {} abilities are not strictly sorted by slot",
+                        pokemon.id.0
+                    )));
+                }
+                previous_ability_slot = Some(ability.slot);
             }
             let mut previous = None;
             for entry in &pokemon.learnset {
@@ -442,6 +494,15 @@ impl CurrentDataSet {
             {
                 return Err(DataLoadError::InvalidRecord(format!(
                     "move {} has invalid accuracy",
+                    move_record.id.0
+                )));
+            }
+            if move_record
+                .effect_chance
+                .is_some_and(|chance| !(1..=100).contains(&chance))
+            {
+                return Err(DataLoadError::InvalidRecord(format!(
+                    "move {} has invalid effect chance",
                     move_record.id.0
                 )));
             }
@@ -516,7 +577,7 @@ mod tests {
     fn fixture() -> Vec<u8> {
         serde_json::to_vec(&CurrentDataSet {
             metadata: super::DataSetMetadata {
-                schema_version: "current-data-set-v2".into(),
+                schema_version: "current-data-set-v4".into(),
                 source_repository: "test".into(),
                 source_commit: "test".into(),
                 generator_version: "test".into(),
@@ -537,6 +598,11 @@ mod tests {
                     speed: 45,
                 },
                 types: vec![TypeId(12), TypeId(4)],
+                abilities: vec![super::PokemonAbility {
+                    ability_id: super::AbilityId(1),
+                    is_hidden: false,
+                    slot: 1,
+                }],
                 display_name: super::LocalizedName {
                     localized: "妙蛙种子".into(),
                     english: "Bulbasaur".into(),
@@ -561,6 +627,16 @@ mod tests {
                 pp: Some(35),
                 priority: 0,
                 damage_class: DamageClass::Physical,
+                effect_id: Some(1),
+                effect_chance: None,
+            }],
+            abilities: vec![super::AbilityRecord {
+                id: super::AbilityId(1),
+                identifier: "stench".into(),
+                display_name: super::LocalizedName {
+                    localized: "恶臭".into(),
+                    english: "Stench".into(),
+                },
             }],
             types: vec![
                 super::TypeRecord {

@@ -10,8 +10,9 @@ use std::{
 };
 
 use game_data::{
-    BaseStats, CurrentDataSet, DamageClass, DataSetMetadata, LearnsetEntry, LocalizedName, MoveId,
-    MoveLearnMethod, MoveRecord, PokemonFormId, PokemonRecord, SpeciesId, TypeId, TypeRecord,
+    AbilityId, AbilityRecord, BaseStats, CurrentDataSet, DamageClass, DataSetMetadata,
+    LearnsetEntry, LocalizedName, MoveId, MoveLearnMethod, MoveRecord, PokemonAbility,
+    PokemonFormId, PokemonRecord, SpeciesId, TypeId, TypeRecord,
 };
 use serde::Deserialize;
 
@@ -273,6 +274,26 @@ struct PokemonTypeRow {
     slot: u8,
 }
 #[derive(Deserialize)]
+struct AbilityRow {
+    id: u16,
+    identifier: String,
+    generation_id: u8,
+    is_main_series: u8,
+}
+#[derive(Deserialize)]
+struct AbilityNameRow {
+    ability_id: u16,
+    local_language_id: u16,
+    name: String,
+}
+#[derive(Deserialize)]
+struct PokemonAbilityRow {
+    pokemon_id: u32,
+    ability_id: u16,
+    is_hidden: u8,
+    slot: u8,
+}
+#[derive(Deserialize)]
 struct SpeciesNameRow {
     pokemon_species_id: u32,
     local_language_id: u16,
@@ -288,6 +309,8 @@ struct MoveRow {
     accuracy: Option<u8>,
     priority: i8,
     damage_class_id: u8,
+    effect_id: Option<u16>,
+    effect_chance: Option<u8>,
 }
 #[derive(Deserialize)]
 struct PokemonMoveRow {
@@ -514,6 +537,42 @@ pub fn import_source(
             }
         })
         .collect::<Vec<_>>();
+    let ability_names = names(
+        read_csv::<AbilityNameRow>(
+            source,
+            "ability_names.csv",
+            &["ability_id", "local_language_id", "name"],
+        )?
+        .into_iter()
+        .map(|row| {
+            (
+                u32::from(row.value.ability_id),
+                row.value.local_language_id,
+                row.value.name,
+            )
+        }),
+        language_id,
+    );
+    let abilities = read_csv::<AbilityRow>(
+        source,
+        "abilities.csv",
+        &["id", "identifier", "generation_id", "is_main_series"],
+    )?
+    .into_iter()
+    .filter(|row| row.value.generation_id <= 3 && row.value.is_main_series != 0)
+    .map(|row| {
+        let (localized_name, english_name) = ability_names
+            .get(&u32::from(row.value.id))
+            .cloned()
+            .unwrap_or_default();
+        AbilityRecord {
+            id: AbilityId(row.value.id),
+            identifier: row.value.identifier.clone(),
+            display_name: localized(localized_name, english_name, &row.value.identifier),
+        }
+    })
+    .collect::<Vec<_>>();
+    let ability_ids: HashSet<_> = abilities.iter().map(|record| record.id.0).collect();
     let damage_classes: HashMap<_, _> =
         read_csv::<DamageClassRow>(source, "move_damage_classes.csv", &["id", "identifier"])?
             .into_iter()
@@ -571,6 +630,8 @@ pub fn import_source(
             "accuracy",
             "priority",
             "damage_class_id",
+            "effect_id",
+            "effect_chance",
         ],
     )?
     .into_iter()
@@ -628,6 +689,8 @@ pub fn import_source(
             pp: row.pp.filter(|value| *value != 0),
             priority: row.priority,
             damage_class,
+            effect_id: row.effect_id,
+            effect_chance: row.effect_chance.filter(|value| *value != 0),
         })
     })
     .collect::<Result<Vec<_>, ImportFailure>>()?;
@@ -709,6 +772,37 @@ pub fn import_source(
         entry.push((row.slot, TypeId(row.type_id)));
     }
 
+    let abilities_path = source.path("pokemon_abilities.csv");
+    let mut abilities_by_pokemon: HashMap<u32, Vec<PokemonAbility>> = HashMap::new();
+    for located in read_csv::<PokemonAbilityRow>(
+        source,
+        "pokemon_abilities.csv",
+        &["pokemon_id", "ability_id", "is_hidden", "slot"],
+    )? {
+        let row = located.value;
+        if !ability_ids.contains(&row.ability_id) {
+            continue;
+        }
+        let entry = abilities_by_pokemon.entry(row.pokemon_id).or_default();
+        if entry.iter().any(|ability| ability.slot == row.slot) {
+            return fail(
+                ImportDiagnostic::new(
+                    ImportDiagnosticCode::DuplicateId,
+                    format!("ability slot {} is repeated", row.slot),
+                )
+                .file(&abilities_path)
+                .row(located.row)
+                .field("slot")
+                .entity(row.pokemon_id),
+            );
+        }
+        entry.push(PokemonAbility {
+            ability_id: AbilityId(row.ability_id),
+            is_hidden: row.is_hidden != 0,
+            slot: row.slot,
+        });
+    }
+
     let pokemon_path = source.path("pokemon.csv");
     let mut pokemon = read_csv::<PokemonRow>(
         source,
@@ -757,6 +851,8 @@ pub fn import_source(
             )
         })?;
         pokemon_types.sort_by_key(|(slot, _)| *slot);
+        let mut pokemon_abilities = abilities_by_pokemon.remove(&row.id).unwrap_or_default();
+        pokemon_abilities.sort_by_key(|ability| ability.slot);
         let (localized_name, english_name) = species_names
             .get(&row.species_id)
             .cloned()
@@ -775,6 +871,7 @@ pub fn import_source(
                 speed,
             },
             types: pokemon_types.into_iter().map(|(_, id)| id).collect(),
+            abilities: pokemon_abilities,
             display_name: localized(localized_name, english_name, &row.identifier),
             learnset: Vec::new(),
         })
@@ -871,7 +968,7 @@ pub fn import_source(
 
     CurrentDataSet::new(
         DataSetMetadata {
-            schema_version: "current-data-set-v2".into(),
+            schema_version: "current-data-set-v4".into(),
             source_repository: SOURCE_REPOSITORY.into(),
             source_commit: options.source_commit.clone(),
             generator_version: "game-data-import-0.0.0".into(),
@@ -880,6 +977,7 @@ pub fn import_source(
         },
         pokemon,
         moves,
+        abilities,
         types,
     )
     .map_err(|error| {
@@ -969,6 +1067,18 @@ mod tests {
             include_str!(
                 "../../../../assets/imports/pokeapi-current-data/pokemon_move_methods.csv"
             ),
+        ),
+        (
+            "abilities.csv",
+            include_str!("../../../../assets/imports/pokeapi-current-data/abilities.csv"),
+        ),
+        (
+            "ability_names.csv",
+            include_str!("../../../../assets/imports/pokeapi-current-data/ability_names.csv"),
+        ),
+        (
+            "pokemon_abilities.csv",
+            include_str!("../../../../assets/imports/pokeapi-current-data/pokemon_abilities.csv"),
         ),
         (
             "pokemon_species_names.csv",
