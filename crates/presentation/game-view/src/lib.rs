@@ -491,12 +491,15 @@ pub fn project_battle_ui(
 
     let menu = match page {
         BattleMenuPage::Main => battle_main_actions_flex(selected),
-        BattleMenuPage::Fight if actions.contains(&Action::Struggle) => {
-            battle_move_menu(
-                selected,
-                [("挣扎".to_owned(), PokemonType::Normal, MoveCategory::Physical, "威50 PP--".to_owned())],
-            )
-        }
+        BattleMenuPage::Fight if actions.contains(&Action::Struggle) => battle_move_menu(
+            selected,
+            [(
+                "挣扎".to_owned(),
+                PokemonType::Normal,
+                MoveCategory::Physical,
+                "威50 PP--".to_owned(),
+            )],
+        ),
         BattleMenuPage::Fight => battle_move_menu(
             selected,
             observation
@@ -518,7 +521,9 @@ pub fn project_battle_ui(
                     )
                 }),
         ),
-        BattleMenuPage::Pokemon => unreachable!("the Pokemon page returns before building the battle scene"),
+        BattleMenuPage::Pokemon => {
+            unreachable!("the Pokemon page returns before building the battle scene")
+        }
         BattleMenuPage::Hidden => UiNode::new(UiId(9_100)),
     };
 
@@ -573,7 +578,9 @@ pub fn project_battle_ui(
                                 },
                             )
                             .with_content(UiContent::ImageTinted {
-                                content: UiContentId::new(sprites.opponent[sprite_frame % 2].as_str())?,
+                                content: UiContentId::new(
+                                    sprites.opponent[sprite_frame % 2].as_str(),
+                                )?,
                                 tint: creature_tint(animation, Participant::Opponent).into_ui(),
                             }),
                         ]),
@@ -636,7 +643,13 @@ pub fn project_battle_ui(
                             padding: Insets::all(12),
                             ..UiStyle::default()
                         })
-                        .with_children([text(8_202, message, MUTED_TEXT.into_ui(), 19, Dimension::Fill)]),
+                        .with_children([text(
+                            8_202,
+                            message,
+                            MUTED_TEXT.into_ui(),
+                            19,
+                            Dimension::Fill,
+                        )]),
                     UiNode::new(UiId(8_210))
                         .with_style(UiStyle {
                             width: Dimension::Px(430),
@@ -658,13 +671,31 @@ pub fn project_console_ui(console: &CommandConsoleView) -> Result<UiTree, UiBuil
         .enumerate()
         .skip(first)
         .take(8)
-        .map(|(index, item)| console_item(8_500 + index as u32, item, console.selected_index == Some(index)))
+        .map(|(index, item)| {
+            console_item(
+                8_500 + index as u32,
+                item,
+                console.selected_index == Some(index),
+            )
+        })
         .collect::<Vec<_>>();
     if rows.is_empty() {
-        rows.push(text(8_500, "没有匹配指令", MUTED_TEXT.into_ui(), 18, Dimension::Fill));
+        rows.push(text(
+            8_500,
+            "没有匹配指令",
+            MUTED_TEXT.into_ui(),
+            18,
+            Dimension::Fill,
+        ));
     }
     if let Some(diagnostic) = &console.diagnostic {
-        rows.push(text(8_590, diagnostic.clone(), CONSOLE_ERROR.into_ui(), 17, Dimension::Fill));
+        rows.push(text(
+            8_590,
+            diagnostic.clone(),
+            CONSOLE_ERROR.into_ui(),
+            17,
+            Dimension::Fill,
+        ));
     }
     UiTree::new(with_generated_ui_ids(
         UiNode::new(UiId(8_400))
@@ -694,7 +725,13 @@ pub fn project_console_ui(console: &CommandConsoleView) -> Result<UiTree, UiBuil
                 },
                 PANEL.into_ui(),
                 [
-                    text(8_402, format!("> {}{}", console.query, console.preedit), TEXT.into_ui(), 21, Dimension::Fill),
+                    text(
+                        8_402,
+                        format!("> {}{}", console.query, console.preedit),
+                        TEXT.into_ui(),
+                        21,
+                        Dimension::Fill,
+                    ),
                     UiNode::new(UiId(8_403))
                         .with_style(UiStyle {
                             width: Dimension::Fill,
@@ -870,7 +907,13 @@ fn move_detail_panel(
         },
         ACTION_PANEL_ALT.into_ui(),
         [
-            text(id + 1, "招式详情", MUTED_TEXT.into_ui(), 15, Dimension::Fill),
+            text(
+                id + 1,
+                "招式详情",
+                MUTED_TEXT.into_ui(),
+                15,
+                Dimension::Fill,
+            ),
             UiNode::new(UiId(id + 2))
                 .with_style(UiStyle {
                     width: Dimension::Fill,
@@ -880,7 +923,11 @@ fn move_detail_panel(
                     ..UiStyle::default()
                 })
                 .with_children([
-                    image(id + 3, type_icon_asset(move_type).as_str(), UiStyle::fixed(72, 28)),
+                    image(
+                        id + 3,
+                        type_icon_asset(move_type).as_str(),
+                        UiStyle::fixed(72, 28),
+                    ),
                     image(
                         id + 4,
                         move_category_icon_asset(category).as_str(),
@@ -1110,7 +1157,12 @@ fn team_member_card(
             ..UiStyle::default()
         })
         .with_content(UiContent::Fill(
-            if selected { PARTY_PANEL_ALT } else { PARTY_PANEL }.into_ui(),
+            if selected {
+                PARTY_PANEL_ALT
+            } else {
+                PARTY_PANEL
+            }
+            .into_ui(),
         ))
         .with_children([
             image(
@@ -1239,7 +1291,13 @@ fn battle_status_panel(
                 })
                 .with_children([
                     text(id + 2, name, BATTLE_INK.into_ui(), 21, Dimension::Fill),
-                    text(id + 3, format!("Lv.{level}"), BATTLE_MUTED.into_ui(), 16, Dimension::Px(64)),
+                    text(
+                        id + 3,
+                        format!("Lv.{level}"),
+                        BATTLE_MUTED.into_ui(),
+                        16,
+                        Dimension::Px(64),
+                    ),
                 ]),
             UiNode::new(UiId(id + 4))
                 .with_style(UiStyle {
@@ -1269,7 +1327,13 @@ fn battle_status_panel(
                         ..UiStyle::default()
                     })
                     .with_content(UiContent::Fill(hp_color(hp, max_hp).into_ui()))]),
-            text(id + 7, format!("HP {hp}/{max_hp}"), BATTLE_MUTED.into_ui(), 15, Dimension::Fill),
+            text(
+                id + 7,
+                format!("HP {hp}/{max_hp}"),
+                BATTLE_MUTED.into_ui(),
+                15,
+                Dimension::Fill,
+            ),
             UiNode::new(UiId(id + 8))
                 .with_style(UiStyle {
                     width: Dimension::Px(12),
@@ -1293,7 +1357,12 @@ fn console_item(id: u32, content: &str, selected: bool) -> UiNode {
             ..UiStyle::default()
         })
         .with_content(UiContent::Fill(
-            if selected { SELECTED_DARK } else { ACTION_PANEL_ALT }.into_ui(),
+            if selected {
+                SELECTED_DARK
+            } else {
+                ACTION_PANEL_ALT
+            }
+            .into_ui(),
         ))
         .with_children([text(
             id + 100,
@@ -2683,8 +2752,7 @@ mod tests {
         BattleSpriteResources, LayerKind, TextRole, ViewCell, ViewLayer, compose_world,
         move_category_icon_asset, pill_ui_asset, pokemon_icon_asset, project_battle,
         project_battle_ui, project_console, project_console_ui, project_pokedex, project_world,
-        rounded_ui_asset, type_icon_asset,
-        world_character_asset,
+        rounded_ui_asset, type_icon_asset, world_character_asset,
     };
 
     #[test]
@@ -2727,17 +2795,16 @@ mod tests {
     fn battle_pixel_ui_uses_flex_and_keeps_move_metadata_visible() {
         let snapshot = battle_fixture();
         let sprites = BattleSpriteResources::for_slots(0, 0);
-        let main = project_battle_ui(
-            &snapshot,
-            BattleUiState::default(),
-            sprites.clone(),
-            0,
-        )
-        .unwrap()
-        .resolve(punctum_ui::UiSize::new(1000, 720))
-        .unwrap();
+        let main = project_battle_ui(&snapshot, BattleUiState::default(), sprites.clone(), 0)
+            .unwrap()
+            .resolve(punctum_ui::UiSize::new(1000, 720))
+            .unwrap();
         assert_eq!(main.hit_regions().len(), 4);
-        assert!(main.hit_regions().iter().all(|region| region.bounds.width > 0 && region.bounds.height > 0));
+        assert!(
+            main.hit_regions()
+                .iter()
+                .all(|region| region.bounds.width > 0 && region.bounds.height > 0)
+        );
         assert!(main.commands().iter().any(|command| matches!(
             command,
             punctum_ui::UiDrawCommand::Text { content, .. } if content == "战斗"
@@ -2772,15 +2839,10 @@ mod tests {
         handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
         handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
 
-        let frame = project_battle_ui(
-            &snapshot,
-            ui,
-            BattleSpriteResources::for_slots(0, 0),
-            1,
-        )
-        .unwrap()
-        .resolve(punctum_ui::UiSize::new(1000, 720))
-        .unwrap();
+        let frame = project_battle_ui(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 1)
+            .unwrap()
+            .resolve(punctum_ui::UiSize::new(1000, 720))
+            .unwrap();
         assert!(frame.commands().iter().any(|command| matches!(
             command,
             punctum_ui::UiDrawCommand::Text { content, .. } if content == "选择宝可梦"
@@ -2830,7 +2892,10 @@ mod tests {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(actual_labels, ["> git", "give potion", "goto town", "invalid target"]);
+        assert_eq!(
+            actual_labels,
+            ["> git", "give potion", "goto town", "invalid target"]
+        );
     }
 
     fn key(name: NamedKey) -> KeyEvent {

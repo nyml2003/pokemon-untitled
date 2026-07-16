@@ -11,7 +11,7 @@ use map_editor_core::{
     EditorController, EditorEffect, EditorIntent, EditorModel, PointerButton, key_intent,
     wheel_intent,
 };
-use map_editor_view::{editor_viewport, intent_for_ui_hit, project};
+use map_editor_view::{centered_map_viewport, editor_viewport, intent_for_ui_hit, project};
 use map_render::AtomicTileCatalog;
 use punctum_gpu::{PixelSize, Rgba8, Viewport};
 use punctum_ui::UiFrame;
@@ -26,6 +26,8 @@ use winit::{
 
 const CLEAR_COLOR: Rgba8 = Rgba8::new(17, 19, 22, 255);
 const EDITOR_TEXT_SCALE: TextScale = TextScale::new(11, 20, 11, 22);
+const MIN_MAP_TILE_SPAN: u32 = 1;
+const MAX_MAP_TILE_SPAN: u32 = 4;
 
 struct MapEditorApp {
     project_path: PathBuf,
@@ -34,6 +36,7 @@ struct MapEditorApp {
     assets: NativeAssets,
     catalog: AtomicTileCatalog,
     modifiers: ModifiersState,
+    map_tile_span: u32,
     viewport: Viewport,
     chrome: Option<UiFrame>,
     cursor: Option<winit::dpi::PhysicalPosition<f64>>,
@@ -48,7 +51,7 @@ impl MapEditorApp {
             .nth(1)
             .map(PathBuf::from)
             .unwrap_or_else(default_project_path);
-        let project = load_project(&project_path, &assets.ids)?;
+        let project = load_project(&project_path, &assets.project_ids)?;
         Ok(Self {
             project_path,
             model: EditorModel::new(project, assets.ids),
@@ -56,6 +59,7 @@ impl MapEditorApp {
             assets: assets.native,
             catalog: assets.catalog,
             modifiers: ModifiersState::empty(),
+            map_tile_span: map_editor_core::layout::MAP_TILE_SPAN,
             viewport: editor_viewport(PixelSize::new(1600, 950)),
             chrome: None,
             cursor: None,
@@ -86,11 +90,13 @@ impl MapEditorApp {
         let Some(target_size) = self.runtime.as_ref().map(NativeTarget::surface_size) else {
             return;
         };
+        let map_viewport = self.map_viewport();
         let frame = match project(
             &self.model,
             &self.catalog,
             self.controller.hover,
             target_size,
+            map_viewport,
         ) {
             Ok(frame) => frame,
             Err(error) => {
@@ -209,8 +215,13 @@ impl MapEditorApp {
     fn handle_cursor(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
         self.cursor = Some(position);
         let controller = mem::take(&mut self.controller);
-        let (controller, intent) =
-            controller.move_cursor(position.x, position.y, self.viewport, &self.model);
+        let (controller, intent) = controller.move_cursor(
+            position.x,
+            position.y,
+            self.viewport,
+            self.map_viewport(),
+            &self.model,
+        );
         self.controller = controller;
         if let Some(intent) = intent {
             self.dispatch(intent);
@@ -242,7 +253,8 @@ impl MapEditorApp {
                     }
                 }
                 let controller = mem::take(&mut self.controller);
-                let (controller, intent) = controller.press(button, &self.model);
+                let (controller, intent) =
+                    controller.press(button, self.map_viewport(), &self.model);
                 self.controller = controller;
                 if let Some(intent) = intent {
                     self.dispatch(intent);
@@ -259,12 +271,40 @@ impl MapEditorApp {
             MouseScrollDelta::LineDelta(_, y) => y.signum(),
             MouseScrollDelta::PixelDelta(position) => position.y.signum() as f32,
         };
+        if self.modifiers.control_key() {
+            self.adjust_map_zoom(direction);
+            return;
+        }
         if let Some(intent) = wheel_intent(
             direction,
             self.model.selected_atomic,
             self.model.atomic_ids.len(),
         ) {
             self.dispatch(intent);
+        }
+    }
+
+    fn map_viewport(&self) -> map_editor_core::EditorMapViewport {
+        centered_map_viewport(&self.model, self.map_tile_span)
+    }
+
+    fn adjust_map_zoom(&mut self, direction: f32) {
+        let next = if direction > 0.0 {
+            (self.map_tile_span + 1).min(MAX_MAP_TILE_SPAN)
+        } else if direction < 0.0 {
+            self.map_tile_span.saturating_sub(1).max(MIN_MAP_TILE_SPAN)
+        } else {
+            self.map_tile_span
+        };
+        if next == self.map_tile_span {
+            return;
+        }
+        self.map_tile_span = next;
+        self.update_title();
+        if let Some(cursor) = self.cursor {
+            self.handle_cursor(cursor);
+        } else {
+            self.request_redraw();
         }
     }
 
@@ -280,8 +320,8 @@ impl MapEditorApp {
         if let Some(window) = &self.window {
             let dirty = if self.model.dirty { " *" } else { "" };
             window.set_title(&format!(
-                "Gen3 地图编辑器 - {}{}",
-                self.model.project.id, dirty
+                "Gen3 地图编辑器 - {} - {}x{}",
+                self.model.project.id, self.map_tile_span, dirty
             ));
         }
     }

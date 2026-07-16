@@ -261,13 +261,16 @@ impl<'window> GpuRuntime<'window> {
         ),
     {
         let mut overlay = Some(encode_overlay);
-        self.present_plans_with_overlays(&[plan], move |_, device, queue, target, encoder, format, size| {
-            overlay
-                .take()
-                .expect("the single-plan overlay is encoded once")(
-                device, queue, target, encoder, format, size,
-            );
-        })
+        self.present_plans_with_overlays(
+            &[plan],
+            move |_, device, queue, target, encoder, format, size| {
+                overlay
+                    .take()
+                    .expect("the single-plan overlay is encoded once")(
+                    device, queue, target, encoder, format, size,
+                );
+            },
+        )
     }
 
     pub fn present_plans_with_overlays<F>(

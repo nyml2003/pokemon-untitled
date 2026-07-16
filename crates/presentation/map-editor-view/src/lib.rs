@@ -6,7 +6,7 @@ use std::{error::Error, fmt};
 
 use game_assets::AssetKey;
 use game_view::{GameView, LayerKind, TextLabel, TextRole, ViewCell, ViewImage, ViewLayer};
-use map_editor_core::{EditorIntent, EditorModel, EditorTool, layout};
+use map_editor_core::{EditorIntent, EditorMapViewport, EditorModel, EditorTool, layout};
 use map_project::{Collision, MapEventKind, TilePosition};
 use map_render::{AtomicTileCatalog, MapCamera, MapGridLayout, MapRenderInput, project_map};
 use punctum_gpu::{PixelOffset, PixelSize, Rgba8, Viewport};
@@ -56,30 +56,31 @@ pub fn project(
     catalog: &AtomicTileCatalog,
     hover: Option<TilePosition>,
     target_size: PixelSize,
+    map_viewport: EditorMapViewport,
 ) -> Result<EditorFrame, EditorViewError> {
     let viewport = editor_viewport(target_size);
     let scene = project_map(MapRenderInput {
         project: &model.project,
         catalog,
-        camera: MapCamera::default(),
+        camera: MapCamera::new(map_viewport.camera_col, map_viewport.camera_row),
         pixel_offset: PixelOffset::new(0, 0),
         viewport,
         layout: MapGridLayout::new(
             GridSize::new(layout::COLS, layout::ROWS),
-            GridSize::new(layout::MAP_TILE_SPAN, layout::MAP_TILE_SPAN),
+            GridSize::new(map_viewport.tile_span, map_viewport.tile_span),
         ),
     })
     .map_err(|error| EditorViewError::Map(error.to_string()))?;
     let map = scene.into_layer();
     let mut images = Vec::new();
-    project_semantics(&mut images, model);
+    project_semantics(&mut images, model, map_viewport);
     if let Some(position) = hover {
         images.push(image(
             GridPos::new(
-                i32::from(position.x()) * layout::MAP_TILE_SPAN as i32,
-                i32::from(position.y()) * layout::MAP_TILE_SPAN as i32,
+                (i32::from(position.x()) - map_viewport.camera_col) * map_viewport.tile_span as i32,
+                (i32::from(position.y()) - map_viewport.camera_row) * map_viewport.tile_span as i32,
             ),
-            GridSize::new(layout::MAP_TILE_SPAN, layout::MAP_TILE_SPAN),
+            GridSize::new(map_viewport.tile_span, map_viewport.tile_span),
             white_asset(),
             Rgba8::new(255, 220, 78, 90),
             8,
@@ -96,6 +97,15 @@ pub fn project(
         chrome,
         viewport,
     })
+}
+
+pub fn centered_map_viewport(model: &EditorModel, tile_span: u32) -> EditorMapViewport {
+    assert!(tile_span > 0, "map tile span must be positive");
+    let visible_cols = layout::MAP_RECT.size.cols / tile_span;
+    let visible_rows = layout::MAP_RECT.size.rows / tile_span;
+    let camera_col = i32::from(model.project.width.saturating_sub(visible_cols as u16) / 2);
+    let camera_row = i32::from(model.project.height.saturating_sub(visible_rows as u16) / 2);
+    EditorMapViewport::new(tile_span, camera_col, camera_row)
 }
 
 pub fn editor_viewport(target_size: PixelSize) -> Viewport {
@@ -636,7 +646,7 @@ fn editor_help_dialog(ids: &mut UiIds) -> UiNode {
         "左键绘制，右键擦除。",
         "选择原子素材后可添加组合层。",
         "贴图、碰撞和事件画笔互不修改彼此。",
-        "Ctrl+S 保存，Ctrl+Z 撤销，Ctrl+Y 重做。",
+        "Ctrl+S 保存，Ctrl+Z 撤销；Ctrl+滚轮缩放地图。",
         "点击此面板或“帮助”关闭。",
     ];
     UiNode::new(UiId(HELP_CLOSE_ID))
@@ -841,7 +851,11 @@ fn project_materials(
     }
 }
 
-fn project_semantics(images: &mut Vec<ViewImage>, model: &EditorModel) {
+fn project_semantics(
+    images: &mut Vec<ViewImage>,
+    model: &EditorModel,
+    map_viewport: EditorMapViewport,
+) {
     for row in 0..model.project.height {
         for col in 0..model.project.width {
             let index = usize::from(row) * usize::from(model.project.width) + usize::from(col);
@@ -856,16 +870,16 @@ fn project_semantics(images: &mut Vec<ViewImage>, model: &EditorModel) {
                 },
                 EditorTool::Visual => continue,
             };
-            images.push(image(
+            let rect = GridRect::new(
                 GridPos::new(
-                    i32::from(col) * layout::MAP_TILE_SPAN as i32,
-                    i32::from(row) * layout::MAP_TILE_SPAN as i32,
+                    (i32::from(col) - map_viewport.camera_col) * map_viewport.tile_span as i32,
+                    (i32::from(row) - map_viewport.camera_row) * map_viewport.tile_span as i32,
                 ),
-                GridSize::new(layout::MAP_TILE_SPAN, layout::MAP_TILE_SPAN),
-                white_asset(),
-                tint,
-                7,
-            ));
+                GridSize::new(map_viewport.tile_span, map_viewport.tile_span),
+            );
+            if rect.intersection(layout::MAP_RECT).is_some() {
+                images.push(image(rect.origin, rect.size, white_asset(), tint, 7));
+            }
         }
     }
 }
@@ -1154,7 +1168,14 @@ mod tests {
             asset: AssetKey::new("map/tile/tile-0001").unwrap(),
         }])
         .unwrap();
-        let frame = project(&model, &catalog, None, PixelSize::new(1280, 720)).unwrap();
+        let frame = project(
+            &model,
+            &catalog,
+            None,
+            PixelSize::new(1280, 720),
+            EditorMapViewport::default(),
+        )
+        .unwrap();
         assert_eq!(frame.map.layers().len(), 3);
         assert!(frame.map.layers()[2].surface.is_none());
         let chrome = frame
@@ -1168,6 +1189,31 @@ mod tests {
             command, punctum_ui::UiDrawCommand::Text { content, .. } if content.starts_with("组合素材")
         )));
         assert!(chrome.hit_regions().len() >= 10);
+    }
+
+    #[test]
+    fn centered_viewport_tracks_the_map_center_at_each_zoom_level() {
+        let tile = AtomicTileId::new("tile-0001").unwrap();
+        let model = EditorModel::new(
+            MapProject::blank(
+                MapProjectId::new("map").unwrap(),
+                72,
+                56,
+                Some(CompositeTile::new(
+                    CompositeTileId::new("material-0000").unwrap(),
+                    vec![tile.clone()],
+                )),
+            ),
+            vec![tile],
+        );
+        assert_eq!(
+            centered_map_viewport(&model, 1),
+            EditorMapViewport::new(1, 12, 12)
+        );
+        assert_eq!(
+            centered_map_viewport(&model, 2),
+            EditorMapViewport::new(2, 24, 20)
+        );
     }
 
     #[test]
@@ -1197,6 +1243,7 @@ mod tests {
             &catalog,
             Some(TilePosition::new(1, 2)),
             PixelSize::new(1280, 720),
+            EditorMapViewport::default(),
         )
         .unwrap();
 
@@ -1252,7 +1299,14 @@ mod tests {
             EditorTool::Event(None),
         ] {
             model.tool = tool;
-            let frame = project(&model, &catalog, None, PixelSize::new(1280, 720)).unwrap();
+            let frame = project(
+                &model,
+                &catalog,
+                None,
+                PixelSize::new(1280, 720),
+                EditorMapViewport::default(),
+            )
+            .unwrap();
             assert_eq!(frame.map.layers().len(), 3);
             assert!(
                 frame.map.layers()[2]
@@ -1270,7 +1324,14 @@ mod tests {
         }
 
         let missing = AtomicTileCatalog::new([]).unwrap();
-        let error = project(&model, &missing, None, PixelSize::new(1280, 720)).unwrap_err();
+        let error = project(
+            &model,
+            &missing,
+            None,
+            PixelSize::new(1280, 720),
+            EditorMapViewport::default(),
+        )
+        .unwrap_err();
         assert!(error.to_string().starts_with("map projection failed:"));
         let surface_error =
             Surface::<ViewCell>::from_cells(GridSize::new(1, 1), vec![]).unwrap_err();

@@ -205,7 +205,10 @@ pub enum Dimension {
     Auto,
     Px(u32),
     /// A fraction of the containing content box, represented as `units / base`.
-    Ratio { units: u32, base: u32 },
+    Ratio {
+        units: u32,
+        base: u32,
+    },
     Fill,
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -622,11 +625,7 @@ fn inset(bounds: UiRect, insets: Insets) -> UiRect {
         bounds.height.saturating_sub(insets.vertical()),
     )
 }
-fn constrain(
-    node: &UiNode,
-    offered: UiRect,
-    ratio_basis: UiSize,
-) -> Result<UiRect, UiLayoutError> {
+fn constrain(node: &UiNode, offered: UiRect, ratio_basis: UiSize) -> Result<UiRect, UiLayoutError> {
     let intrinsic = intrinsic_size(node, ratio_basis);
     let width = dimension(node.style.width, ratio_basis.width, intrinsic.width);
     let height = dimension(node.style.height, ratio_basis.height, intrinsic.height);
@@ -643,8 +642,12 @@ fn constrain(
         let width = canvas.width.saturating_mul(scale);
         let height = canvas.height.saturating_mul(scale);
         return Ok(UiRect::new(
-            offered.x.saturating_add(offered.width.saturating_sub(width) / 2),
-            offered.y.saturating_add(offered.height.saturating_sub(height) / 2),
+            offered
+                .x
+                .saturating_add(offered.width.saturating_sub(width) / 2),
+            offered
+                .y
+                .saturating_add(offered.height.saturating_sub(height) / 2),
             width,
             height,
         ));
@@ -899,16 +902,12 @@ fn layout_children(
                 .saturating_add(distributed_gap);
         }
     }
-    for child in node
-        .children
-        .iter()
-        .filter(|child| {
-            matches!(
-                child.style.position,
-                Position::Absolute { .. } | Position::AbsoluteRatio { .. }
-            )
-        })
-    {
+    for child in node.children.iter().filter(|child| {
+        matches!(
+            child.style.position,
+            Position::Absolute { .. } | Position::AbsoluteRatio { .. }
+        )
+    }) {
         let (left, top) = match child.style.position {
             Position::Absolute { left, top } => (left, top),
             Position::AbsoluteRatio { left, top, base } => (
@@ -1068,7 +1067,10 @@ mod tests {
                 .with_children([fill(
                     2,
                     UiStyle {
-                        width: Dimension::Ratio { units: 10, base: 32 },
+                        width: Dimension::Ratio {
+                            units: 10,
+                            base: 32,
+                        },
                         height: Dimension::Ratio { units: 4, base: 24 },
                         position: Position::AbsoluteRatio {
                             left: 10,

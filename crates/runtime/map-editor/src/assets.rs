@@ -11,6 +11,7 @@ use punctum_gpu::Rgba8;
 pub struct EditorAssets {
     pub native: NativeAssets,
     pub catalog: AtomicTileCatalog,
+    pub project_ids: Vec<AtomicTileId>,
     pub ids: Vec<AtomicTileId>,
 }
 
@@ -24,10 +25,19 @@ pub fn load_assets() -> Result<EditorAssets, Box<dyn Error>> {
     )];
     images.extend(assets.images);
     let native = NativeAssets::new(images)?;
+    let hidden_palette_tile =
+        AtomicTileId::new("tile-0030").expect("the configured hidden palette tile id is valid");
+    let project_ids = assets.ids;
+    let ids = project_ids
+        .iter()
+        .filter(|id| *id != &hidden_palette_tile)
+        .cloned()
+        .collect();
     Ok(EditorAssets {
         native,
         catalog: assets.catalog,
-        ids: assets.ids,
+        project_ids,
+        ids,
     })
 }
 
@@ -55,6 +65,14 @@ mod tests {
     fn loads_the_real_tile_catalog_and_default_project() {
         let assets = load_assets().unwrap();
         assert!(assets.ids.len() > 200);
+        assert!(assets.ids.iter().all(|id| id.as_str() != "tile-0030"));
+        assert!(
+            assets
+                .project_ids
+                .iter()
+                .any(|id| id.as_str() == "tile-0030")
+        );
+        assert!(load_project(&default_project_path(), &assets.project_ids).is_ok());
         let project = project_from_json_or_default(None, &assets.ids).unwrap();
         assert_eq!((project.width, project.height), (24, 16));
     }

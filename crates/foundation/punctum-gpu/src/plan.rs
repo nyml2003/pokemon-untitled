@@ -308,9 +308,9 @@ fn plan_cell(
                 grid_span: [1, 1],
                 pixel_offset: [0, 0],
                 atlas_rect: [rect.x, rect.y, rect.width, rect.height],
-            tint: tint.to_array(),
-            visible: 1,
-            corner_radii: [0; 4],
+                tint: tint.to_array(),
+                visible: 1,
+                corner_radii: [0; 4],
             })
         }
     }

@@ -7,8 +7,9 @@ use std::{collections::BTreeMap, error::Error, fmt};
 use game_assets::{AssetKey, DecodedImage};
 use game_view::{GameView, LayerKind, ViewCell};
 use punctum_gpu::{
-    GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPixelImage, GpuPlanError, PixelOffset, PixelRect, PixelSize,
-    ResourceId, Rgba8, SubmissionPlan, Viewport as GridViewport, plan_composite, plan_pixels,
+    GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPixelImage, GpuPlanError, PixelOffset, PixelRect,
+    PixelSize, ResourceId, Rgba8, SubmissionPlan, Viewport as GridViewport, plan_composite,
+    plan_pixels,
 };
 use punctum_grid::{GridSize, Surface};
 use punctum_ui::{UiDrawCommand, UiFrame};
@@ -722,9 +723,7 @@ mod tests {
                             border_radius: UiBorderRadius::all(9),
                             ..UiStyle::default()
                         })
-                        .with_content(UiContent::Image(
-                            UiContentId::new("sprite/player").unwrap(),
-                        )),
+                        .with_content(UiContent::Image(UiContentId::new("sprite/player").unwrap())),
                 ]),
         )
         .unwrap();
