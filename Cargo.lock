@@ -1498,7 +1498,20 @@ dependencies = [
  "map-project",
  "map-render",
  "punctum-gpu",
+ "punctum-ui",
  "winit",
+]
+
+[[package]]
+name = "map-editor-cli"
+version = "0.0.0"
+dependencies = [
+ "game-fs-assets",
+ "map-assets",
+ "map-editor-core",
+ "map-project",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1509,6 +1522,7 @@ dependencies = [
  "punctum-gpu",
  "punctum-grid",
  "punctum-input",
+ "serde",
 ]
 
 [[package]]
@@ -1522,6 +1536,7 @@ dependencies = [
  "map-render",
  "punctum-gpu",
  "punctum-grid",
+ "punctum-ui",
 ]
 
 [[package]]

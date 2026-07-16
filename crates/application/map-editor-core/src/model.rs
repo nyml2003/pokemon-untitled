@@ -2,8 +2,9 @@ use map_project::{
     AtomicTileId, CellChange, Collision, CompositeTile, CompositeTileId, EditHistory, MapCell,
     MapEditCommand, MapError, MapEventKind, MapProject, TilePosition,
 };
+use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EditorTool {
     Visual,
     Collision(Collision),
@@ -25,7 +26,7 @@ pub enum EditorIntent {
     ToggleHelp,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EditorEffect {
     None,
     SaveRequested,

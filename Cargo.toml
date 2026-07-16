@@ -32,6 +32,7 @@ members = [
     "crates/adapter/punctum-wgpu",
     "crates/runtime/game-host",
     "crates/runtime/map-editor",
+    "crates/runtime/map-editor-cli",
     "crates/quality/game-e2e",
 ]
 resolver = "2"

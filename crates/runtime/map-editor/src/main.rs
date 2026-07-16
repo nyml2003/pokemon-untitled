@@ -11,9 +11,10 @@ use map_editor_core::{
     EditorController, EditorEffect, EditorIntent, EditorModel, PointerButton, key_intent,
     wheel_intent,
 };
-use map_editor_view::{editor_viewport, project};
+use map_editor_view::{editor_viewport, intent_for_ui_hit, project};
 use map_render::AtomicTileCatalog;
 use punctum_gpu::{PixelSize, Rgba8, Viewport};
+use punctum_ui::UiFrame;
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalSize},
@@ -34,6 +35,8 @@ struct MapEditorApp {
     catalog: AtomicTileCatalog,
     modifiers: ModifiersState,
     viewport: Viewport,
+    chrome: Option<UiFrame>,
+    cursor: Option<winit::dpi::PhysicalPosition<f64>>,
     window: Option<Arc<Window>>,
     runtime: Option<NativeTarget<'static>>,
 }
@@ -54,6 +57,8 @@ impl MapEditorApp {
             catalog: assets.catalog,
             modifiers: ModifiersState::empty(),
             viewport: editor_viewport(PixelSize::new(1600, 950)),
+            chrome: None,
+            cursor: None,
             window: None,
             runtime: None,
         })
@@ -81,7 +86,7 @@ impl MapEditorApp {
         let Some(target_size) = self.runtime.as_ref().map(NativeTarget::surface_size) else {
             return;
         };
-        let (view, viewport) = match project(
+        let frame = match project(
             &self.model,
             &self.catalog,
             self.controller.hover,
@@ -94,9 +99,24 @@ impl MapEditorApp {
                 return;
             }
         };
-        self.viewport = viewport;
-        let plan = match FramePlan::from_game_view(&view, &self.assets, viewport, EDITOR_TEXT_SCALE)
-        {
+        self.viewport = frame.viewport;
+        let chrome = match frame.chrome.resolve(punctum_ui::UiSize::new(
+            target_size.width,
+            target_size.height,
+        )) {
+            Ok(chrome) => chrome,
+            Err(error) => {
+                self.model = self.model.with_error(error);
+                self.update_title();
+                return;
+            }
+        };
+        let map_plan = match FramePlan::from_game_view(
+            &frame.map,
+            &self.assets,
+            frame.viewport,
+            EDITOR_TEXT_SCALE,
+        ) {
             Ok(plan) => plan,
             Err(error) => {
                 self.model = self.model.with_error(error);
@@ -104,6 +124,16 @@ impl MapEditorApp {
                 return;
             }
         };
+        let chrome_plan = match FramePlan::from_ui_frame(&chrome, &self.assets, EDITOR_TEXT_SCALE) {
+            Ok(plan) => plan,
+            Err(error) => {
+                self.model = self.model.with_error(error);
+                self.update_title();
+                return;
+            }
+        };
+        let plan = FramePlan::compose(map_plan, chrome_plan);
+        self.chrome = Some(chrome);
         let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
             return;
         };
@@ -177,6 +207,7 @@ impl MapEditorApp {
     }
 
     fn handle_cursor(&mut self, position: winit::dpi::PhysicalPosition<f64>) {
+        self.cursor = Some(position);
         let controller = mem::take(&mut self.controller);
         let (controller, intent) =
             controller.move_cursor(position.x, position.y, self.viewport, &self.model);
@@ -196,6 +227,20 @@ impl MapEditorApp {
         };
         match state {
             ElementState::Pressed => {
+                if button == PointerButton::Primary {
+                    if let (Some(position), Some(chrome)) = (self.cursor, &self.chrome) {
+                        if position.x >= 0.0 && position.y >= 0.0 {
+                            if let Some(id) = chrome.hit_test(position.x as u32, position.y as u32)
+                            {
+                                self.controller = mem::take(&mut self.controller).release(button);
+                                if let Some(intent) = intent_for_ui_hit(&self.model, id) {
+                                    self.dispatch(intent);
+                                }
+                                return;
+                            }
+                        }
+                    }
+                }
                 let controller = mem::take(&mut self.controller);
                 let (controller, intent) = controller.press(button, &self.model);
                 self.controller = controller;
@@ -250,11 +295,11 @@ impl MapEditorApp {
 
 impl ApplicationHandler for MapEditorApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none()
-            && let Err(error) = self.initialize(event_loop)
-        {
-            eprintln!("map editor initialization failed: {error}");
-            event_loop.exit();
+        if self.window.is_none() {
+            if let Err(error) = self.initialize(event_loop) {
+                eprintln!("map editor initialization failed: {error}");
+                event_loop.exit();
+            }
         }
     }
 
@@ -281,6 +326,7 @@ impl ApplicationHandler for MapEditorApp {
             WindowEvent::CursorMoved { position, .. } => self.handle_cursor(position),
             WindowEvent::CursorLeft { .. } => {
                 self.controller = mem::take(&mut self.controller).leave();
+                self.cursor = None;
                 self.request_redraw();
             }
             WindowEvent::MouseInput { state, button, .. } => self.handle_mouse(state, button),

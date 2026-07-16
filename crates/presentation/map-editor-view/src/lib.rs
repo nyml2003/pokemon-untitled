@@ -6,11 +6,15 @@ use std::{error::Error, fmt};
 
 use game_assets::AssetKey;
 use game_view::{GameView, LayerKind, TextLabel, TextRole, ViewCell, ViewImage, ViewLayer};
-use map_editor_core::{EditorModel, EditorTool, layout};
+use map_editor_core::{EditorIntent, EditorModel, EditorTool, layout};
 use map_project::{Collision, MapEventKind, TilePosition};
 use map_render::{AtomicTileCatalog, MapCamera, MapGridLayout, MapRenderInput, project_map};
 use punctum_gpu::{PixelOffset, PixelSize, Rgba8, Viewport};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface, SurfaceError};
+use punctum_ui::{
+    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
+    UiContentId, UiId, UiNode, UiStyle, UiTree,
+};
 
 const UI_BG: Rgba8 = Rgba8::new(22, 25, 29, 255);
 const PANEL: Rgba8 = Rgba8::new(31, 35, 41, 255);
@@ -20,12 +24,39 @@ const BORDER: Rgba8 = Rgba8::new(70, 78, 88, 255);
 const TEXT: Rgba8 = Rgba8::new(238, 241, 236, 255);
 const MUTED: Rgba8 = Rgba8::new(163, 173, 176, 255);
 
+const ASSET_SLOT_ID: u32 = 1_000;
+const MATERIAL_SLOT_ID: u32 = 1_100;
+const PREVIOUS_ASSETS_ID: u32 = 1_200;
+const NEXT_ASSETS_ID: u32 = 1_201;
+const PREVIOUS_MATERIALS_ID: u32 = 1_202;
+const NEXT_MATERIALS_ID: u32 = 1_203;
+const ADD_LAYER_ID: u32 = 1_210;
+const REMOVE_LAYER_ID: u32 = 1_211;
+const DELETE_MATERIAL_ID: u32 = 1_212;
+const VISUAL_ID: u32 = 1_220;
+const WALKABLE_ID: u32 = 1_221;
+const BLOCKED_ID: u32 = 1_222;
+const ENCOUNTER_ID: u32 = 1_223;
+const CLEAR_EVENT_ID: u32 = 1_224;
+const SAVE_ID: u32 = 1_230;
+const UNDO_ID: u32 = 1_231;
+const REDO_ID: u32 = 1_232;
+const HELP_ID: u32 = 1_233;
+const HELP_CLOSE_ID: u32 = 1_234;
+
+#[derive(Debug)]
+pub struct EditorFrame {
+    pub map: GameView,
+    pub chrome: UiTree,
+    pub viewport: Viewport,
+}
+
 pub fn project(
     model: &EditorModel,
     catalog: &AtomicTileCatalog,
     hover: Option<TilePosition>,
     target_size: PixelSize,
-) -> Result<(GameView, Viewport), EditorViewError> {
+) -> Result<EditorFrame, EditorViewError> {
     let viewport = editor_viewport(target_size);
     let scene = project_map(MapRenderInput {
         project: &model.project,
@@ -40,12 +71,7 @@ pub fn project(
     })
     .map_err(|error| EditorViewError::Map(error.to_string()))?;
     let map = scene.into_layer();
-    let mut surface = Surface::filled(GridSize::new(layout::COLS, layout::ROWS), ViewCell::Empty)
-        .map_err(EditorViewError::Surface)?;
-    project_chrome(&mut surface, model).map_err(EditorViewError::Surface)?;
     let mut images = Vec::new();
-    project_assets(&mut images, model, catalog);
-    project_materials(&mut images, model, catalog);
     project_semantics(&mut images, model);
     if let Some(position) = hover {
         images.push(image(
@@ -59,35 +85,17 @@ pub fn project(
             8,
         ));
     }
-    let labels = project_labels(model, hover);
-    let help = if model.show_help {
-        let ui = layout::workbench();
-        Some(
-            ViewLayer::new(LayerKind::Console)
-                .with_images(vec![image(
-                    ui.help_panel.origin,
-                    ui.help_panel.size,
-                    white_asset(),
-                    Rgba8::new(24, 28, 33, 248),
-                    100,
-                )])
-                .with_labels(project_help_labels(ui.help_panel)),
-        )
-    } else {
-        None
-    };
-    let mut layers = vec![
+    let layers = vec![
         map,
         ViewLayer::new(LayerKind::Character),
-        ViewLayer::new(LayerKind::Hud)
-            .with_surface(surface)
-            .with_images(images)
-            .with_labels(labels),
+        ViewLayer::new(LayerKind::Hud).with_images(images),
     ];
-    if let Some(help) = help {
-        layers.push(help);
-    }
-    Ok((GameView::new(layers), viewport))
+    let chrome = project_chrome_ui(model, catalog, hover).map_err(EditorViewError::Ui)?;
+    Ok(EditorFrame {
+        map: GameView::new(layers),
+        chrome,
+        viewport,
+    })
 }
 
 pub fn editor_viewport(target_size: PixelSize) -> Viewport {
@@ -105,6 +113,605 @@ pub fn editor_viewport(target_size: PixelSize) -> Viewport {
         PixelSize::new(cell_size, cell_size),
     )
     .expect("editor viewport cell size is positive")
+}
+
+/// Maps a Flex UI hit back to the existing editor reducer intent.
+/// Map painting deliberately stays in `EditorController` and never passes here.
+pub fn intent_for_ui_hit(model: &EditorModel, id: UiId) -> Option<EditorIntent> {
+    match id.0 {
+        value
+            if (ASSET_SLOT_ID..ASSET_SLOT_ID + layout::ASSET_PAGE_SIZE as u32).contains(&value) =>
+        {
+            let page = model.selected_atomic / layout::ASSET_PAGE_SIZE;
+            let index = page * layout::ASSET_PAGE_SIZE + (value - ASSET_SLOT_ID) as usize;
+            (index < model.atomic_ids.len()).then_some(EditorIntent::SelectAtomic(index))
+        }
+        value
+            if (MATERIAL_SLOT_ID..MATERIAL_SLOT_ID + layout::MATERIAL_PAGE_SIZE as u32)
+                .contains(&value) =>
+        {
+            let page = model.selected_material / layout::MATERIAL_PAGE_SIZE;
+            let index = page * layout::MATERIAL_PAGE_SIZE + (value - MATERIAL_SLOT_ID) as usize;
+            (index < model.project.materials.len()).then_some(EditorIntent::SelectMaterial(index))
+        }
+        PREVIOUS_ASSETS_ID => Some(EditorIntent::SelectAtomic(
+            model
+                .selected_atomic
+                .saturating_sub(layout::ASSET_PAGE_SIZE),
+        )),
+        NEXT_ASSETS_ID => Some(EditorIntent::SelectAtomic(
+            (model.selected_atomic / layout::ASSET_PAGE_SIZE + 1) * layout::ASSET_PAGE_SIZE,
+        )),
+        PREVIOUS_MATERIALS_ID => Some(EditorIntent::SelectMaterial(
+            model
+                .selected_material
+                .saturating_sub(layout::MATERIAL_PAGE_SIZE),
+        )),
+        NEXT_MATERIALS_ID => Some(EditorIntent::SelectMaterial(
+            (model.selected_material / layout::MATERIAL_PAGE_SIZE + 1) * layout::MATERIAL_PAGE_SIZE,
+        )),
+        ADD_LAYER_ID => Some(EditorIntent::AddLayer),
+        REMOVE_LAYER_ID => Some(EditorIntent::RemoveLayer),
+        DELETE_MATERIAL_ID => Some(EditorIntent::DeleteMaterial),
+        VISUAL_ID => Some(EditorIntent::SelectTool(EditorTool::Visual)),
+        WALKABLE_ID => Some(EditorIntent::SelectTool(EditorTool::Collision(
+            Collision::Walkable,
+        ))),
+        BLOCKED_ID => Some(EditorIntent::SelectTool(EditorTool::Collision(
+            Collision::Blocked,
+        ))),
+        ENCOUNTER_ID => Some(EditorIntent::SelectTool(EditorTool::Event(Some(
+            MapEventKind::Encounter,
+        )))),
+        CLEAR_EVENT_ID => Some(EditorIntent::SelectTool(EditorTool::Event(None))),
+        SAVE_ID => Some(EditorIntent::Save),
+        UNDO_ID => Some(EditorIntent::Undo),
+        REDO_ID => Some(EditorIntent::Redo),
+        HELP_ID | HELP_CLOSE_ID => Some(EditorIntent::ToggleHelp),
+        _ => None,
+    }
+}
+
+#[derive(Default)]
+struct UiIds {
+    next: u32,
+}
+
+impl UiIds {
+    fn next(&mut self) -> UiId {
+        let id = UiId(self.next);
+        self.next = self
+            .next
+            .checked_add(1)
+            .expect("editor UI node id overflow");
+        id
+    }
+}
+
+fn project_chrome_ui(
+    model: &EditorModel,
+    catalog: &AtomicTileCatalog,
+    hover: Option<TilePosition>,
+) -> Result<UiTree, UiBuildError> {
+    let mut ids = UiIds::default();
+    let sidebar = editor_sidebar(&mut ids, model, catalog, hover);
+    let materials = editor_materials(&mut ids, model, catalog);
+    let top = UiNode::new(ids.next())
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Ratio {
+                units: 16,
+                base: 19,
+            },
+            direction: FlexDirection::Row,
+            ..UiStyle::default()
+        })
+        .with_children([
+            UiNode::new(ids.next()).with_style(UiStyle {
+                width: Dimension::Ratio { units: 3, base: 4 },
+                height: Dimension::Fill,
+                ..UiStyle::default()
+            }),
+            sidebar,
+        ]);
+    let bottom = UiNode::new(ids.next())
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Ratio { units: 3, base: 19 },
+            direction: FlexDirection::Row,
+            ..UiStyle::default()
+        })
+        .with_children([
+            materials,
+            UiNode::new(ids.next()).with_style(UiStyle {
+                width: Dimension::Ratio { units: 1, base: 4 },
+                height: Dimension::Fill,
+                ..UiStyle::default()
+            }),
+        ]);
+    let mut children = vec![
+        UiNode::new(ids.next())
+            .with_style(UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                direction: FlexDirection::Column,
+                ..UiStyle::default()
+            })
+            .with_children([top, bottom]),
+    ];
+    if model.show_help {
+        children.push(editor_help_dialog(&mut ids));
+    }
+    UiTree::new(
+        UiNode::new(ids.next())
+            .with_style(UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                direction: FlexDirection::Stack,
+                ..UiStyle::default()
+            })
+            .with_children(children),
+    )
+}
+
+fn editor_sidebar(
+    ids: &mut UiIds,
+    model: &EditorModel,
+    catalog: &AtomicTileCatalog,
+    hover: Option<TilePosition>,
+) -> UiNode {
+    let asset_page = model.selected_atomic / layout::ASSET_PAGE_SIZE;
+    let asset_pages = model
+        .atomic_ids
+        .len()
+        .div_ceil(layout::ASSET_PAGE_SIZE)
+        .max(1);
+    let start = asset_page * layout::ASSET_PAGE_SIZE;
+    let mut asset_rows = Vec::new();
+    for row in 0..layout::ASSET_ROWS {
+        let mut cards = Vec::new();
+        for column in 0..layout::ASSET_COLS {
+            let local = row * layout::ASSET_COLS + column;
+            let index = start + local;
+            cards.push(editor_asset_card(
+                ids,
+                ASSET_SLOT_ID + local as u32,
+                model.atomic_ids.get(index),
+                catalog,
+                index == model.selected_atomic,
+            ));
+        }
+        asset_rows.push(
+            UiNode::new(ids.next())
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Row,
+                    gap: 6,
+                    ..UiStyle::default()
+                })
+                .with_children(cards),
+        );
+    }
+    let selected_atomic = model
+        .atomic_ids
+        .get(model.selected_atomic)
+        .map_or("none", |id| id.as_str());
+    let tool_buttons = [
+        (VISUAL_ID, "贴图", matches!(model.tool, EditorTool::Visual)),
+        (
+            WALKABLE_ID,
+            "可通行",
+            matches!(model.tool, EditorTool::Collision(Collision::Walkable)),
+        ),
+        (
+            BLOCKED_ID,
+            "阻挡",
+            matches!(model.tool, EditorTool::Collision(Collision::Blocked)),
+        ),
+        (
+            ENCOUNTER_ID,
+            "遭遇事件",
+            matches!(model.tool, EditorTool::Event(Some(MapEventKind::Encounter))),
+        ),
+        (
+            CLEAR_EVENT_ID,
+            "清除事件",
+            matches!(model.tool, EditorTool::Event(None)),
+        ),
+    ]
+    .into_iter()
+    .map(|(id, label, selected)| editor_button(ids, id, label, selected))
+    .collect::<Vec<_>>();
+    let coordinate = hover.map_or_else(String::new, |position| {
+        format!(" | {}, {}", position.x(), position.y())
+    });
+    panel(
+        ids.next(),
+        UiStyle {
+            width: Dimension::Ratio { units: 1, base: 4 },
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            gap: 10,
+            padding: Insets::all(14),
+            border_radius: punctum_ui::UiBorderRadius::all(12),
+            ..UiStyle::default()
+        },
+        PANEL,
+        [
+            ui_text(ids, "原子素材", TEXT, 20, Dimension::Fill),
+            ui_text(
+                ids,
+                format!("{}  {}/{}", selected_atomic, asset_page + 1, asset_pages),
+                MUTED,
+                14,
+                Dimension::Fill,
+            ),
+            UiNode::new(ids.next())
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(220),
+                    direction: FlexDirection::Column,
+                    gap: 6,
+                    ..UiStyle::default()
+                })
+                .with_children(asset_rows),
+            UiNode::new(ids.next())
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(32),
+                    direction: FlexDirection::Row,
+                    gap: 8,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    editor_button(ids, PREVIOUS_ASSETS_ID, "上一页", false),
+                    editor_button(ids, NEXT_ASSETS_ID, "下一页", false),
+                ]),
+            ui_text(ids, "工具", TEXT, 18, Dimension::Fill),
+            UiNode::new(ids.next())
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Column,
+                    gap: 6,
+                    clip: true,
+                    ..UiStyle::default()
+                })
+                .with_children(tool_buttons),
+            ui_text(
+                ids,
+                format!("{}{}", model.status, coordinate),
+                if model.status.starts_with("错误") {
+                    Rgba8::new(255, 133, 116, 255)
+                } else {
+                    MUTED
+                },
+                14,
+                Dimension::Fill,
+            ),
+            UiNode::new(ids.next())
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(32),
+                    direction: FlexDirection::Row,
+                    gap: 6,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    editor_button(ids, SAVE_ID, "保存", false),
+                    editor_button(ids, UNDO_ID, "撤销", false),
+                    editor_button(ids, REDO_ID, "重做", false),
+                    editor_button(ids, HELP_ID, "帮助", false),
+                ]),
+        ],
+    )
+}
+
+fn editor_materials(ids: &mut UiIds, model: &EditorModel, catalog: &AtomicTileCatalog) -> UiNode {
+    let page = model.selected_material / layout::MATERIAL_PAGE_SIZE;
+    let pages = model
+        .project
+        .materials
+        .len()
+        .div_ceil(layout::MATERIAL_PAGE_SIZE)
+        .max(1);
+    let start = page * layout::MATERIAL_PAGE_SIZE;
+    let cards = (0..layout::MATERIAL_PAGE_SIZE)
+        .map(|local| {
+            let index = start + local;
+            editor_material_card(
+                ids,
+                MATERIAL_SLOT_ID + local as u32,
+                model.project.materials.get(index),
+                catalog,
+                index == model.selected_material,
+            )
+        })
+        .collect::<Vec<_>>();
+    let selected = model.project.materials.get(model.selected_material);
+    panel(
+        ids.next(),
+        UiStyle {
+            width: Dimension::Ratio { units: 3, base: 4 },
+            height: Dimension::Fill,
+            direction: FlexDirection::Row,
+            gap: 14,
+            padding: Insets::all(12),
+            border_radius: punctum_ui::UiBorderRadius {
+                top_left: 0,
+                top_right: 12,
+                bottom_right: 0,
+                bottom_left: 0,
+            },
+            ..UiStyle::default()
+        },
+        UI_BG,
+        [
+            UiNode::new(ids.next())
+                .with_style(UiStyle {
+                    width: Dimension::Ratio { units: 3, base: 5 },
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Column,
+                    gap: 8,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    ui_text(
+                        ids,
+                        format!("组合素材  {}/{}", page + 1, pages),
+                        TEXT,
+                        18,
+                        Dimension::Fill,
+                    ),
+                    UiNode::new(ids.next())
+                        .with_style(UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            direction: FlexDirection::Row,
+                            gap: 8,
+                            clip: true,
+                            ..UiStyle::default()
+                        })
+                        .with_children(cards),
+                    UiNode::new(ids.next())
+                        .with_style(UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(30),
+                            direction: FlexDirection::Row,
+                            gap: 8,
+                            ..UiStyle::default()
+                        })
+                        .with_children([
+                            editor_button(ids, PREVIOUS_MATERIALS_ID, "上一页", false),
+                            editor_button(ids, NEXT_MATERIALS_ID, "下一页", false),
+                        ]),
+                ]),
+            panel(
+                ids.next(),
+                UiStyle {
+                    width: Dimension::Ratio { units: 2, base: 5 },
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Column,
+                    gap: 6,
+                    padding: Insets::all(10),
+                    border_radius: punctum_ui::UiBorderRadius::all(8),
+                    ..UiStyle::default()
+                },
+                PANEL,
+                [
+                    ui_text(ids, "当前组合", TEXT, 16, Dimension::Fill),
+                    ui_text(
+                        ids,
+                        selected.map_or("none", |material| material.id.as_str()),
+                        MUTED,
+                        14,
+                        Dimension::Fill,
+                    ),
+                    ui_text(
+                        ids,
+                        selected.map_or_else(
+                            || "0 层".to_owned(),
+                            |material| format!("{} 层", material.layers.len()),
+                        ),
+                        MUTED,
+                        14,
+                        Dimension::Fill,
+                    ),
+                    editor_button(ids, ADD_LAYER_ID, "添加一层", false),
+                    editor_button(ids, REMOVE_LAYER_ID, "移除顶层", false),
+                    editor_button(ids, DELETE_MATERIAL_ID, "删除当前组合", false),
+                ],
+            ),
+        ],
+    )
+}
+
+fn editor_asset_card(
+    ids: &mut UiIds,
+    action_id: u32,
+    atomic: Option<&map_project::AtomicTileId>,
+    catalog: &AtomicTileCatalog,
+    selected: bool,
+) -> UiNode {
+    let mut children = Vec::new();
+    if let Some(atomic) = atomic {
+        if let Some(asset) = catalog.asset(atomic) {
+            children.push(
+                UiNode::new(ids.next())
+                    .with_style(UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Fill,
+                        border_radius: punctum_ui::UiBorderRadius::all(5),
+                        ..UiStyle::default()
+                    })
+                    .with_content(UiContent::Image(
+                        UiContentId::new(asset.as_str()).expect("tile asset key is non-empty"),
+                    )),
+            );
+        }
+    }
+    UiNode::new(UiId(action_id))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            padding: Insets::all(4),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: ui_color(if selected { SELECTED } else { BORDER }),
+            },
+            border_radius: punctum_ui::UiBorderRadius::all(6),
+            interactive: atomic.is_some(),
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(ui_color(BUTTON)))
+        .with_children(children)
+}
+
+fn editor_material_card(
+    ids: &mut UiIds,
+    action_id: u32,
+    material: Option<&map_project::CompositeTile>,
+    catalog: &AtomicTileCatalog,
+    selected: bool,
+) -> UiNode {
+    let mut children = Vec::new();
+    if let Some(material) = material {
+        for layer in &material.layers {
+            if let Some(asset) = catalog.asset(layer) {
+                children.push(
+                    UiNode::new(ids.next())
+                        .with_style(UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            border_radius: punctum_ui::UiBorderRadius::all(6),
+                            ..UiStyle::default()
+                        })
+                        .with_content(UiContent::Image(
+                            UiContentId::new(asset.as_str()).expect("tile asset key is non-empty"),
+                        )),
+                );
+            }
+        }
+    }
+    UiNode::new(UiId(action_id))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: ui_color(if selected { SELECTED } else { BORDER }),
+            },
+            border_radius: punctum_ui::UiBorderRadius::all(7),
+            interactive: material.is_some(),
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(ui_color(BUTTON)))
+        .with_children(children)
+}
+
+fn editor_button(ids: &mut UiIds, action_id: u32, label: &str, selected: bool) -> UiNode {
+    UiNode::new(UiId(action_id))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            padding: Insets::symmetric(8, 4),
+            border_radius: punctum_ui::UiBorderRadius::all(6),
+            interactive: true,
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(ui_color(if selected {
+            SELECTED
+        } else {
+            BUTTON
+        })))
+        .with_children([ui_text(ids, label, TEXT, 14, Dimension::Fill)])
+}
+
+fn editor_help_dialog(ids: &mut UiIds) -> UiNode {
+    let lines = [
+        "地图编辑器使用说明",
+        "左键绘制，右键擦除。",
+        "选择原子素材后可添加组合层。",
+        "贴图、碰撞和事件画笔互不修改彼此。",
+        "Ctrl+S 保存，Ctrl+Z 撤销，Ctrl+Y 重做。",
+        "点击此面板或“帮助”关闭。",
+    ];
+    UiNode::new(UiId(HELP_CLOSE_ID))
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            interactive: true,
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(UiColor::new(17, 19, 22, 210)))
+        .with_children([panel(
+            ids.next(),
+            UiStyle {
+                width: Dimension::Px(660),
+                height: Dimension::Px(310),
+                direction: FlexDirection::Column,
+                gap: 16,
+                padding: Insets::all(28),
+                border: punctum_ui::UiBorder {
+                    widths: Insets::all(2),
+                    color: ui_color(BORDER),
+                },
+                border_radius: punctum_ui::UiBorderRadius::all(14),
+                ..UiStyle::default()
+            },
+            PANEL,
+            lines.into_iter().enumerate().map(|(index, line)| {
+                ui_text(
+                    ids,
+                    line,
+                    if index == 0 { TEXT } else { MUTED },
+                    if index == 0 { 24 } else { 17 },
+                    Dimension::Fill,
+                )
+            }),
+        )])
+}
+
+fn panel(
+    id: UiId,
+    style: UiStyle,
+    color: Rgba8,
+    children: impl IntoIterator<Item = UiNode>,
+) -> UiNode {
+    UiNode::new(id)
+        .with_style(style)
+        .with_content(UiContent::Fill(ui_color(color)))
+        .with_children(children)
+}
+
+fn ui_text(
+    ids: &mut UiIds,
+    content: impl Into<String>,
+    color: Rgba8,
+    font_size: u32,
+    width: Dimension,
+) -> UiNode {
+    UiNode::new(ids.next())
+        .with_style(UiStyle {
+            width,
+            height: Dimension::Px(font_size.saturating_add(5)),
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Text {
+            content: content.into(),
+            color: ui_color(color),
+            font_size,
+        })
+}
+
+const fn ui_color(color: Rgba8) -> UiColor {
+    UiColor::new(color.red, color.green, color.blue, color.alpha)
 }
 
 fn project_chrome(
@@ -504,6 +1111,7 @@ fn white_asset() -> AssetKey {
 pub enum EditorViewError {
     Map(String),
     Surface(SurfaceError),
+    Ui(UiBuildError),
 }
 
 impl fmt::Display for EditorViewError {
@@ -511,6 +1119,7 @@ impl fmt::Display for EditorViewError {
         match self {
             Self::Map(error) => write!(formatter, "map projection failed: {error}"),
             Self::Surface(error) => write!(formatter, "workbench projection failed: {error}"),
+            Self::Ui(error) => write!(formatter, "workbench UI projection failed: {error}"),
         }
     }
 }
@@ -545,17 +1154,20 @@ mod tests {
             asset: AssetKey::new("map/tile/tile-0001").unwrap(),
         }])
         .unwrap();
-        let (view, _) = project(&model, &catalog, None, PixelSize::new(1280, 720)).unwrap();
-        assert_eq!(
-            view.layers()[2].surface.as_ref().unwrap().size(),
-            GridSize::new(64, 38)
-        );
-        assert!(view.labels().any(|label| label.content == "原子素材"));
-        assert!(
-            view.labels()
-                .any(|label| label.content.starts_with("组合素材"))
-        );
-        assert!(view.labels().any(|label| label.content == "删除当前组合"));
+        let frame = project(&model, &catalog, None, PixelSize::new(1280, 720)).unwrap();
+        assert_eq!(frame.map.layers().len(), 3);
+        assert!(frame.map.layers()[2].surface.is_none());
+        let chrome = frame
+            .chrome
+            .resolve(punctum_ui::UiSize::new(1280, 720))
+            .unwrap();
+        assert!(chrome.commands().iter().any(|command| matches!(
+            command, punctum_ui::UiDrawCommand::Text { content, .. } if content == "原子素材"
+        )));
+        assert!(chrome.commands().iter().any(|command| matches!(
+            command, punctum_ui::UiDrawCommand::Text { content, .. } if content.starts_with("组合素材")
+        )));
+        assert!(chrome.hit_regions().len() >= 10);
     }
 
     #[test]
@@ -580,7 +1192,7 @@ mod tests {
         }])
         .unwrap();
 
-        let (view, _) = project(
+        let frame = project(
             &model,
             &catalog,
             Some(TilePosition::new(1, 2)),
@@ -588,15 +1200,15 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(view.layers().len(), 4);
-        assert_eq!(view.layers()[3].kind, LayerKind::Console);
-        assert_eq!(view.layers()[3].labels.len(), 11);
-        assert!(
-            view.layers()[2]
-                .labels
-                .iter()
-                .any(|label| label.content == "就绪 | 1, 2")
-        );
+        assert_eq!(frame.map.layers().len(), 3);
+        let chrome = frame
+            .chrome
+            .resolve(punctum_ui::UiSize::new(1280, 720))
+            .unwrap();
+        assert!(chrome.commands().iter().any(|command| matches!(
+            command, punctum_ui::UiDrawCommand::Text { content, .. } if content == "地图编辑器使用说明"
+        )));
+        assert!(chrome.hit_regions().len() >= 11);
     }
 
     #[test]
@@ -640,15 +1252,21 @@ mod tests {
             EditorTool::Event(None),
         ] {
             model.tool = tool;
-            let (view, _) = project(&model, &catalog, None, PixelSize::new(1, 1)).unwrap();
-            assert_eq!(view.layers().len(), 3);
+            let frame = project(&model, &catalog, None, PixelSize::new(1280, 720)).unwrap();
+            assert_eq!(frame.map.layers().len(), 3);
             assert!(
-                view.layers()[2]
+                frame.map.layers()[2]
                     .images
                     .iter()
                     .any(|image| image.z_index == 7)
             );
-            assert!(view.labels().any(|label| label.content == "错误：fixture"));
+            let chrome = frame
+                .chrome
+                .resolve(punctum_ui::UiSize::new(1280, 720))
+                .unwrap();
+            assert!(chrome.commands().iter().any(|command| matches!(
+                command, punctum_ui::UiDrawCommand::Text { content, .. } if content == "错误：fixture"
+            )));
         }
 
         let missing = AtomicTileCatalog::new([]).unwrap();
