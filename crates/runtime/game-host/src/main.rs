@@ -59,7 +59,13 @@ impl CreatureGameApp {
             .sprite_manifest()
             .map_err(|error| std::io::Error::other(format!("demo sprite manifest: {error:?}")))?;
         let pokedex = PokedexData::embedded_gen3()?;
-        let assets = load_game_assets(&sprite_manifest, &pokedex, loaded_map.images)?;
+        let snapshot = game.snapshot();
+        let assets = load_game_assets(
+            &sprite_manifest,
+            &pokedex,
+            snapshot.world(),
+            loaded_map.images,
+        )?;
         Ok(Self {
             game: Some(game),
             pokedex,

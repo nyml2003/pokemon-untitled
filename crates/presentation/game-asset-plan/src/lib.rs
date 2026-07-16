@@ -2,7 +2,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::{error::Error, fmt};
+use std::{collections::BTreeSet, error::Error, fmt};
 
 use battle_application::{MoveCategory, PokemonType, TEAM_SIZE};
 use game_assets::{AssetKey, DecodedImage, decode_png};
@@ -15,9 +15,9 @@ use game_view::{
     pokemon_icon_asset, rounded_ui_asset, type_icon_asset, world_character_asset,
 };
 use punctum_gpu::{PixelSize, Rgba8};
-use world_application::Direction;
+use world_application::{CharacterAppearanceId, Direction, WorldObservation};
 
-const CHARACTER_ASSETS: [[&str; 6]; 4] = [
+const PLAYER_CHARACTER_ASSETS: [[&str; 6]; 4] = [
     [
         "character/red/down/stand/00",
         "character/red/down/walk/02",
@@ -64,10 +64,14 @@ pub struct AssetBytes {
     pub bytes: Vec<u8>,
 }
 
-pub fn asset_requests(manifest: &DemoSpriteManifest, pokedex: &PokedexData) -> Vec<AssetRequest> {
+pub fn asset_requests(
+    manifest: &DemoSpriteManifest,
+    pokedex: &PokedexData,
+    world: &WorldObservation,
+) -> Vec<AssetRequest> {
     debug_assert_eq!(manifest.player().len(), TEAM_SIZE);
     debug_assert_eq!(manifest.opponent().len(), TEAM_SIZE);
-    let mut requests = character_requests();
+    let mut requests = character_requests(world);
     for (slot, form) in manifest.player().iter().enumerate() {
         for frame in 0..2 {
             requests.push(AssetRequest {
@@ -105,7 +109,24 @@ pub fn asset_requests(manifest: &DemoSpriteManifest, pokedex: &PokedexData) -> V
     requests
 }
 
-fn character_requests() -> Vec<AssetRequest> {
+fn character_requests(world: &WorldObservation) -> Vec<AssetRequest> {
+    let appearances = world
+        .actors()
+        .iter()
+        .map(|actor| actor.appearance().clone())
+        .collect::<BTreeSet<_>>();
+    let mut requests = Vec::with_capacity(appearances.len() * 24);
+    for appearance in appearances {
+        if appearance.as_str() == "red" {
+            requests.extend(player_character_requests(&appearance));
+        } else {
+            requests.extend(basic_character_requests(&appearance));
+        }
+    }
+    requests
+}
+
+fn player_character_requests(appearance: &CharacterAppearanceId) -> Vec<AssetRequest> {
     let directions = [
         Direction::Down,
         Direction::Left,
@@ -113,10 +134,11 @@ fn character_requests() -> Vec<AssetRequest> {
         Direction::Up,
     ];
     let mut requests = Vec::with_capacity(24);
-    for (direction_index, assets) in CHARACTER_ASSETS.iter().enumerate() {
+    for (direction_index, assets) in PLAYER_CHARACTER_ASSETS.iter().enumerate() {
         for (frame, asset) in assets.iter().enumerate() {
             requests.push(AssetRequest {
                 resource_key: world_character_asset(
+                    appearance,
                     directions[direction_index],
                     frame_animation(frame),
                     frame_index(frame),
@@ -127,6 +149,44 @@ fn character_requests() -> Vec<AssetRequest> {
         }
     }
     requests
+}
+
+fn basic_character_requests(appearance: &CharacterAppearanceId) -> Vec<AssetRequest> {
+    let directions = [
+        Direction::Down,
+        Direction::Left,
+        Direction::Right,
+        Direction::Up,
+    ];
+    let mut requests = Vec::with_capacity(12);
+    for direction in directions {
+        for (animation, sprite_frame, action, action_frame) in [
+            (WorldAnimation::Stand, 0, "stand", 0),
+            (WorldAnimation::Walk, 0, "walk", 1),
+            (WorldAnimation::Walk, 2, "walk", 2),
+        ] {
+            requests.push(AssetRequest {
+                resource_key: world_character_asset(appearance, direction, animation, sprite_frame),
+                asset_key: AssetKey::new(format!(
+                    "character/{}/{}/{action}/{action_frame:02}",
+                    appearance.as_str(),
+                    direction_name(direction),
+                ))
+                .expect("generated character asset key is valid"),
+                expected_size: None,
+            });
+        }
+    }
+    requests
+}
+
+const fn direction_name(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Down => "down",
+        Direction::Left => "left",
+        Direction::Right => "right",
+        Direction::Up => "up",
+    }
 }
 
 fn frame_animation(frame: usize) -> WorldAnimation {
@@ -302,6 +362,11 @@ mod tests {
     use game_data::CurrentDataSet;
     use game_session::GameSession;
     use image::{ExtendedColorType, ImageEncoder, codecs::png::PngEncoder};
+    use map_project::{
+        AtomicTileId, CharacterAppearanceId, CompositeTile, CompositeTileId, MapActor, MapActorId,
+        MapDirection, MapProject, MapProjectId, TilePosition,
+    };
+    use world_application::WorldApplication;
 
     use super::*;
 
@@ -310,6 +375,35 @@ mod tests {
             .unwrap()
             .sprite_manifest()
             .unwrap()
+    }
+
+    fn world() -> world_application::WorldObservation {
+        GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 17)
+            .unwrap()
+            .snapshot()
+            .world()
+            .clone()
+    }
+
+    fn world_with_npc() -> world_application::WorldObservation {
+        let tile = AtomicTileId::new("tile-0001").unwrap();
+        let material = CompositeTileId::new("ground").unwrap();
+        let mut project = MapProject::blank(
+            MapProjectId::new("npc-test").unwrap(),
+            3,
+            1,
+            Some(CompositeTile::new(material, vec![tile])),
+        );
+        project.player_spawn = TilePosition::new(0, 0);
+        project.actors.push(MapActor::new(
+            MapActorId::new("guide").unwrap(),
+            TilePosition::new(1, 0),
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000").unwrap(),
+        ));
+        WorldApplication::from_map_project(&project)
+            .unwrap()
+            .observe()
     }
 
     fn png(width: u32, height: u32) -> Vec<u8> {
@@ -328,13 +422,13 @@ mod tests {
     #[test]
     fn manifest_expands_to_stable_resource_and_asset_key_requests() {
         let pokedex = PokedexData::embedded_gen3().unwrap();
-        let requests = asset_requests(&manifest(), &pokedex);
+        let requests = asset_requests(&manifest(), &pokedex, &world());
         assert_eq!(requests.len(), 466);
         assert_eq!(
             requests[0].asset_key.as_str(),
             "character/red/down/stand/00"
         );
-        assert_eq!(requests[0].resource_key.as_str(), "character/0/0");
+        assert_eq!(requests[0].resource_key.as_str(), "character/red/0/0");
         assert!(requests.iter().any(|request| {
             request.resource_key == player_back_asset(0, 0)
                 && request.asset_key.as_str().contains("/normal/back/00")
@@ -350,8 +444,40 @@ mod tests {
     }
 
     #[test]
+    fn npc_appearances_request_only_stand_and_walk_frames() {
+        let requests = asset_requests(
+            &manifest(),
+            &PokedexData::embedded_gen3().unwrap(),
+            &world_with_npc(),
+        );
+        let npc_requests = requests
+            .iter()
+            .filter(|request| {
+                request
+                    .asset_key
+                    .as_str()
+                    .starts_with("character/dppt/000/")
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(npc_requests.len(), 12);
+        assert!(
+            npc_requests
+                .iter()
+                .all(|request| !request.asset_key.as_str().contains("/run/"))
+        );
+        assert!(npc_requests.iter().any(|request| {
+            request.resource_key.as_str() == "character/dppt/000/1/2"
+                && request.asset_key.as_str() == "character/dppt/000/left/walk/02"
+        }));
+    }
+
+    #[test]
     fn assembly_decodes_and_validates_declared_sizes() {
-        let requests = asset_requests(&manifest(), &PokedexData::embedded_gen3().unwrap());
+        let requests = asset_requests(
+            &manifest(),
+            &PokedexData::embedded_gen3().unwrap(),
+            &world(),
+        );
         let sources = requests
             .into_iter()
             .map(|request| AssetBytes {

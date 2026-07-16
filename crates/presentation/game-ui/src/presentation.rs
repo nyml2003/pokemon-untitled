@@ -393,7 +393,7 @@ impl PresentationState {
     pub fn observe_game_events(mut self, events: &GameEvents) -> Self {
         for event in events.iter() {
             match event {
-                GameEvent::World(world_event) => self.observe_world_event(*world_event),
+                GameEvent::World(world_event) => self.observe_world_event(world_event.clone()),
                 GameEvent::BattleStarted => {
                     self.clear_world();
                     self.battle_sprite_remaining = Some(BATTLE_FRAME_INTERVAL);
@@ -529,7 +529,7 @@ impl PresentationState {
                 self.world_motion = Some(WorldMotion::new(direction, gait));
                 self.run_stop_remaining = None;
             }
-            WorldEvent::Blocked { .. } => {}
+            WorldEvent::Blocked { .. } | WorldEvent::BlockedByActor { .. } => {}
             WorldEvent::EncounterTriggered { .. } => self.clear_world(),
         }
     }

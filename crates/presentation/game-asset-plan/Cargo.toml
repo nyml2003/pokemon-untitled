@@ -19,6 +19,7 @@ world-application = { path = "../../application/world-application" }
 [dev-dependencies]
 game-data = { path = "../../domain/game-data" }
 image = "0.25.8"
+map-project = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

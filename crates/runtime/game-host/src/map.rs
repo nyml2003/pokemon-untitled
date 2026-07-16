@@ -32,3 +32,17 @@ fn asset_root() -> PathBuf {
 fn project_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../maps/demo-map.json")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::load_map;
+
+    #[test]
+    fn checked_in_demo_map_loads_with_static_actors() {
+        let map = load_map().unwrap();
+        assert_eq!(map.project.format_version, map_project::FORMAT_VERSION);
+        assert_eq!(map.project.actors.len(), 1);
+        assert_eq!(map.project.actors[0].id.as_str(), "forest-guide");
+        assert_eq!(map.project.actors[0].appearance.as_str(), "dppt/000");
+    }
+}

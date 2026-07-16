@@ -1,5 +1,5 @@
 {
-  "format_version": "gen3-map-v1",
+  "format_version": "gen3-map-v2",
   "id": "demo-map",
   "tile_size": {
     "width": 16,
@@ -713,7 +713,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -929,7 +929,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -1148,7 +1148,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -1793,7 +1793,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -2012,7 +2012,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -2657,7 +2657,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -2876,7 +2876,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -3521,7 +3521,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -3740,7 +3740,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -4385,7 +4385,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -4604,7 +4604,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -5111,7 +5111,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-meadow"
@@ -5249,7 +5249,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -5468,7 +5468,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -5606,7 +5606,7 @@
       "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -5975,7 +5975,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-meadow"
@@ -6113,7 +6113,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -6332,7 +6332,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -6470,7 +6470,7 @@
       "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -6839,7 +6839,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-meadow"
@@ -6977,144 +6977,6 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
-    },
-    {
-      "material": "forest-tree-003-r2c0"
-    },
-    {
-      "material": "forest-tree-003-overlap-a-r2c1-b-r0c0"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-lattice-0028-0026-0021"
-    },
-    {
-      "material": "forest-lattice-0027-0022-0020"
-    },
-    {
-      "material": "forest-tree-003-overlap-a-r2c2-b-r0c1"
-    },
-    {
-      "material": "forest-tree-003-r0c2"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
-      "material": "forest-meadow"
-    },
-    {
       "material": "forest-meadow"
     },
     {
@@ -7196,7 +7058,145 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-meadow"
+    },
+    {
+      "material": "forest-tree-003-r2c0"
+    },
+    {
+      "material": "forest-tree-003-overlap-a-r2c1-b-r0c0"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-lattice-0028-0026-0021"
+    },
+    {
+      "material": "forest-lattice-0027-0022-0020"
+    },
+    {
+      "material": "forest-tree-003-overlap-a-r2c2-b-r0c1"
+    },
+    {
+      "material": "forest-tree-003-r0c2"
+    },
+    {
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -7334,7 +7334,7 @@
       "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -7703,7 +7703,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-meadow"
@@ -7841,7 +7841,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -8060,7 +8060,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -8138,67 +8138,67 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -8705,7 +8705,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -8924,7 +8924,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -9569,7 +9569,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -9788,7 +9788,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -10433,7 +10433,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -10652,7 +10652,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -11297,7 +11297,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -11516,7 +11516,7 @@
       "material": "forest-tree-003-r0c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r1c0"
@@ -12161,7 +12161,7 @@
       "material": "forest-tree-003-r1c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
       "material": "forest-tree-003-r2c0"
@@ -12377,223 +12377,223 @@
       "material": "forest-tree-003-r2c2"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     },
     {
-      "material": "forest-underbrush-0102-0262"
+      "material": "forest-meadow"
     }
   ],
   "collision_cells": [
@@ -15143,27 +15143,27 @@
     "blocked",
     "blocked",
     "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
-    "blocked",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
+    "walkable",
     "blocked",
     "blocked",
     "blocked",
@@ -20667,5 +20667,16 @@
   "player_spawn": [
     36,
     28
+  ],
+  "actors": [
+    {
+      "id": "forest-guide",
+      "position": [
+        38,
+        28
+      ],
+      "facing": "left",
+      "appearance": "dppt/000"
+    }
   ]
 }

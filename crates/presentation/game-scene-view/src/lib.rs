@@ -83,11 +83,12 @@ pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, SceneV
         let base = match input.game.scene() {
             GameScene::World => {
                 let camera = world_camera(input.game.world().player());
+                let map_pixel_offset = invert_pixel_offset(input.presentation.world_pixel_offset);
                 let scene = project_map(MapRenderInput {
                     project: input.map_project,
                     catalog: input.map_catalog,
                     camera,
-                    pixel_offset: invert_pixel_offset(input.presentation.world_pixel_offset),
+                    pixel_offset: map_pixel_offset,
                     viewport,
                     layout: MapGridLayout::new(
                         GridSize::new(CANVAS_WIDTH, CANVAS_HEIGHT),
@@ -101,6 +102,7 @@ pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, SceneV
                     input.game.world(),
                     input.presentation.world_animation,
                     input.presentation.sprite_frame,
+                    map_pixel_offset,
                     None,
                 )
             }
@@ -171,7 +173,10 @@ mod tests {
     use game_data::CurrentDataSet;
     use game_session::{GameCommand, GameSession};
     use game_ui::{BattleUiState, PresentationSnapshot, WorldAnimation};
-    use map_project::{AtomicTileId, CompositeTile, CompositeTileId, MapProjectId};
+    use map_project::{
+        AtomicTileId, CharacterAppearanceId, CompositeTile, CompositeTileId, MapActor, MapActorId,
+        MapDirection, MapProjectId, TilePosition,
+    };
     use map_render::AtomicTileAsset;
     use punctum_gpu::PixelOffset;
     use world_application::{Direction, WorldApplication};
@@ -179,12 +184,23 @@ mod tests {
     use super::*;
 
     fn map() -> (MapProject, AtomicTileCatalog) {
+        map_with_npc(TilePosition::new(12, 7))
+    }
+
+    fn map_with_npc(npc_position: TilePosition) -> (MapProject, AtomicTileCatalog) {
         let atomic = AtomicTileId::new("ground").unwrap();
         let material = CompositeTile::new(
             CompositeTileId::new("ground").unwrap(),
             vec![atomic.clone()],
         );
-        let project = MapProject::blank(MapProjectId::new("test").unwrap(), 24, 16, Some(material));
+        let mut project =
+            MapProject::blank(MapProjectId::new("test").unwrap(), 24, 16, Some(material));
+        project.actors.push(MapActor::new(
+            MapActorId::new("guide").unwrap(),
+            npc_position,
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000").unwrap(),
+        ));
         let catalog = AtomicTileCatalog::new([AtomicTileAsset {
             id: atomic,
             asset: AssetKey::new("map/tile/ground").unwrap(),
@@ -204,11 +220,11 @@ mod tests {
     }
 
     #[test]
-    fn world_motion_offsets_the_map_but_not_the_character() {
+    fn world_motion_keeps_the_player_centered_and_npcs_attached_to_the_map() {
         let (project, catalog) = map();
         let game = GameSession::new(
             CurrentDataSet::embedded().unwrap(),
-            WorldApplication::demo().unwrap(),
+            WorldApplication::from_map_project(&project).unwrap(),
             17,
         )
         .unwrap();
@@ -233,11 +249,48 @@ mod tests {
                 .iter()
                 .any(|image| image.pixel_offset == PixelOffset::new(-12, 6))
         );
+        let player = character_layer
+            .images
+            .iter()
+            .find(|image| image.asset.as_str().starts_with("character/red/"))
+            .unwrap();
+        assert_eq!(player.pixel_offset, PixelOffset::new(0, 0));
+        let npc = character_layer
+            .images
+            .iter()
+            .find(|image| image.asset.as_str().starts_with("character/dppt/000/"))
+            .unwrap();
+        assert_eq!(npc.asset.as_str(), "character/dppt/000/1/0");
+        assert_eq!(npc.pixel_offset, PixelOffset::new(-12, 6));
+    }
+
+    #[test]
+    fn offscreen_npcs_are_not_sent_to_the_grid_frame() {
+        let (project, catalog) = map_with_npc(TilePosition::new(23, 7));
+        let game = GameSession::new(
+            CurrentDataSet::embedded().unwrap(),
+            WorldApplication::from_map_project(&project).unwrap(),
+            17,
+        )
+        .unwrap();
+        let projected = project_scene(SceneViewInput {
+            game: &game.snapshot(),
+            presentation: presentation(PixelOffset::new(0, 0)),
+            console: None,
+            pokedex: &PokedexData::embedded_gen3().unwrap(),
+            map_project: &project,
+            map_catalog: &catalog,
+            viewport: game_viewport(PixelSize::new(960, 720)),
+        })
+        .unwrap();
+        let SceneFrame::Grid(view) = projected.frame else {
+            panic!("world uses the grid path")
+        };
         assert!(
-            character_layer
+            view.layers()[1]
                 .images
                 .iter()
-                .all(|image| image.pixel_offset == PixelOffset::new(0, 0))
+                .all(|image| !image.asset.as_str().starts_with("character/dppt/000/"))
         );
     }
 

@@ -6,7 +6,7 @@ use std::{collections::BTreeSet, error::Error, fmt};
 
 use serde::{Deserialize, Serialize};
 
-pub const FORMAT_VERSION: &str = "gen3-map-v1";
+pub const FORMAT_VERSION: &str = "gen3-map-v2";
 
 macro_rules! string_id {
     ($name:ident) => {
@@ -37,7 +37,9 @@ macro_rules! string_id {
 }
 
 string_id!(AtomicTileId);
+string_id!(CharacterAppearanceId);
 string_id!(CompositeTileId);
+string_id!(MapActorId);
 string_id!(MapProjectId);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,7 +54,7 @@ impl TilePixelSize {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct TilePosition(pub u16, pub u16);
 
 impl TilePosition {
@@ -66,6 +68,40 @@ impl TilePosition {
 
     pub const fn y(self) -> u16 {
         self.1
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MapDirection {
+    Up,
+    #[default]
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MapActor {
+    pub id: MapActorId,
+    pub position: TilePosition,
+    pub facing: MapDirection,
+    pub appearance: CharacterAppearanceId,
+}
+
+impl MapActor {
+    pub const fn new(
+        id: MapActorId,
+        position: TilePosition,
+        facing: MapDirection,
+        appearance: CharacterAppearanceId,
+    ) -> Self {
+        Self {
+            id,
+            position,
+            facing,
+            appearance,
+        }
     }
 }
 
@@ -139,6 +175,7 @@ pub struct MapProject {
     pub collision_cells: Vec<Collision>,
     pub event_cells: Vec<Option<MapEventKind>>,
     pub player_spawn: TilePosition,
+    pub actors: Vec<MapActor>,
 }
 
 impl MapProject {
@@ -160,6 +197,7 @@ impl MapProject {
                 width.saturating_sub(1) / 2,
                 height.saturating_sub(1) / 2,
             ),
+            actors: Vec::new(),
         }
     }
 
@@ -251,6 +289,37 @@ impl MapProject {
             == Collision::Blocked
         {
             return Err(MapError::SpawnBlocked(self.player_spawn));
+        }
+        let mut actor_ids = BTreeSet::new();
+        let mut occupied = BTreeSet::new();
+        for actor in &self.actors {
+            if actor.id.as_str().trim().is_empty() {
+                return Err(MapError::EmptyId("MapActorId"));
+            }
+            if actor.appearance.as_str().trim().is_empty() {
+                return Err(MapError::EmptyId("CharacterAppearanceId"));
+            }
+            if !actor_ids.insert(actor.id.clone()) {
+                return Err(MapError::DuplicateActor(actor.id.clone()));
+            }
+            let Some(index) = self.cell_index(actor.position) else {
+                return Err(MapError::ActorOutOfBounds {
+                    actor: actor.id.clone(),
+                    position: actor.position,
+                });
+            };
+            if self.collision_cells[index] == Collision::Blocked {
+                return Err(MapError::ActorBlocked {
+                    actor: actor.id.clone(),
+                    position: actor.position,
+                });
+            }
+            if actor.position == self.player_spawn {
+                return Err(MapError::ActorOnPlayerSpawn(actor.id.clone()));
+            }
+            if !occupied.insert(actor.position) {
+                return Err(MapError::ActorOverlap(actor.position));
+            }
         }
         Ok(())
     }
@@ -409,6 +478,17 @@ pub enum MapError {
     CellOutOfBounds(TilePosition),
     SpawnOutOfBounds(TilePosition),
     SpawnBlocked(TilePosition),
+    DuplicateActor(MapActorId),
+    ActorOutOfBounds {
+        actor: MapActorId,
+        position: TilePosition,
+    },
+    ActorBlocked {
+        actor: MapActorId,
+        position: TilePosition,
+    },
+    ActorOnPlayerSpawn(MapActorId),
+    ActorOverlap(TilePosition),
     DuplicateMaterial(CompositeTileId),
     UnknownMaterial(CompositeTileId),
     EmptyMaterial(CompositeTileId),
@@ -443,6 +523,22 @@ impl fmt::Display for MapError {
                 write!(formatter, "spawn {position:?} is outside the map")
             }
             Self::SpawnBlocked(position) => write!(formatter, "spawn {position:?} is blocked"),
+            Self::DuplicateActor(id) => write!(formatter, "actor {id} is defined more than once"),
+            Self::ActorOutOfBounds { actor, position } => {
+                write!(
+                    formatter,
+                    "actor {actor} at {position:?} is outside the map"
+                )
+            }
+            Self::ActorBlocked { actor, position } => {
+                write!(formatter, "actor {actor} is on blocked cell {position:?}")
+            }
+            Self::ActorOnPlayerSpawn(id) => {
+                write!(formatter, "actor {id} overlaps the player spawn")
+            }
+            Self::ActorOverlap(position) => {
+                write!(formatter, "multiple actors occupy cell {position:?}")
+            }
             Self::DuplicateMaterial(id) => {
                 write!(formatter, "material {id} is defined more than once")
             }
@@ -487,7 +583,7 @@ mod tests {
         let json = project.to_json_pretty(&known).unwrap();
         let decoded = MapProject::from_json(&json, &known).unwrap();
         assert_eq!(decoded, project);
-        assert!(json.contains("gen3-map-v1"));
+        assert!(json.contains("gen3-map-v2"));
         assert!(json.contains("\"visual_cells\""));
         assert!(json.contains("\"collision_cells\""));
         assert!(json.contains("\"event_cells\""));
@@ -744,6 +840,17 @@ mod tests {
             MapError::CellOutOfBounds(TilePosition::new(1, 2)),
             MapError::SpawnOutOfBounds(TilePosition::new(1, 2)),
             MapError::SpawnBlocked(TilePosition::new(1, 2)),
+            MapError::DuplicateActor(MapActorId::new("actor").unwrap()),
+            MapError::ActorOutOfBounds {
+                actor: MapActorId::new("actor").unwrap(),
+                position: TilePosition::new(1, 2),
+            },
+            MapError::ActorBlocked {
+                actor: MapActorId::new("actor").unwrap(),
+                position: TilePosition::new(1, 2),
+            },
+            MapError::ActorOnPlayerSpawn(MapActorId::new("actor").unwrap()),
+            MapError::ActorOverlap(TilePosition::new(1, 2)),
             MapError::DuplicateMaterial(material.clone()),
             MapError::UnknownMaterial(material.clone()),
             MapError::EmptyMaterial(material.clone()),
@@ -754,5 +861,35 @@ mod tests {
         for error in errors {
             assert!(!error.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn validates_static_actors_as_blocking_world_content() {
+        let (mut project, known) = fixture();
+        project.actors.push(MapActor::new(
+            MapActorId::new("guide").unwrap(),
+            TilePosition::new(2, 1),
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000").unwrap(),
+        ));
+        project.validate(&known).unwrap();
+
+        let actor = project.actors[0].clone();
+        project.actors.push(actor.clone());
+        assert!(matches!(
+            project.validate(&known),
+            Err(MapError::DuplicateActor(_))
+        ));
+        project.actors.pop();
+        project.actors[0].position = project.player_spawn;
+        assert!(matches!(
+            project.validate(&known),
+            Err(MapError::ActorOnPlayerSpawn(_))
+        ));
+        project.actors[0].position = TilePosition::new(99, 99);
+        assert!(matches!(
+            project.validate(&known),
+            Err(MapError::ActorOutOfBounds { .. })
+        ));
     }
 }

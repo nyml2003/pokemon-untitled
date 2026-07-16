@@ -878,6 +878,7 @@ dependencies = [
  "game-ui",
  "game-view",
  "image",
+ "map-project",
  "punctum-gpu",
  "world-application",
 ]

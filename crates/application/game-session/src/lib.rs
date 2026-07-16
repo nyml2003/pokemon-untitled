@@ -56,7 +56,7 @@ impl GameEvents {
 
     pub fn world_event(&self) -> Option<WorldEvent> {
         self.0.iter().find_map(|event| match event {
-            GameEvent::World(event) => Some(*event),
+            GameEvent::World(event) => Some(event.clone()),
             _ => None,
         })
     }

@@ -16,7 +16,10 @@ use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
     UiContentId, UiId, UiNode, UiStyle, UiTextSize, UiTree,
 };
-use world_application::{Direction as WorldDirection, Position, WorldObservation};
+use world_application::{
+    CharacterAppearanceId, Direction as WorldDirection, WorldActorObservation, WorldActorRole,
+    WorldObservation,
+};
 
 pub const CANVAS_WIDTH: u32 = 32;
 pub const CANVAS_HEIGHT: u32 = 24;
@@ -2215,13 +2218,13 @@ pub fn project_world_presented(
 ) -> GameView {
     GameView::new([
         ViewLayer::new(LayerKind::Map).with_surface(Canvas::new(MAP_GROUND).finish()),
-        ViewLayer::new(LayerKind::Character).with_images(vec![world_player_image(
-            observation.player(),
-            observation.facing(),
+        ViewLayer::new(LayerKind::Character).with_images(world_actor_images(
+            observation,
             animation,
             sprite_frame,
             pixel_offset,
-        )]),
+            PixelOffset::new(0, 0),
+        )),
         ViewLayer::new(LayerKind::Hud),
     ])
 }
@@ -2232,21 +2235,30 @@ pub fn compose_world(
     observation: &WorldObservation,
     animation: WorldAnimation,
     sprite_frame: usize,
+    npc_pixel_offset: PixelOffset,
     console: Option<&CommandConsoleView>,
 ) -> GameView {
     assert_eq!(map.kind, LayerKind::Map);
-    let mut player = world_player_image(
-        observation.player(),
-        observation.facing(),
+    let viewport_size = map
+        .surface
+        .as_ref()
+        .expect("a composed map layer has a grid surface")
+        .size();
+    let mut actors = world_actor_images(
+        observation,
         animation,
         sprite_frame,
         PixelOffset::new(0, 0),
+        npc_pixel_offset,
     );
-    player.bounds.origin.col -= camera.col * 2;
-    player.bounds.origin.row -= camera.row * 2;
+    for actor in &mut actors {
+        actor.bounds.origin.col -= camera.col * 2;
+        actor.bounds.origin.row -= camera.row * 2;
+    }
+    actors.retain(|actor| actor.bounds.clip_to(viewport_size) == Some(actor.bounds));
     let mut layers = vec![
         map,
-        ViewLayer::new(LayerKind::Character).with_images(vec![player]),
+        ViewLayer::new(LayerKind::Character).with_images(actors),
         ViewLayer::new(LayerKind::Hud),
     ];
     if let Some(console) = console {
@@ -2262,26 +2274,56 @@ pub fn with_console(mut layers: Vec<ViewLayer>, console: Option<&CommandConsoleV
     GameView::new(layers)
 }
 
-fn world_player_image(
-    position: Position,
-    direction: WorldDirection,
+fn world_actor_images(
+    observation: &WorldObservation,
+    animation: WorldAnimation,
+    sprite_frame: usize,
+    player_pixel_offset: PixelOffset,
+    npc_pixel_offset: PixelOffset,
+) -> Vec<ViewImage> {
+    let mut actors = observation.actors().to_vec();
+    actors.sort_by(|left, right| {
+        (left.position().y(), left.position().x(), left.id().as_str()).cmp(&(
+            right.position().y(),
+            right.position().x(),
+            right.id().as_str(),
+        ))
+    });
+    actors
+        .iter()
+        .enumerate()
+        .map(|(index, actor)| {
+            let (animation, frame, pixel_offset) = match actor.role() {
+                WorldActorRole::Player => (animation, sprite_frame, player_pixel_offset),
+                WorldActorRole::Npc => (WorldAnimation::Stand, 0, npc_pixel_offset),
+            };
+            world_actor_image(actor, animation, frame, pixel_offset, 20 + index as u16)
+        })
+        .collect()
+}
+
+fn world_actor_image(
+    actor: &WorldActorObservation,
     animation: WorldAnimation,
     sprite_frame: usize,
     pixel_offset: PixelOffset,
+    z_index: u16,
 ) -> ViewImage {
+    let position = actor.position();
     ViewImage::new(
         GridRect::new(
             GridPos::new(i32::from(position.x()) * 2, i32::from(position.y()) * 2),
             GridSize::new(2, 2),
         ),
-        world_character_asset(direction, animation, sprite_frame),
+        world_character_asset(actor.appearance(), actor.facing(), animation, sprite_frame),
         Rgba8::new(255, 255, 255, 255),
-        20,
+        z_index,
     )
     .with_pixel_offset(pixel_offset)
 }
 
 pub fn world_character_asset(
+    appearance: &CharacterAppearanceId,
     direction: WorldDirection,
     animation: WorldAnimation,
     sprite_frame: usize,
@@ -2306,8 +2348,11 @@ pub fn world_character_asset(
         },
         WorldAnimation::RunStopping => 3,
     };
-    AssetKey::new(format!("character/{direction_index}/{frame_offset}"))
-        .expect("character asset keys are non-empty")
+    AssetKey::new(format!(
+        "character/{}/{direction_index}/{frame_offset}",
+        appearance.as_str()
+    ))
+    .expect("character asset keys are non-empty")
 }
 
 fn active_pokemon(observation: &BattleObservation) -> &Pokemon {
@@ -2742,7 +2787,7 @@ mod tests {
     use game_data::PokedexData;
     use punctum_grid::{GridPos, GridSize};
     use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
-    use world_application::{Direction, Position, WorldApplication};
+    use world_application::{CharacterAppearanceId, Direction, Position, WorldApplication};
 
     use game_ui::{
         BattleMenuPage, BattleUiOutcome, BattleUiState, CommandConsoleView, WorldAnimation,
@@ -3255,6 +3300,7 @@ mod tests {
             Direction::Right,
             Direction::Up,
         ] {
+            let appearance = CharacterAppearanceId::new("red").unwrap();
             for animation in [
                 WorldAnimation::Stand,
                 WorldAnimation::Walk,
@@ -3263,7 +3309,7 @@ mod tests {
             ] {
                 for frame in 0..4 {
                     assert!(
-                        world_character_asset(direction, animation, frame)
+                        world_character_asset(&appearance, direction, animation, frame)
                             .as_str()
                             .starts_with("character/")
                     );
@@ -3385,7 +3431,9 @@ mod tests {
     #[test]
     fn world_projection_uses_stable_character_keys_and_explicit_layers() {
         let world = WorldApplication::demo().unwrap();
-        let view = project_world(&world.observe());
+        let observation = world.observe();
+        let appearance = observation.actors()[0].appearance();
+        let view = project_world(&observation);
 
         assert_eq!(world.observe().player(), Position::new(3, 6));
         assert_eq!(
@@ -3402,15 +3450,16 @@ mod tests {
         assert_eq!(view.images().count(), 1);
         assert_eq!(
             view.images().next().unwrap().asset,
-            world_character_asset(Direction::Down, WorldAnimation::Stand, 0)
+            world_character_asset(appearance, Direction::Down, WorldAnimation::Stand, 0)
         );
         assert_eq!(
-            world_character_asset(Direction::Up, WorldAnimation::Run, 2).as_str(),
-            "character/3/5"
+            world_character_asset(appearance, Direction::Up, WorldAnimation::Run, 2).as_str(),
+            "character/red/3/5"
         );
         assert_eq!(
-            world_character_asset(Direction::Up, WorldAnimation::RunStopping, 99).as_str(),
-            "character/3/3"
+            world_character_asset(appearance, Direction::Up, WorldAnimation::RunStopping, 99)
+                .as_str(),
+            "character/red/3/3"
         );
     }
 
@@ -3426,6 +3475,7 @@ mod tests {
             &world.observe(),
             WorldAnimation::Walk,
             1,
+            punctum_gpu::PixelOffset::new(0, 0),
             None,
         );
 
@@ -3442,6 +3492,7 @@ mod tests {
             &world.observe(),
             WorldAnimation::Stand,
             0,
+            punctum_gpu::PixelOffset::new(0, 0),
             Some(&CommandConsoleView::default()),
         );
         assert_eq!(with_console.layers().len(), 4);

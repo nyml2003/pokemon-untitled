@@ -2,11 +2,14 @@
 
 #![forbid(unsafe_code)]
 
-use map_project::{Collision, MapEventKind, MapProject};
+use std::collections::BTreeMap;
+
+pub use map_project::CharacterAppearanceId;
+use map_project::{Collision, MapDirection, MapEventKind, MapProject};
 pub use world_domain::{
-    Direction, Position, Tile, WorldCommand, WorldError, WorldEvent, WorldOutcome,
+    Direction, Position, Tile, WorldActorId, WorldCommand, WorldError, WorldEvent, WorldOutcome,
 };
-use world_domain::{TileMap, World};
+use world_domain::{TileMap, World, WorldActor};
 
 pub const DEMO_MAP_WIDTH: u16 = 16;
 pub const DEMO_MAP_HEIGHT: u16 = 10;
@@ -18,6 +21,44 @@ pub struct WorldObservation {
     tiles: Vec<Tile>,
     player: Position,
     facing: Direction,
+    actors: Vec<WorldActorObservation>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorldActorRole {
+    Player,
+    Npc,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorldActorObservation {
+    id: WorldActorId,
+    role: WorldActorRole,
+    position: Position,
+    facing: Direction,
+    appearance: CharacterAppearanceId,
+}
+
+impl WorldActorObservation {
+    pub const fn id(&self) -> &WorldActorId {
+        &self.id
+    }
+
+    pub const fn role(&self) -> WorldActorRole {
+        self.role
+    }
+
+    pub const fn position(&self) -> Position {
+        self.position
+    }
+
+    pub const fn facing(&self) -> Direction {
+        self.facing
+    }
+
+    pub const fn appearance(&self) -> &CharacterAppearanceId {
+        &self.appearance
+    }
 }
 
 impl WorldObservation {
@@ -46,16 +87,27 @@ impl WorldObservation {
     pub const fn facing(&self) -> Direction {
         self.facing
     }
+
+    pub fn actors(&self) -> &[WorldActorObservation] {
+        &self.actors
+    }
 }
 
 #[derive(Clone)]
 pub struct WorldApplication {
     world: World,
+    appearances: BTreeMap<WorldActorId, CharacterAppearanceId>,
 }
 
 impl WorldApplication {
-    pub const fn new(world: World) -> Self {
-        Self { world }
+    pub fn new(world: World) -> Self {
+        let default_appearance =
+            CharacterAppearanceId::new("red").expect("the fixed player appearance is valid");
+        let appearances = world
+            .actors()
+            .map(|actor| (actor.id().clone(), default_appearance.clone()))
+            .collect();
+        Self { world, appearances }
     }
 
     pub fn demo() -> Result<Self, WorldError> {
@@ -94,7 +146,23 @@ impl WorldApplication {
             .collect();
         let map = TileMap::new(project.width, project.height, tiles)?;
         let spawn = Position::new(project.player_spawn.x(), project.player_spawn.y());
-        World::new(map, spawn, Direction::Down).map(Self::new)
+        let mut appearances = BTreeMap::from([(
+            WorldActorId::player(),
+            CharacterAppearanceId::new("red").expect("the fixed player appearance is valid"),
+        )]);
+        let mut actors = Vec::with_capacity(project.actors.len());
+        for actor in &project.actors {
+            let id = WorldActorId::new(actor.id.as_str())?;
+            appearances.insert(id.clone(), actor.appearance.clone());
+            actors.push(WorldActor::new(
+                id,
+                Position::new(actor.position.x(), actor.position.y()),
+                direction_from_map(actor.facing),
+                true,
+            ));
+        }
+        let world = World::with_actors(map, spawn, Direction::Down, actors)?;
+        Ok(Self { world, appearances })
     }
 
     pub fn observe(&self) -> WorldObservation {
@@ -104,6 +172,25 @@ impl WorldApplication {
             tiles: self.world.map().tiles().to_vec(),
             player: self.world.player(),
             facing: self.world.facing(),
+            actors: self
+                .world
+                .actors()
+                .map(|actor| WorldActorObservation {
+                    id: actor.id().clone(),
+                    role: if actor.id() == self.world.player_id() {
+                        WorldActorRole::Player
+                    } else {
+                        WorldActorRole::Npc
+                    },
+                    position: actor.position(),
+                    facing: actor.facing(),
+                    appearance: self
+                        .appearances
+                        .get(actor.id())
+                        .expect("every world actor has an appearance")
+                        .clone(),
+                })
+                .collect(),
         }
     }
 
@@ -113,15 +200,30 @@ impl WorldApplication {
 
     pub fn transition(&self, command: WorldCommand) -> (Self, WorldOutcome) {
         let (world, outcome) = self.world.transition(command);
-        (Self::new(world), outcome)
+        (
+            Self {
+                world,
+                appearances: self.appearances.clone(),
+            },
+            outcome,
+        )
+    }
+}
+
+const fn direction_from_map(direction: MapDirection) -> Direction {
+    match direction {
+        MapDirection::Up => Direction::Up,
+        MapDirection::Down => Direction::Down,
+        MapDirection::Left => Direction::Left,
+        MapDirection::Right => Direction::Right,
     }
 }
 
 #[cfg(test)]
 mod tests {
     use map_project::{
-        AtomicTileId, Collision, CompositeTile, CompositeTileId, MapEventKind, MapProject,
-        MapProjectId, TilePosition,
+        AtomicTileId, CharacterAppearanceId, Collision, CompositeTile, CompositeTileId, MapActor,
+        MapActorId, MapDirection, MapEventKind, MapProject, MapProjectId, TilePosition,
     };
 
     use super::{Direction, Position, Tile, WorldApplication, WorldCommand};
@@ -169,5 +271,64 @@ mod tests {
                 .1
                 .starts_battle()
         );
+    }
+
+    #[test]
+    fn map_actors_become_visible_world_observations() {
+        let mut project = MapProject::blank(
+            MapProjectId::new("world").unwrap(),
+            3,
+            2,
+            Some(CompositeTile::new(
+                CompositeTileId::new("base").unwrap(),
+                vec![AtomicTileId::new("tile").unwrap()],
+            )),
+        );
+        project.player_spawn = TilePosition::new(0, 0);
+        project.actors.push(MapActor::new(
+            MapActorId::new("guide").unwrap(),
+            TilePosition::new(1, 0),
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000").unwrap(),
+        ));
+        let observation = WorldApplication::from_map_project(&project)
+            .unwrap()
+            .observe();
+        assert_eq!(observation.actors().len(), 2);
+        let npc = observation
+            .actors()
+            .iter()
+            .find(|actor| actor.role() == super::WorldActorRole::Npc)
+            .unwrap();
+        assert_eq!(npc.id().as_str(), "guide");
+        assert_eq!(npc.position(), Position::new(1, 0));
+        assert_eq!(npc.facing(), Direction::Left);
+        assert_eq!(npc.appearance().as_str(), "dppt/000");
+    }
+
+    #[test]
+    fn map_actor_appearances_survive_player_transitions() {
+        let material = CompositeTile::new(
+            CompositeTileId::new("ground").unwrap(),
+            vec![AtomicTileId::new("tile-0001").unwrap()],
+        );
+        let mut project =
+            MapProject::blank(MapProjectId::new("demo").unwrap(), 3, 1, Some(material));
+        project.player_spawn = TilePosition::new(0, 0);
+        project.actors.push(MapActor::new(
+            MapActorId::new("guide").unwrap(),
+            TilePosition::new(2, 0),
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000").unwrap(),
+        ));
+        let world = WorldApplication::from_map_project(&project).unwrap();
+        let (world, _) = world.transition(WorldCommand::Move(Direction::Right));
+        let observation = world.observe();
+        let npc = observation
+            .actors()
+            .iter()
+            .find(|actor| actor.role() == super::WorldActorRole::Npc)
+            .unwrap();
+        assert_eq!(npc.appearance().as_str(), "dppt/000");
     }
 }
