@@ -17,6 +17,7 @@ pub enum EditorIntent {
     SelectAtomic(usize),
     SelectMaterial(usize),
     SelectTool(EditorTool),
+    CreateMaterial(CompositeTile),
     AddLayer,
     RemoveLayer,
     DeleteMaterial,
@@ -86,6 +87,7 @@ impl EditorModel {
                 self.tool = tool;
                 self.status = tool_name(tool).into();
             }
+            EditorIntent::CreateMaterial(material) => self.create_material(material)?,
             EditorIntent::AddLayer => self.add_layer()?,
             EditorIntent::RemoveLayer => self.remove_layer()?,
             EditorIntent::DeleteMaterial => self.delete_material()?,
@@ -202,6 +204,20 @@ impl EditorModel {
         self.create_composition(layers)
     }
 
+    fn create_material(&mut self, material: CompositeTile) -> Result<(), MapError> {
+        for tile in &material.layers {
+            if !self.atomic_ids.contains(tile) {
+                return Err(MapError::UnknownAtomicTile(tile.clone()));
+            }
+        }
+        self.execute(MapEditCommand::CreateMaterial(material))?;
+        self.selected_material = self.project.materials.len().saturating_sub(1);
+        self.tool = EditorTool::Visual;
+        self.dirty = true;
+        self.status = "已创建新的组合素材".into();
+        Ok(())
+    }
+
     fn remove_layer(&mut self) -> Result<(), MapError> {
         let Some(mut layers) = self
             .project
@@ -227,14 +243,7 @@ impl EditorModel {
                 break id;
             }
         };
-        self.execute(MapEditCommand::CreateMaterial(CompositeTile::new(
-            id, layers,
-        )))?;
-        self.selected_material = self.project.materials.len() - 1;
-        self.tool = EditorTool::Visual;
-        self.dirty = true;
-        self.status = "已创建新的组合素材".into();
-        Ok(())
+        self.create_material(CompositeTile::new(id, layers))
     }
 
     fn delete_material(&mut self) -> Result<(), MapError> {

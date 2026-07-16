@@ -1,6 +1,8 @@
 use std::{error::Error, fmt};
 
-use map_project::{AtomicTileId, Collision, CompositeTileId, MapError, MapEventKind, TilePosition};
+use map_project::{
+    AtomicTileId, Collision, CompositeTile, CompositeTileId, MapError, MapEventKind, TilePosition,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{EditorEffect, EditorIntent, EditorModel, EditorTool};
@@ -27,6 +29,9 @@ pub enum EditorVirtualCommand {
     PaintEvent {
         cells: Vec<TilePosition>,
         event: Option<MapEventKind>,
+    },
+    CreateMaterial {
+        material: CompositeTile,
     },
     AppendAtomicLayer {
         material: CompositeTileId,
@@ -140,6 +145,9 @@ impl EditorModel {
             EditorVirtualCommand::PaintEvent { cells, event } => {
                 self.paint_virtual(cells, None, EditorTool::Event(event))
             }
+            EditorVirtualCommand::CreateMaterial { material } => self
+                .reduce(EditorIntent::CreateMaterial(material))
+                .map_err(EditorVirtualCommandError::Map),
             EditorVirtualCommand::AppendAtomicLayer { material, tile } => {
                 let material = self.material_index(&material)?;
                 let tile = self.atomic_index(&tile)?;
@@ -338,6 +346,30 @@ mod tests {
             .apply_virtual_command(EditorVirtualCommand::Save)
             .unwrap();
         assert_eq!(effect, EditorEffect::SaveRequested);
+    }
+
+    #[test]
+    fn creates_a_named_composition_for_non_window_clients() {
+        let model = model();
+        let material = CompositeTile::new(
+            CompositeTileId::new("tall-grass").unwrap(),
+            vec![
+                AtomicTileId::new("grass").unwrap(),
+                AtomicTileId::new("rock").unwrap(),
+            ],
+        );
+        let (model, _) = model
+            .apply_virtual_command(EditorVirtualCommand::CreateMaterial {
+                material: material.clone(),
+            })
+            .unwrap();
+        assert_eq!(model.project.material(&material.id), Some(&material));
+        assert!(matches!(
+            model.apply_virtual_command(EditorVirtualCommand::CreateMaterial { material }),
+            Err(EditorVirtualCommandError::Map(MapError::DuplicateMaterial(
+                _
+            )))
+        ));
     }
 
     #[test]
