@@ -5,7 +5,7 @@ use std::{
     error::Error,
     mem,
     sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use game_data::{CurrentDataSet, PokedexData};
@@ -14,7 +14,7 @@ use game_native_target::{
     WinitKeyEventSnapshot, normalize_committed_text, normalize_key_event,
 };
 use game_scene_view::{SceneFrame, SceneViewInput, game_viewport, project_scene};
-use game_session::{GameCommand, GameError, GameEvents, GameSession};
+use game_session::{GameCommand, GameError, GameEvents, GameScene, GameSession};
 use game_ui::{GameConsole, PresentationAction, PresentationState, PresentationUpdate};
 use map::load_map;
 use map_project::MapProject;
@@ -32,6 +32,7 @@ use winit::{
 
 const CLEAR_COLOR: Rgba8 = Rgba8::new(14, 18, 24, 255);
 const GAME_TEXT_SCALE: TextScale = TextScale::new(3, 5, 10, 28);
+const WORLD_LOGIC_TICK: Duration = Duration::from_millis(500);
 
 struct CreatureGameApp {
     game: Option<GameSession>,
@@ -43,6 +44,7 @@ struct CreatureGameApp {
     assets: NativeAssets,
     modifiers: ModifiersState,
     last_real_instant: Instant,
+    next_world_tick: Instant,
     next_wakeup: Option<Instant>,
     window: Option<Arc<Window>>,
     runtime: Option<NativeTarget<'static>>,
@@ -66,6 +68,7 @@ impl CreatureGameApp {
             snapshot.world(),
             loaded_map.images,
         )?;
+        let now = Instant::now();
         Ok(Self {
             game: Some(game),
             pokedex,
@@ -75,7 +78,8 @@ impl CreatureGameApp {
             console: GameConsole::default(),
             assets,
             modifiers: ModifiersState::empty(),
-            last_real_instant: Instant::now(),
+            last_real_instant: now,
+            next_world_tick: now + WORLD_LOGIC_TICK,
             next_wakeup: None,
             window: None,
             runtime: None,
@@ -299,6 +303,32 @@ impl CreatureGameApp {
         self.apply_presentation_update(update);
     }
 
+    fn world_clock_is_active(&self) -> bool {
+        !self.presentation.is_console_open() && self.game().snapshot().scene() == GameScene::World
+    }
+
+    fn advance_world_clock(&mut self, now: Instant) {
+        if !self.world_clock_is_active() {
+            self.next_world_tick = now + WORLD_LOGIC_TICK;
+            return;
+        }
+        if now < self.next_world_tick {
+            return;
+        }
+
+        let game = self.game.take().expect("the host owns one game session");
+        let (game, result) = game.advance_world_tick();
+        self.game = Some(game);
+        match result {
+            Ok(events) => {
+                self.presentation = mem::take(&mut self.presentation).observe_game_events(&events);
+                self.request_redraw();
+            }
+            Err(error) => eprintln!("world clock rejected: {error:?}"),
+        }
+        self.next_world_tick = now + WORLD_LOGIC_TICK;
+    }
+
     fn handle_ime_event(&mut self, event: Ime) {
         self.advance_presentation(Instant::now());
         let presentation = mem::take(&mut self.presentation);
@@ -371,11 +401,18 @@ impl ApplicationHandler for CreatureGameApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         self.advance_presentation(now);
+        self.advance_world_clock(now);
         let snapshot = self.game().snapshot();
-        self.next_wakeup = self
+        let presentation_wakeup = self
             .presentation
             .next_delay(&snapshot)
             .map(|delay| now + delay);
+        let world_wakeup = self.world_clock_is_active().then_some(self.next_world_tick);
+        self.next_wakeup = match (presentation_wakeup, world_wakeup) {
+            (Some(presentation), Some(world)) => Some(presentation.min(world)),
+            (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
+            (None, None) => None,
+        };
         if let Some(deadline) = self.next_wakeup {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
         } else {

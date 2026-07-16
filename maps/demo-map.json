@@ -20677,6 +20677,33 @@
       ],
       "facing": "left",
       "appearance": "dppt/000"
+    },
+    {
+      "id": "forest-scout",
+      "position": [
+        41,
+        28
+      ],
+      "facing": "down",
+      "appearance": "dppt/001"
+    },
+    {
+      "id": "forest-ranger",
+      "position": [
+        32,
+        30
+      ],
+      "facing": "left",
+      "appearance": "dppt/002"
+    },
+    {
+      "id": "forest-collector",
+      "position": [
+        36,
+        32
+      ],
+      "facing": "right",
+      "appearance": "dppt/003"
     }
   ]
 }

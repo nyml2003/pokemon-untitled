@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 pub use map_project::CharacterAppearanceId;
 use map_project::{Collision, MapDirection, MapEventKind, MapProject};
 pub use world_domain::{
-    Direction, Position, Tile, WorldActorId, WorldCommand, WorldError, WorldEvent, WorldOutcome,
+    Direction, Position, Tile, WorldActorCommand, WorldActorId, WorldCommand, WorldError,
+    WorldEvent, WorldOutcome,
 };
 use world_domain::{TileMap, World, WorldActor};
 
@@ -97,6 +98,7 @@ impl WorldObservation {
 pub struct WorldApplication {
     world: World,
     appearances: BTreeMap<WorldActorId, CharacterAppearanceId>,
+    npc_patrol_tick: u64,
 }
 
 impl WorldApplication {
@@ -107,7 +109,11 @@ impl WorldApplication {
             .actors()
             .map(|actor| (actor.id().clone(), default_appearance.clone()))
             .collect();
-        Self { world, appearances }
+        Self {
+            world,
+            appearances,
+            npc_patrol_tick: 0,
+        }
     }
 
     pub fn demo() -> Result<Self, WorldError> {
@@ -162,7 +168,11 @@ impl WorldApplication {
             ));
         }
         let world = World::with_actors(map, spawn, Direction::Down, actors)?;
-        Ok(Self { world, appearances })
+        Ok(Self {
+            world,
+            appearances,
+            npc_patrol_tick: 0,
+        })
     }
 
     pub fn observe(&self) -> WorldObservation {
@@ -204,10 +214,59 @@ impl WorldApplication {
             Self {
                 world,
                 appearances: self.appearances.clone(),
+                npc_patrol_tick: self.npc_patrol_tick,
             },
             outcome,
         )
     }
+
+    /// Advances the temporary demo patrols by one logical world tick.
+    ///
+    /// The caller supplies the cadence. Keeping real time outside this pure
+    /// application boundary makes the resulting world state deterministic.
+    pub fn advance_npcs(&self) -> Self {
+        let npc_patrol_tick = self.npc_patrol_tick.wrapping_add(1);
+        Self {
+            world: advance_demo_patrols(self.world.clone(), npc_patrol_tick),
+            appearances: self.appearances.clone(),
+            npc_patrol_tick,
+        }
+    }
+}
+
+struct DemoPatrol {
+    actor: &'static str,
+    route: &'static [Direction],
+}
+
+const DEMO_PATROLS: [DemoPatrol; 4] = [
+    DemoPatrol {
+        actor: "forest-guide",
+        route: &[Direction::Right, Direction::Left],
+    },
+    DemoPatrol {
+        actor: "forest-scout",
+        route: &[Direction::Down, Direction::Up],
+    },
+    DemoPatrol {
+        actor: "forest-ranger",
+        route: &[Direction::Left, Direction::Right],
+    },
+    DemoPatrol {
+        actor: "forest-collector",
+        route: &[Direction::Right, Direction::Left],
+    },
+];
+
+fn advance_demo_patrols(mut world: World, tick: u64) -> World {
+    for patrol in DEMO_PATROLS {
+        let actor = WorldActorId::new(patrol.actor).expect("fixed demo actor IDs are valid");
+        let step = patrol.route[(tick.wrapping_sub(1) as usize) % patrol.route.len()];
+        if let Ok((next, _)) = world.transition_actor(&actor, WorldActorCommand::Move(step)) {
+            world = next;
+        }
+    }
+    world
 }
 
 const fn direction_from_map(direction: MapDirection) -> Direction {
@@ -330,5 +389,42 @@ mod tests {
             .find(|actor| actor.role() == super::WorldActorRole::Npc)
             .unwrap();
         assert_eq!(npc.appearance().as_str(), "dppt/000");
+    }
+
+    #[test]
+    fn logical_ticks_advance_fixed_demo_patrols_independently_of_player_commands() {
+        let material = CompositeTile::new(
+            CompositeTileId::new("ground").unwrap(),
+            vec![AtomicTileId::new("tile-0001").unwrap()],
+        );
+        let mut project =
+            MapProject::blank(MapProjectId::new("demo").unwrap(), 5, 2, Some(material));
+        project.player_spawn = TilePosition::new(0, 0);
+        project.actors.push(MapActor::new(
+            MapActorId::new("forest-guide").unwrap(),
+            TilePosition::new(3, 0),
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000").unwrap(),
+        ));
+        let world = WorldApplication::from_map_project(&project).unwrap();
+        let (after_player_move, outcome) = world.transition(WorldCommand::Move(Direction::Right));
+        assert!(matches!(outcome.event(), super::WorldEvent::Moved { .. }));
+        let after_player_move = after_player_move.observe();
+        let npc_after_player_move = after_player_move
+            .actors()
+            .iter()
+            .find(|actor| actor.id().as_str() == "forest-guide")
+            .unwrap();
+        assert_eq!(npc_after_player_move.position(), Position::new(3, 0));
+        assert_eq!(npc_after_player_move.facing(), Direction::Left);
+
+        let observation = world.advance_npcs().observe();
+        let npc = observation
+            .actors()
+            .iter()
+            .find(|actor| actor.id().as_str() == "forest-guide")
+            .unwrap();
+        assert_eq!(npc.position(), Position::new(4, 0));
+        assert_eq!(npc.facing(), Direction::Right);
     }
 }

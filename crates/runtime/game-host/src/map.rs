@@ -41,8 +41,19 @@ mod tests {
     fn checked_in_demo_map_loads_with_static_actors() {
         let map = load_map().unwrap();
         assert_eq!(map.project.format_version, map_project::FORMAT_VERSION);
-        assert_eq!(map.project.actors.len(), 1);
-        assert_eq!(map.project.actors[0].id.as_str(), "forest-guide");
-        assert_eq!(map.project.actors[0].appearance.as_str(), "dppt/000");
+        assert_eq!(map.project.actors.len(), 4);
+        assert_eq!(
+            map.project
+                .actors
+                .iter()
+                .map(|actor| (actor.id.as_str(), actor.appearance.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                ("forest-guide", "dppt/000"),
+                ("forest-scout", "dppt/001"),
+                ("forest-ranger", "dppt/002"),
+                ("forest-collector", "dppt/003"),
+            ]
+        );
     }
 }

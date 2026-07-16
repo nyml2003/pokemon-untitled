@@ -169,6 +169,12 @@ pub enum WorldCommand {
     Move(Direction),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorldActorCommand {
+    Face(Direction),
+    Move(Direction),
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorldEvent {
     Turned { from: Direction, to: Direction },
@@ -256,52 +262,91 @@ impl World {
     }
 
     pub fn transition(&self, command: WorldCommand) -> (Self, WorldOutcome) {
+        let command = match command {
+            WorldCommand::Face(direction) => WorldActorCommand::Face(direction),
+            WorldCommand::Move(direction) => WorldActorCommand::Move(direction),
+        };
+        self.transition_with_actor(self.player_id(), command, true)
+            .expect("the player actor always exists")
+    }
+
+    pub fn transition_actor(
+        &self,
+        actor: &WorldActorId,
+        command: WorldActorCommand,
+    ) -> Result<(Self, WorldOutcome), WorldError> {
+        if actor == self.player_id() {
+            return Err(WorldError::PlayerActorCommand);
+        }
+        self.transition_with_actor(actor, command, false)
+    }
+
+    fn transition_with_actor(
+        &self,
+        actor_id: &WorldActorId,
+        command: WorldActorCommand,
+        triggers_encounters: bool,
+    ) -> Result<(Self, WorldOutcome), WorldError> {
+        let actor = self
+            .actors()
+            .find(|actor| actor.id == *actor_id)
+            .ok_or_else(|| WorldError::UnknownActor(actor_id.clone()))?;
+        let from = actor.position;
         let mut next = self.clone();
         let direction = match command {
-            WorldCommand::Face(direction) => {
-                let from = next.player.facing;
-                next.player.facing = direction;
-                return (
+            WorldActorCommand::Face(direction) => {
+                next.actor_mut(actor_id)
+                    .expect("the validated actor exists")
+                    .facing = direction;
+                return Ok((
                     next,
                     WorldOutcome {
                         event: WorldEvent::Turned {
-                            from,
+                            from: actor.facing,
                             to: direction,
                         },
                     },
-                );
+                ));
             }
-            WorldCommand::Move(direction) => direction,
+            WorldActorCommand::Move(direction) => direction,
         };
-        next.player.facing = direction;
-        let player_position = next.player.position;
-        let Some(target) = player_position.neighbor(direction) else {
-            return blocked(next, player_position);
+        next.actor_mut(actor_id)
+            .expect("the validated actor exists")
+            .facing = direction;
+        let Some(target) = from.neighbor(direction) else {
+            return Ok(blocked(next, from));
         };
         let Some(target_tile) = next.map.tile(target) else {
-            return blocked(next, target);
+            return Ok(blocked(next, target));
         };
         if !target_tile.is_walkable() {
-            return blocked(next, target);
+            return Ok(blocked(next, target));
         }
-        if let Some(actor) = next
-            .actors
-            .iter()
-            .find(|actor| actor.blocks_movement && actor.position == target)
-        {
-            let actor = actor.id.clone();
-            return (
+        let blocking_actor = next
+            .actors()
+            .find(|other| {
+                other.id != *actor_id && other.blocks_movement && other.position == target
+            })
+            .map(|actor| actor.id.clone());
+        if let Some(blocking_actor) = blocking_actor {
+            return Ok((
                 next,
                 WorldOutcome {
-                    event: WorldEvent::BlockedByActor { actor, at: target },
+                    event: WorldEvent::BlockedByActor {
+                        actor: blocking_actor,
+                        at: target,
+                    },
                 },
-            );
+            ));
         }
 
-        let from = next.player.position;
-        let entered_grass = next.map.tile(from) != Some(Tile::Grass) && target_tile == Tile::Grass;
-        next.player.position = target;
-        (
+        next.actor_mut(actor_id)
+            .expect("the validated actor exists")
+            .position = target;
+        let entered_grass = triggers_encounters
+            && next.map.tile(from) != Some(Tile::Grass)
+            && target_tile == Tile::Grass;
+        Ok((
             next,
             WorldOutcome {
                 event: if entered_grass {
@@ -310,7 +355,15 @@ impl World {
                     WorldEvent::Moved { from, to: target }
                 },
             },
-        )
+        ))
+    }
+
+    fn actor_mut(&mut self, actor_id: &WorldActorId) -> Option<&mut WorldActor> {
+        if actor_id == self.player_id() {
+            Some(&mut self.player)
+        } else {
+            self.actors.iter_mut().find(|actor| actor.id == *actor_id)
+        }
     }
 }
 
@@ -357,6 +410,8 @@ pub enum WorldError {
     },
     EmptyActorId,
     DuplicateActor(WorldActorId),
+    UnknownActor(WorldActorId),
+    PlayerActorCommand,
     PlayerOutOfBounds(Position),
     PlayerOnBlockedTile(Position),
     ActorOutOfBounds {
@@ -376,8 +431,8 @@ pub enum WorldError {
 #[cfg(test)]
 mod tests {
     use super::{
-        Direction, Position, Tile, TileMap, World, WorldActor, WorldActorId, WorldCommand,
-        WorldEvent,
+        Direction, Position, Tile, TileMap, World, WorldActor, WorldActorCommand, WorldActorId,
+        WorldCommand, WorldEvent,
     };
 
     fn world() -> World {
@@ -459,6 +514,45 @@ mod tests {
                 at: Position::new(1, 0),
             }
         );
+    }
+
+    #[test]
+    fn actor_commands_move_npcs_without_triggering_encounters() {
+        let map = TileMap::new(3, 1, vec![Tile::Ground, Tile::Grass, Tile::Ground]).unwrap();
+        let npc = WorldActor::new(
+            WorldActorId::new("guide").unwrap(),
+            Position::new(1, 0),
+            Direction::Left,
+            true,
+        );
+        let world =
+            World::with_actors(map, Position::new(0, 0), Direction::Right, vec![npc]).unwrap();
+        let (world, outcome) = world
+            .transition_actor(
+                &WorldActorId::new("guide").unwrap(),
+                WorldActorCommand::Move(Direction::Right),
+            )
+            .unwrap();
+        assert_eq!(
+            outcome.event(),
+            WorldEvent::Moved {
+                from: Position::new(1, 0),
+                to: Position::new(2, 0),
+            }
+        );
+        assert!(
+            world
+                .actors()
+                .any(|actor| actor.id().as_str() == "guide"
+                    && actor.position() == Position::new(2, 0))
+        );
+        assert!(matches!(
+            world.transition_actor(
+                &WorldActorId::player(),
+                WorldActorCommand::Face(Direction::Up)
+            ),
+            Err(super::WorldError::PlayerActorCommand)
+        ));
     }
 
     #[test]

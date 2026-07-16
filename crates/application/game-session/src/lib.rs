@@ -183,6 +183,15 @@ impl GameSession {
         (self, result)
     }
 
+    /// Advances autonomous world behavior once without accepting player input.
+    ///
+    /// Runtime hosts own the real-time cadence and call this only while the
+    /// world scene is active.
+    pub fn advance_world_tick(mut self) -> (Self, Result<GameEvents, GameError>) {
+        let result = self.advance_world_tick_mut();
+        (self, result)
+    }
+
     fn face_world(&mut self, direction: Direction) -> Result<GameEvents, GameError> {
         self.require_scene(GameScene::World)?;
         let (world, outcome) = self
@@ -218,6 +227,12 @@ impl GameSession {
         } else {
             self.face_world(direction)
         }
+    }
+
+    fn advance_world_tick_mut(&mut self) -> Result<GameEvents, GameError> {
+        self.require_scene(GameScene::World)?;
+        self.world = self.world.advance_npcs();
+        Ok(GameEvents::default())
     }
 
     fn submit_battle_action(&mut self, action: Action) -> Result<GameEvents, GameError> {
@@ -559,5 +574,15 @@ mod tests {
             super::GameSetupError::from(battle),
             super::GameSetupError::Battle(_)
         ));
+    }
+
+    #[test]
+    fn autonomous_world_ticks_are_explicit_non_player_transitions() {
+        let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 47).unwrap();
+        let before = game.snapshot();
+        let (game, events) = game.advance_world_tick();
+
+        assert_eq!(events.unwrap().iter().count(), 0);
+        assert_eq!(game.snapshot(), before);
     }
 }
