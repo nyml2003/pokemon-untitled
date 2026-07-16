@@ -13,6 +13,7 @@ map-assets = { path = "../../presentation/map-assets" }
 map-editor-core = { path = "../../application/map-editor-core" }
 map-editor-view = { path = "../../presentation/map-editor-view" }
 map-project = { workspace = true }
+map-project-storage = { workspace = true }
 map-render = { workspace = true }
 punctum-gpu = { workspace = true }
 punctum-ui = { path = "../../foundation/punctum-ui" }

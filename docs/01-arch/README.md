@@ -10,18 +10,20 @@
 ## 阅读顺序
 
 1. [Agent 驱动活世界终态提案](006-proposals/003-agent-driven-living-world.md)：持久世界、NPC 意图、事件 DSL、地图补丁和模型接入的终态边界与分阶段顺序。
-2. [世界人物与 NPC 契约方案](006-proposals/002-world-characters-and-npc-contract.md)：主角与 NPC 的统一投影契约、动作能力、地图人物和分阶段迁移方案。
-3. [Flex UI 布局与 GPU 渲染改造方案](006-proposals/001-flex-ui-layout-and-rendering.md)：`punctum-ui`、像素 GPU 提交、页面迁移和验收顺序的提案草案。
-4. [宏观战略版：设定总纲与核心架构](000-interviews/002-macro-strategy-outline.md)：公平准则、培育、经济、势力、终局和长线战略。它是战略输入，不等于实现决策。
-5. [Agent 与活世界：战略访谈记录](000-interviews/001-agent-world-vision-interview.md)：本轮产品、世界和 UI 访谈的原始结论；本轮已结束。
-6. [架构大纲](001-overview/001-architecture-outline.md)：文档范围、问题清单和目录。
-7. [系统总览](001-overview/002-system-overview.md)：分层、工作区边界和核心术语。
-8. [运行时流程](001-overview/003-runtime-flows.md)：游戏、地图编辑器和数据导入的端到端路径。
-9. `002-domains/`：战斗、世界地图、数据资产三个业务领域。
-10. `003-layers/`：各层 crate 的职责、依赖方向和例外。
-11. `004-cross-cutting/`：状态、渲染、输入、资产和质量策略等横切问题。
-12. `005-evolution/`：已发现的边界风险、扩展点和待决策问题。
-13. `006-proposals/`：基于已确认战略输入编写、但尚未实施的改造方案。
+2. [开放世界叙事脚本 DSL 与 Ramus 能力层提案](006-proposals/004-narrative-dsl-and-ramus.md)：脚本语法、可中断任务、能力授权、审计和 AI 内容生成的终态方案。
+   配套的可实现设计在 [`docs/02-narrative-dsl/`](../02-narrative-dsl/README.md)。
+3. [世界人物与 NPC 契约方案](006-proposals/002-world-characters-and-npc-contract.md)：主角与 NPC 的统一投影契约、动作能力、地图人物和分阶段迁移方案。
+4. [Flex UI 布局与 GPU 渲染改造方案](006-proposals/001-flex-ui-layout-and-rendering.md)：`punctum-ui`、像素 GPU 提交、页面迁移和验收顺序的提案草案。
+5. [宏观战略版：设定总纲与核心架构](000-interviews/002-macro-strategy-outline.md)：公平准则、培育、经济、势力、终局和长线战略。它是战略输入，不等于实现决策。
+6. [Agent 与活世界：战略访谈记录](000-interviews/001-agent-world-vision-interview.md)：本轮产品、世界和 UI 访谈的原始结论；本轮已结束。
+7. [架构大纲](001-overview/001-architecture-outline.md)：文档范围、问题清单和目录。
+8. [系统总览](001-overview/002-system-overview.md)：分层、工作区边界和核心术语。
+9. [运行时流程](001-overview/003-runtime-flows.md)：游戏、地图编辑器和数据导入的端到端路径。
+10. `002-domains/`：战斗、世界地图、数据资产三个业务领域。
+11. `003-layers/`：各层 crate 的职责、依赖方向和例外。
+12. `004-cross-cutting/`：状态、渲染、输入、资产和质量策略等横切问题。
+13. `005-evolution/`：已发现的边界风险、扩展点和待决策问题。
+14. `006-proposals/`：基于已确认战略输入编写、但尚未实施的改造方案。
 
 ## 文档约定
 

@@ -1,10 +1,11 @@
-use std::{error::Error, path::PathBuf};
+use std::{collections::BTreeSet, error::Error, fs, path::PathBuf};
 
 use game_assets::{AssetKey, DecodedImage};
 use game_fs_assets::{load_catalog, read_optional_text, read_tile_sources};
 use game_native_target::NativeAssets;
 use map_assets::{build_tile_assets, project_from_json_or_default};
 use map_project::{AtomicTileId, MapProject};
+use map_project_storage::{FILE_EXTENSION, MapProjectReader};
 use map_render::AtomicTileCatalog;
 use punctum_gpu::Rgba8;
 
@@ -45,12 +46,24 @@ pub fn load_project(
     path: &std::path::Path,
     ids: &[AtomicTileId],
 ) -> Result<MapProject, Box<dyn Error>> {
+    if path
+        .extension()
+        .is_some_and(|extension| extension == FILE_EXTENSION)
+    {
+        let known = ids.iter().cloned().collect::<BTreeSet<_>>();
+        return Ok(MapProjectReader::read(&fs::read(path)?, &known)?);
+    }
     let json = read_optional_text(path)?;
     Ok(project_from_json_or_default(json.as_deref(), ids)?)
 }
 
 pub fn default_project_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../maps/demo-map.json")
+    let maps = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../maps");
+    let compressed = maps.join("demo-map.g3mp");
+    compressed
+        .exists()
+        .then_some(compressed)
+        .unwrap_or_else(|| maps.join("demo-map.json"))
 }
 
 fn asset_root() -> PathBuf {

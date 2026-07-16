@@ -28,6 +28,7 @@ members = [
     "crates/adapter/game-data-import",
     "crates/adapter/game-fs-assets",
     "crates/adapter/game-native-target",
+    "crates/adapter/map-project-storage",
     "crates/adapter/punctum-crossterm",
     "crates/adapter/punctum-wgpu",
     "crates/runtime/game-host",
@@ -48,6 +49,7 @@ battle-domain = { path = "crates/domain/battle-domain" }
 battle-session = { path = "crates/application/battle-session" }
 game-session = { path = "crates/application/game-session" }
 map-project = { path = "crates/domain/map-project" }
+map-project-storage = { path = "crates/adapter/map-project-storage" }
 map-render = { path = "crates/presentation/map-render" }
 world-domain = { path = "crates/domain/world-domain" }
 punctum-gpu = { path = "crates/foundation/punctum-gpu" }

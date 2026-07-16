@@ -137,7 +137,7 @@ pub enum NpcAction {
 
 ## 剧情与事件 DSL
 
-剧情 DSL 位于 Ramus 之上。它面向内容作者，表达流程、条件、选择、暂停和恢复；它不是通用 Rust、文件系统脚本或模型提示词。
+剧情 DSL 位于 Ramus 之上。它面向内容作者，表达流程、条件、选择、暂停和恢复；它不是通用 Rust、文件系统脚本或模型提示词。语法、任务中断和 Ramus 映射的详细方案见[开放世界叙事脚本 DSL 与 Ramus 能力层提案](004-narrative-dsl-and-ramus.md)。
 
 最小指令集应覆盖：
 
