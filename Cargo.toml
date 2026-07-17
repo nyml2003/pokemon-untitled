@@ -3,6 +3,9 @@ members = [
     "crates/domain/battle-domain",
     "crates/domain/game-data",
     "crates/domain/map-project",
+    "crates/domain/narrative-compiler",
+    "crates/domain/narrative-cps",
+    "crates/domain/narrative-token",
     "crates/domain/world-domain",
     "crates/foundation/punctum-grid",
     "crates/foundation/punctum-input",
@@ -51,6 +54,9 @@ game-session = { path = "crates/application/game-session" }
 map-project = { path = "crates/domain/map-project" }
 map-project-storage = { path = "crates/adapter/map-project-storage" }
 map-render = { path = "crates/presentation/map-render" }
+narrative-compiler = { path = "crates/domain/narrative-compiler" }
+narrative-cps = { path = "crates/domain/narrative-cps" }
+narrative-token = { path = "crates/domain/narrative-token" }
 world-domain = { path = "crates/domain/world-domain" }
 punctum-gpu = { path = "crates/foundation/punctum-gpu" }
 punctum-grid = { path = "crates/foundation/punctum-grid" }

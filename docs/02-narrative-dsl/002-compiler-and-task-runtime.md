@@ -1,10 +1,14 @@
 # 编译产物与任务运行时
 
-> 状态：详细设计，未实现
+> 状态：编译基线和 NPC 单步执行器已实现；通用任务运行时仍未实现
 
 ## 结论
 
 DSL 编译后不解释源文本。编译器以纯流方式将 token/parser 事件转换为 CPS continuation 图；运行时只执行版本化 `ScriptProgram`，并将每个活动脚本保存为可恢复的 `ScriptContinuation`。任务只能在离散世界结算点中断、恢复或提交一个原子操作。
+
+当前 `narrative-compiler` 已实现最小编译链：`ByteStream -> token -> script parser -> ScriptProgram`。它接受单个 `script`、可选 `actor: actor:...` 绑定，以及 `move(direction: ...)`、`face(direction: ...)`、`say(text: text:...)`、`wait(event: event:...)` 和 `end();`。
+
+`world-application` 已实现确定性的 NPC 单步执行器。它以 actor ID 绑定编译产物，每个逻辑 tick 至多执行一个 CPS 节点。移动和转向通过 `WorldActorCommand` 执行，仍受地图碰撞和实体占位规则约束。`say` 写入世界观察状态供视图显示。`wait` 暂停在当前 continuation。`end` 对 actor-bound 脚本在下一 tick 重置到 entry。接口 catalog、语义校验、拦截器、世界 revision 和可存档的通用运行时仍未实现。
 
 ## 编译产物
 
@@ -50,6 +54,8 @@ ASCII ByteStream
 编译器可以按事件输出 `Diagnostic` 与 `ProgramFragment`。外层 adapter 只能在收到成功的 `Finished { manifest }` 后发布产物；发生 error 时不得把部分 fragment 当作可执行脚本。流式不等于接受半个程序。
 
 增量缓存键至少包含：源文件 hash、语言版本、资源 catalog 摘要、脚本接口 catalog 摘要和 capability catalog generation。任一输入变化都会使旧产物失效。
+
+编译阶段的事件是可观测数据，不是日志副作用。编译核心只产出有序 `CompileEvent` 流；CLI、GUI、CI 或缓存 adapter 在核心外部消费它们。核心不得向标准输出、文件或网络直接写日志。完整的制品键、构建事件和并行边界见[编译制品、观测与边界治理](004-build-observability-and-boundaries.md)。
 
 ## 运行时状态
 

@@ -1,4 +1,5 @@
 mod map;
+mod narrative;
 mod sprites;
 
 use std::{
@@ -19,6 +20,7 @@ use game_ui::{GameConsole, PresentationAction, PresentationState, PresentationUp
 use map::load_map;
 use map_project::MapProject;
 use map_render::AtomicTileCatalog;
+use narrative::load_narrative_scripts;
 use punctum_gpu::{PixelSize, Rgba8};
 use sprites::load_game_assets;
 use winit::{
@@ -32,7 +34,7 @@ use winit::{
 
 const CLEAR_COLOR: Rgba8 = Rgba8::new(14, 18, 24, 255);
 const GAME_TEXT_SCALE: TextScale = TextScale::new(3, 5, 10, 28);
-const WORLD_LOGIC_TICK: Duration = Duration::from_millis(500);
+const WORLD_LOGIC_TICK: Duration = Duration::from_secs(1);
 
 struct CreatureGameApp {
     game: Option<GameSession>,
@@ -53,8 +55,11 @@ struct CreatureGameApp {
 impl CreatureGameApp {
     fn new() -> Result<Self, Box<dyn Error>> {
         let loaded_map = load_map()?;
-        let world = world_application::WorldApplication::from_map_project(&loaded_map.project)
-            .map_err(|error| std::io::Error::other(format!("map world: {error:?}")))?;
+        let world = world_application::WorldApplication::from_map_project_with_scripts(
+            &loaded_map.project,
+            load_narrative_scripts()?,
+        )
+        .map_err(|error| std::io::Error::other(format!("map world: {error:?}")))?;
         let game = GameSession::new(CurrentDataSet::embedded()?, world, random_roster_seed())
             .map_err(|error| std::io::Error::other(format!("demo game: {error:?}")))?;
         let sprite_manifest = game

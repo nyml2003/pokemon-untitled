@@ -1,0 +1,6 @@
+script forest_collector(actor: actor:forest-collector) {
+    say(text: text:collector_found);
+    move(direction: right);
+    move(direction: left);
+    end();
+}

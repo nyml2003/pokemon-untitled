@@ -986,6 +986,9 @@ dependencies = [
  "map-project",
  "map-project-storage",
  "map-render",
+ "narrative-compiler",
+ "narrative-cps",
+ "narrative-token",
  "nucleo-matcher",
  "punctum-gpu",
  "punctum-grid",
@@ -1069,6 +1072,8 @@ dependencies = [
  "game-assets",
  "game-data",
  "game-ui",
+ "map-project",
+ "narrative-cps",
  "punctum-gpu",
  "punctum-grid",
  "punctum-input",
@@ -1694,6 +1699,22 @@ dependencies = [
  "rustc-hash 1.1.0",
  "thiserror 2.0.18",
 ]
+
+[[package]]
+name = "narrative-compiler"
+version = "0.0.0"
+dependencies = [
+ "narrative-cps",
+ "narrative-token",
+]
+
+[[package]]
+name = "narrative-cps"
+version = "0.0.0"
+
+[[package]]
+name = "narrative-token"
+version = "0.0.0"
 
 [[package]]
 name = "ndk"
@@ -3940,6 +3961,7 @@ name = "world-application"
 version = "0.0.0"
 dependencies = [
  "map-project",
+ "narrative-cps",
  "world-domain",
 ]
 

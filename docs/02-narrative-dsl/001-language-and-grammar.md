@@ -1,12 +1,14 @@
 # 语言、词法与文法
 
-> 状态：详细设计，未实现
+> 状态：词法和单脚本编译基线已实现；完整文法仍是详细设计
 
 ## 结论
 
 第一版脚本使用 ASCII 源文件、显式分号、花括号和固定 token 规则。解析器采用递归下降。文法只在完整 First/Follow 测试通过后才宣称为 LL(1)。
 
 脚本不包含人类可读文本。所有显示内容使用 `text:` 资源 ID。
+
+当前 `narrative-token` 已实现无 IO 的 `ByteStream`、分块 `SliceByteStream`、ASCII lexer、`SourceSpan` 和本节列出的 token 形态。当前 parser 接受一个 `script` 声明，可选的 `actor: actor:...` 绑定，以及 `move`、`face`、`say`、`wait` 和 `end`。属性、选择、条件与 capability 调用尚未实现。
 
 ## 源文件与词法
 
@@ -23,7 +25,22 @@
 
 字符串字面量不在第一版语言中。需要文字时写 `text:town_guard_warning`；需要复杂数据时引用已注册的资源或调用 provider 查询。
 
-保留字为：`actor`、`script`、`intercept`、`if`、`else`、`choose`、`option`、`say`、`wait`、`end`、`true`、`false`。
+保留字为：`actor`、`script`、`intercept`、`if`、`else`、`choose`、`option`、`move`、`face`、`say`、`wait`、`end`、`true`、`false`。
+
+## 当前可执行子集
+
+```text
+script forest_guide(actor: actor:forest-guide) {
+  say(text: text:guide_hello);
+  move(direction: right);
+  move(direction: down);
+  move(direction: left);
+  move(direction: up);
+  end();
+}
+```
+
+`actor` 参数只能是一个 `actor:` 资源。`move` 和 `face` 的 `direction` 只能是 `up`、`down`、`left` 或 `right`。脚本在 `end()` 后结束；当前 NPC 执行器会在下一逻辑 tick 从 entry continuation 重启该脚本，用于确定性的巡逻和原地转向。通用叙事运行时不能依赖这个重启策略。
 
 ## 符号域
 

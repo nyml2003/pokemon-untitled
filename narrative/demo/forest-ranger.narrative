@@ -1,0 +1,6 @@
+script forest_ranger(actor: actor:forest-ranger) {
+    say(text: text:ranger_welcome);
+    face(direction: down);
+    face(direction: left);
+    end();
+}

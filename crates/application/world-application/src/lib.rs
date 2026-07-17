@@ -6,6 +6,8 @@ use std::collections::BTreeMap;
 
 pub use map_project::CharacterAppearanceId;
 use map_project::{Collision, MapDirection, MapEventKind, MapProject};
+pub use narrative_cps::TextId;
+use narrative_cps::{CpsNode, ScriptDirection, ScriptProgram};
 pub use world_domain::{
     Direction, Position, Tile, WorldActorCommand, WorldActorId, WorldCommand, WorldError,
     WorldEvent, WorldOutcome,
@@ -38,6 +40,7 @@ pub struct WorldActorObservation {
     position: Position,
     facing: Direction,
     appearance: CharacterAppearanceId,
+    speech: Option<TextId>,
 }
 
 impl WorldActorObservation {
@@ -59,6 +62,10 @@ impl WorldActorObservation {
 
     pub const fn appearance(&self) -> &CharacterAppearanceId {
         &self.appearance
+    }
+
+    pub fn speech(&self) -> Option<&TextId> {
+        self.speech.as_ref()
     }
 }
 
@@ -98,7 +105,29 @@ impl WorldObservation {
 pub struct WorldApplication {
     world: World,
     appearances: BTreeMap<WorldActorId, CharacterAppearanceId>,
-    npc_patrol_tick: u64,
+    npc_scripts: BTreeMap<WorldActorId, NpcScriptState>,
+    speech: BTreeMap<WorldActorId, TextId>,
+}
+
+#[derive(Clone)]
+struct NpcScriptState {
+    program: ScriptProgram,
+    continuation: narrative_cps::ContinuationId,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum WorldApplicationError {
+    World(WorldError),
+    UnboundScript { script: narrative_cps::ScriptId },
+    ScriptActorMissing { actor: narrative_cps::ActorId },
+    ScriptControlsPlayer,
+    DuplicateScriptActor { actor: narrative_cps::ActorId },
+}
+
+impl From<WorldError> for WorldApplicationError {
+    fn from(error: WorldError) -> Self {
+        Self::World(error)
+    }
 }
 
 impl WorldApplication {
@@ -112,7 +141,8 @@ impl WorldApplication {
         Self {
             world,
             appearances,
-            npc_patrol_tick: 0,
+            npc_scripts: BTreeMap::new(),
+            speech: BTreeMap::new(),
         }
     }
 
@@ -171,8 +201,54 @@ impl WorldApplication {
         Ok(Self {
             world,
             appearances,
-            npc_patrol_tick: 0,
+            npc_scripts: BTreeMap::new(),
+            speech: BTreeMap::new(),
         })
+    }
+
+    pub fn from_map_project_with_scripts(
+        project: &MapProject,
+        scripts: impl IntoIterator<Item = ScriptProgram>,
+    ) -> Result<Self, WorldApplicationError> {
+        Self::from_map_project(project)?.with_npc_scripts(scripts)
+    }
+
+    pub fn with_npc_scripts(
+        mut self,
+        scripts: impl IntoIterator<Item = ScriptProgram>,
+    ) -> Result<Self, WorldApplicationError> {
+        for program in scripts {
+            let actor =
+                program
+                    .actor()
+                    .cloned()
+                    .ok_or_else(|| WorldApplicationError::UnboundScript {
+                        script: program.id().clone(),
+                    })?;
+            if actor.as_str() == "actor:player" {
+                return Err(WorldApplicationError::ScriptControlsPlayer);
+            }
+            let actor_id = WorldActorId::new(&actor.as_str()["actor:".len()..])
+                .expect("a validated actor resource has a non-empty name");
+            if !self
+                .world
+                .actors()
+                .any(|candidate| candidate.id() == &actor_id)
+            {
+                return Err(WorldApplicationError::ScriptActorMissing { actor });
+            }
+            if self.npc_scripts.contains_key(&actor_id) {
+                return Err(WorldApplicationError::DuplicateScriptActor { actor });
+            }
+            self.npc_scripts.insert(
+                actor_id,
+                NpcScriptState {
+                    continuation: program.entry(),
+                    program,
+                },
+            );
+        }
+        Ok(self)
     }
 
     pub fn observe(&self) -> WorldObservation {
@@ -199,6 +275,7 @@ impl WorldApplication {
                         .get(actor.id())
                         .expect("every world actor has an appearance")
                         .clone(),
+                    speech: self.speech.get(actor.id()).cloned(),
                 })
                 .collect(),
         }
@@ -214,59 +291,63 @@ impl WorldApplication {
             Self {
                 world,
                 appearances: self.appearances.clone(),
-                npc_patrol_tick: self.npc_patrol_tick,
+                npc_scripts: self.npc_scripts.clone(),
+                speech: self.speech.clone(),
             },
             outcome,
         )
     }
 
-    /// Advances the temporary demo patrols by one logical world tick.
+    /// Advances every actor-bound script by one logical world tick.
     ///
     /// The caller supplies the cadence. Keeping real time outside this pure
     /// application boundary makes the resulting world state deterministic.
     pub fn advance_npcs(&self) -> Self {
-        let npc_patrol_tick = self.npc_patrol_tick.wrapping_add(1);
+        let mut world = self.world.clone();
+        let mut scripts = self.npc_scripts.clone();
+        let mut speech = self.speech.clone();
+        for (actor, state) in &mut scripts {
+            let node = state
+                .program
+                .continuation(state.continuation)
+                .expect("validated script continuations always exist")
+                .clone();
+            match node {
+                CpsNode::Move { direction, next } => {
+                    if let Ok((next_world, _)) = world.transition_actor(
+                        actor,
+                        WorldActorCommand::Move(direction_from_script(direction)),
+                    ) {
+                        world = next_world;
+                    }
+                    speech.remove(actor);
+                    state.continuation = next;
+                }
+                CpsNode::Face { direction, next } => {
+                    if let Ok((next_world, _)) = world.transition_actor(
+                        actor,
+                        WorldActorCommand::Face(direction_from_script(direction)),
+                    ) {
+                        world = next_world;
+                    }
+                    speech.remove(actor);
+                    state.continuation = next;
+                }
+                CpsNode::Say { text, next } => {
+                    speech.insert(actor.clone(), text);
+                    state.continuation = next;
+                }
+                CpsNode::Wait { .. } => {}
+                CpsNode::End => state.continuation = state.program.entry(),
+            }
+        }
         Self {
-            world: advance_demo_patrols(self.world.clone(), npc_patrol_tick),
+            world,
             appearances: self.appearances.clone(),
-            npc_patrol_tick,
+            npc_scripts: scripts,
+            speech,
         }
     }
-}
-
-struct DemoPatrol {
-    actor: &'static str,
-    route: &'static [Direction],
-}
-
-const DEMO_PATROLS: [DemoPatrol; 4] = [
-    DemoPatrol {
-        actor: "forest-guide",
-        route: &[Direction::Right, Direction::Left],
-    },
-    DemoPatrol {
-        actor: "forest-scout",
-        route: &[Direction::Down, Direction::Up],
-    },
-    DemoPatrol {
-        actor: "forest-ranger",
-        route: &[Direction::Left, Direction::Right],
-    },
-    DemoPatrol {
-        actor: "forest-collector",
-        route: &[Direction::Right, Direction::Left],
-    },
-];
-
-fn advance_demo_patrols(mut world: World, tick: u64) -> World {
-    for patrol in DEMO_PATROLS {
-        let actor = WorldActorId::new(patrol.actor).expect("fixed demo actor IDs are valid");
-        let step = patrol.route[(tick.wrapping_sub(1) as usize) % patrol.route.len()];
-        if let Ok((next, _)) = world.transition_actor(&actor, WorldActorCommand::Move(step)) {
-            world = next;
-        }
-    }
-    world
 }
 
 const fn direction_from_map(direction: MapDirection) -> Direction {
@@ -278,11 +359,25 @@ const fn direction_from_map(direction: MapDirection) -> Direction {
     }
 }
 
+const fn direction_from_script(direction: ScriptDirection) -> Direction {
+    match direction {
+        ScriptDirection::Up => Direction::Up,
+        ScriptDirection::Down => Direction::Down,
+        ScriptDirection::Left => Direction::Left,
+        ScriptDirection::Right => Direction::Right,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use map_project::{
         AtomicTileId, CharacterAppearanceId, Collision, CompositeTile, CompositeTileId, MapActor,
         MapActorId, MapDirection, MapEventKind, MapProject, MapProjectId, TilePosition,
+    };
+    use narrative_cps::{
+        ActorId, ContinuationId, CpsNode, ScriptDirection, ScriptId, ScriptProgram, TextId,
     };
 
     use super::{Direction, Position, Tile, WorldApplication, WorldCommand};
@@ -392,21 +487,54 @@ mod tests {
     }
 
     #[test]
-    fn logical_ticks_advance_fixed_demo_patrols_independently_of_player_commands() {
+    fn actor_bound_scripts_drive_npc_movement_and_speech() {
         let material = CompositeTile::new(
             CompositeTileId::new("ground").unwrap(),
             vec![AtomicTileId::new("tile-0001").unwrap()],
         );
         let mut project =
-            MapProject::blank(MapProjectId::new("demo").unwrap(), 5, 2, Some(material));
+            MapProject::blank(MapProjectId::new("demo").unwrap(), 6, 4, Some(material));
         project.player_spawn = TilePosition::new(0, 0);
         project.actors.push(MapActor::new(
             MapActorId::new("forest-guide").unwrap(),
-            TilePosition::new(3, 0),
+            TilePosition::new(3, 1),
             MapDirection::Left,
             CharacterAppearanceId::new("dppt/000").unwrap(),
         ));
-        let world = WorldApplication::from_map_project(&project).unwrap();
+        let mut continuations = BTreeMap::new();
+        continuations.insert(
+            ContinuationId::new(0),
+            CpsNode::Say {
+                text: TextId::new("text:hello").unwrap(),
+                next: ContinuationId::new(1),
+            },
+        );
+        for (index, direction) in [
+            ScriptDirection::Right,
+            ScriptDirection::Down,
+            ScriptDirection::Left,
+            ScriptDirection::Up,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            continuations.insert(
+                ContinuationId::new(index as u32 + 1),
+                CpsNode::Move {
+                    direction,
+                    next: ContinuationId::new(index as u32 + 2),
+                },
+            );
+        }
+        continuations.insert(ContinuationId::new(5), CpsNode::End);
+        let script = ScriptProgram::with_actor(
+            ScriptId::new("script:guide").unwrap(),
+            Some(ActorId::new("actor:forest-guide").unwrap()),
+            ContinuationId::new(0),
+            continuations,
+        )
+        .unwrap();
+        let world = WorldApplication::from_map_project_with_scripts(&project, [script]).unwrap();
         let (after_player_move, outcome) = world.transition(WorldCommand::Move(Direction::Right));
         assert!(matches!(outcome.event(), super::WorldEvent::Moved { .. }));
         let after_player_move = after_player_move.observe();
@@ -415,16 +543,40 @@ mod tests {
             .iter()
             .find(|actor| actor.id().as_str() == "forest-guide")
             .unwrap();
-        assert_eq!(npc_after_player_move.position(), Position::new(3, 0));
+        assert_eq!(npc_after_player_move.position(), Position::new(3, 1));
         assert_eq!(npc_after_player_move.facing(), Direction::Left);
+        assert_eq!(npc_after_player_move.speech(), None);
 
-        let observation = world.advance_npcs().observe();
+        let world = world.advance_npcs();
+        let observation = world.observe();
         let npc = observation
             .actors()
             .iter()
             .find(|actor| actor.id().as_str() == "forest-guide")
             .unwrap();
-        assert_eq!(npc.position(), Position::new(4, 0));
+        assert_eq!(npc.position(), Position::new(3, 1));
+        assert_eq!(npc.speech().unwrap().as_str(), "text:hello");
+
+        let world = world.advance_npcs();
+        let npc = world
+            .observe()
+            .actors()
+            .iter()
+            .find(|actor| actor.id().as_str() == "forest-guide")
+            .unwrap()
+            .clone();
+        assert_eq!(npc.position(), Position::new(4, 1));
         assert_eq!(npc.facing(), Direction::Right);
+        assert_eq!(npc.speech(), None);
+
+        let world = world.advance_npcs().advance_npcs().advance_npcs();
+        let observation = world.observe();
+        let npc = observation
+            .actors()
+            .iter()
+            .find(|actor| actor.id().as_str() == "forest-guide")
+            .unwrap();
+        assert_eq!(npc.position(), Position::new(3, 1));
+        assert_eq!(npc.facing(), Direction::Up);
     }
 }

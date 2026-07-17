@@ -523,9 +523,7 @@ fn resolve_node(
 ) -> Result<(), UiLayoutError> {
     let bounds = constrain(node, offered, ratio_basis)?;
     let clip = if node.style.clip {
-        inherited_clip
-            .intersect(bounds)
-            .unwrap_or(UiRect::default())
+        inherited_clip.intersect(bounds).unwrap_or_default()
     } else {
         inherited_clip
     };
@@ -769,7 +767,7 @@ fn layout_children(
         })
         .count() as u32;
     let remaining = main_available.saturating_sub(fixed.saturating_add(gap_total));
-    let fill = if fills == 0 { 0 } else { remaining / fills };
+    let fill = remaining.checked_div(fills).unwrap_or(0);
     let extra = if fills == 0 {
         remaining
     } else {
@@ -902,20 +900,17 @@ fn layout_children(
                 .saturating_add(distributed_gap);
         }
     }
-    for child in node.children.iter().filter(|child| {
-        matches!(
-            child.style.position,
-            Position::Absolute { .. } | Position::AbsoluteRatio { .. }
-        )
-    }) {
+    for (child, left, top) in node.children.iter().filter_map(|child| {
         let (left, top) = match child.style.position {
             Position::Absolute { left, top } => (left, top),
             Position::AbsoluteRatio { left, top, base } => (
                 content.width.saturating_mul(left) / base.width,
                 content.height.saturating_mul(top) / base.height,
             ),
-            Position::Flow => unreachable!(),
+            Position::Flow => return None,
         };
+        Some((child, left, top))
+    }) {
         let offered = UiRect::new(
             content.x.saturating_add(left),
             content.y.saturating_add(top),
@@ -1127,5 +1122,274 @@ mod tests {
             tree.resolve(UiSize::new(10, 2)),
             Err(UiLayoutError::InsufficientSpace { .. })
         ));
+    }
+
+    #[test]
+    fn scalar_values_and_build_failures_are_explicit() {
+        assert_eq!(UiPixelOffset::new(-2, 3), UiPixelOffset { x: -2, y: 3 });
+        assert_eq!(UiContentId::new(""), Err(UiBuildError::EmptyContentId));
+        assert!(UiBorderRadius::default().is_zero());
+        assert_eq!(
+            UiTextSize::Ratio {
+                units: 3,
+                base: 4,
+                minimum: 5,
+                maximum: 7,
+            }
+            .resolve(20),
+            7
+        );
+
+        let root = UiNode::new(UiId(1));
+        assert_eq!(UiTree::new(root.clone()).unwrap().root(), &root);
+        let invalid = [
+            UiNode::new(UiId(2)).with_content(UiContent::TextScaled {
+                content: "x".into(),
+                color: UiColor::default(),
+                font_size: UiTextSize::Ratio {
+                    units: 1,
+                    base: 0,
+                    minimum: 1,
+                    maximum: 2,
+                },
+            }),
+            UiNode::new(UiId(3)).with_style(UiStyle {
+                width: Dimension::Ratio { units: 1, base: 0 },
+                ..UiStyle::default()
+            }),
+            UiNode::new(UiId(4)).with_style(UiStyle {
+                position: Position::AbsoluteRatio {
+                    left: 0,
+                    top: 0,
+                    base: UiSize::new(0, 1),
+                },
+                ..UiStyle::default()
+            }),
+            UiNode::new(UiId(5)).with_style(UiStyle {
+                logical_canvas: Some(UiSize::new(1, 0)),
+                ..UiStyle::default()
+            }),
+        ];
+        for node in invalid {
+            assert!(UiTree::new(node).is_err());
+        }
+        for error in [
+            UiBuildError::EmptyContentId,
+            UiBuildError::DuplicateId(UiId(1)),
+            UiBuildError::ZeroRatioBase(UiId(1)),
+            UiBuildError::ZeroLogicalCanvas(UiId(1)),
+            UiBuildError::ZeroTextSizeBase(UiId(1)),
+        ] {
+            assert!(!error.to_string().is_empty());
+        }
+        assert!(
+            !UiLayoutError::InsufficientSpace { id: UiId(1) }
+                .to_string()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn uncommon_content_and_layout_modes_resolve_deterministically() {
+        let styled = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    logical_canvas: Some(UiSize::new(10, 5)),
+                    max_size: Some(UiSize::new(30, 20)),
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::ImageStyled {
+                    content: UiContentId::new("panel").unwrap(),
+                    tint: UiColor::new(1, 2, 3, 4),
+                    pixel_offset: UiPixelOffset::new(2, -1),
+                }),
+        )
+        .unwrap();
+        let styled_frame = styled.resolve(UiSize::new(40, 20)).unwrap();
+        assert!(matches!(
+            styled_frame.commands()[0],
+            UiDrawCommand::Image {
+                bounds: UiRect {
+                    x: 0,
+                    y: 0,
+                    width: 40,
+                    height: 20
+                },
+                pixel_offset: UiPixelOffset { x: 2, y: -1 },
+                ..
+            }
+        ));
+
+        let text = |id| {
+            UiNode::new(UiId(id)).with_content(UiContent::Text {
+                content: "wide".into(),
+                color: UiColor::default(),
+                font_size: 4,
+            })
+        };
+        let horizontal = UiTree::new(
+            UiNode::new(UiId(10))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Row,
+                    main_align: MainAlign::End,
+                    cross_align: CrossAlign::Stretch,
+                    ..UiStyle::default()
+                })
+                .with_children([text(11)]),
+        )
+        .unwrap();
+        assert!(horizontal.resolve(UiSize::new(30, 12)).is_ok());
+
+        let vertical = UiTree::new(
+            UiNode::new(UiId(20))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    cross_align: CrossAlign::End,
+                    ..UiStyle::default()
+                })
+                .with_children([text(21)]),
+        )
+        .unwrap();
+        assert!(vertical.resolve(UiSize::new(30, 12)).is_ok());
+    }
+
+    #[test]
+    fn remaining_content_and_flex_branches_stay_pure() {
+        assert_eq!(UiContentId::new("asset").unwrap().as_str(), "asset");
+        assert_eq!(UiBorderRadius::all(3).bottom_left, 3);
+        assert_eq!(Insets::all(2), Insets::symmetric(2, 2));
+        assert_eq!(UiTextSize::Px(6).resolve(99), 6);
+
+        let image = UiContentId::new("asset").unwrap();
+        let bordered_image = UiTree::new(
+            UiNode::new(UiId(1))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    border: UiBorder {
+                        widths: Insets::all(1),
+                        color: UiColor::new(9, 8, 7, 6),
+                    },
+                    interactive: true,
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Image(image.clone())),
+        )
+        .unwrap();
+        let frame = bordered_image.resolve(UiSize::new(10, 8)).unwrap();
+        assert_eq!(frame.viewport(), UiSize::new(10, 8));
+        assert_eq!(frame.commands().len(), 2);
+        assert_eq!(
+            frame.hit_regions(),
+            &[UiHitRegion {
+                id: UiId(1),
+                bounds: UiRect::new(0, 0, 10, 8)
+            }]
+        );
+
+        let tinted = UiTree::new(
+            UiNode::new(UiId(2))
+                .with_style(UiStyle::fixed(10, 8))
+                .with_content(UiContent::ImageTinted {
+                    content: image.clone(),
+                    tint: UiColor::new(1, 2, 3, 4),
+                }),
+        )
+        .unwrap();
+        assert!(matches!(
+            tinted.resolve(UiSize::new(10, 8)).unwrap().commands()[0],
+            UiDrawCommand::Image { .. }
+        ));
+
+        let scaled = UiTree::new(
+            UiNode::new(UiId(3))
+                .with_style(UiStyle::fixed(20, 10))
+                .with_content(UiContent::TextScaled {
+                    content: "x".into(),
+                    color: UiColor::default(),
+                    font_size: UiTextSize::Ratio {
+                        units: 1,
+                        base: 2,
+                        minimum: 1,
+                        maximum: 8,
+                    },
+                }),
+        )
+        .unwrap();
+        assert!(matches!(
+            scaled.resolve(UiSize::new(20, 10)).unwrap().commands()[0],
+            UiDrawCommand::Text { font_size: 5, .. }
+        ));
+        assert!(
+            UiTree::new(UiNode::new(UiId(4)).with_style(UiStyle::fixed(0, 1)))
+                .unwrap()
+                .resolve(UiSize::new(10, 10))
+                .unwrap()
+                .commands()
+                .is_empty()
+        );
+
+        let ratio_row = UiTree::new(
+            UiNode::new(UiId(10))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Row,
+                    main_align: MainAlign::Center,
+                    cross_align: CrossAlign::Center,
+                    ..UiStyle::default()
+                })
+                .with_children([fill(
+                    11,
+                    UiStyle {
+                        width: Dimension::Ratio { units: 1, base: 2 },
+                        height: Dimension::Ratio { units: 1, base: 2 },
+                        ..UiStyle::default()
+                    },
+                )]),
+        )
+        .unwrap();
+        assert!(ratio_row.resolve(UiSize::new(20, 10)).is_ok());
+
+        let ratio_column = UiTree::new(
+            UiNode::new(UiId(15))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    ..UiStyle::default()
+                })
+                .with_children([fill(
+                    16,
+                    UiStyle {
+                        width: Dimension::Ratio { units: 1, base: 2 },
+                        height: Dimension::Ratio { units: 1, base: 2 },
+                        ..UiStyle::default()
+                    },
+                )]),
+        )
+        .unwrap();
+        assert!(ratio_column.resolve(UiSize::new(20, 10)).is_ok());
+
+        let spaced_stack = UiTree::new(
+            UiNode::new(UiId(20))
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Stack,
+                    main_align: MainAlign::SpaceBetween,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    fill(21, UiStyle::fixed(2, 2)),
+                    fill(22, UiStyle::fixed(2, 2)),
+                ]),
+        )
+        .unwrap();
+        assert!(spaced_stack.resolve(UiSize::new(10, 10)).is_ok());
     }
 }

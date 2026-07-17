@@ -20,4 +20,6 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 battle-application = { workspace = true }
+map-project = { workspace = true }
+narrative-cps = { workspace = true }
 punctum-input = { workspace = true }

@@ -59,6 +59,7 @@ const TEXT: Rgba8 = Rgba8::new(244, 246, 239, 255);
 const MUTED_TEXT: Rgba8 = Rgba8::new(182, 194, 194, 255);
 const CONSOLE_ERROR: Rgba8 = Rgba8::new(255, 142, 126, 255);
 const MAP_GROUND: Rgba8 = Rgba8::new(138, 187, 116, 255);
+const SPEECH_BUBBLE: Rgba8 = Rgba8::new(83, 89, 96, 236);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BattleAnimation {
@@ -1249,6 +1250,7 @@ fn hp_bar(id: u32, hp: u32, max_hp: u32) -> UiNode {
             .with_content(UiContent::Fill(hp_color(hp, max_hp).into_ui()))])
 }
 
+#[allow(clippy::too_many_arguments)]
 fn battle_status_panel(
     id: u32,
     name: &str,
@@ -2216,15 +2218,20 @@ pub fn project_world_presented(
     sprite_frame: usize,
     pixel_offset: PixelOffset,
 ) -> GameView {
+    let mut actors = world_actor_images(
+        observation,
+        animation,
+        sprite_frame,
+        pixel_offset,
+        PixelOffset::new(0, 0),
+    );
+    let speech = world_speech_overlay(observation, GridPos::new(0, 0), PixelOffset::new(0, 0));
+    actors.extend(speech.images);
     GameView::new([
         ViewLayer::new(LayerKind::Map).with_surface(Canvas::new(MAP_GROUND).finish()),
-        ViewLayer::new(LayerKind::Character).with_images(world_actor_images(
-            observation,
-            animation,
-            sprite_frame,
-            pixel_offset,
-            PixelOffset::new(0, 0),
-        )),
+        ViewLayer::new(LayerKind::Character)
+            .with_images(actors)
+            .with_labels(speech.labels),
         ViewLayer::new(LayerKind::Hud),
     ])
 }
@@ -2256,15 +2263,71 @@ pub fn compose_world(
         actor.bounds.origin.row -= camera.row * 2;
     }
     actors.retain(|actor| actor.bounds.clip_to(viewport_size) == Some(actor.bounds));
+    let speech = world_speech_overlay(observation, camera, npc_pixel_offset);
+    actors.extend(speech.images);
     let mut layers = vec![
         map,
-        ViewLayer::new(LayerKind::Character).with_images(actors),
+        ViewLayer::new(LayerKind::Character)
+            .with_images(actors)
+            .with_labels(speech.labels),
         ViewLayer::new(LayerKind::Hud),
     ];
     if let Some(console) = console {
         layers.push(project_console(console));
     }
     GameView::new(layers)
+}
+
+struct WorldSpeechOverlay {
+    images: Vec<ViewImage>,
+    labels: Vec<TextLabel>,
+}
+
+fn world_speech_overlay(
+    observation: &WorldObservation,
+    camera: GridPos,
+    pixel_offset: PixelOffset,
+) -> WorldSpeechOverlay {
+    let mut images = Vec::new();
+    let mut labels = Vec::new();
+    for actor in observation.actors() {
+        let Some(speech) = actor.speech() else {
+            continue;
+        };
+        let center = i32::from(actor.position().x()) * 2 - camera.col * 2 + 1;
+        let row = i32::from(actor.position().y()) * 2 - camera.row * 2 - 2;
+        if row < 0 || center < 0 || center >= CANVAS_WIDTH as i32 {
+            continue;
+        }
+        let content = speech_text(speech.as_str());
+        let width = (content.chars().count() as u32 * 2 + 2).clamp(10, 18);
+        let max_col = CANVAS_WIDTH.saturating_sub(width) as i32;
+        let col = (center - width as i32 / 2).clamp(0, max_col) as u32;
+        let row = row as u32;
+        images.push(
+            rounded_image(col, row, width, 2, SPEECH_BUBBLE, 100).with_pixel_offset(pixel_offset),
+        );
+        labels.push(label(
+            TextRole::Message,
+            col + 1,
+            row,
+            width.saturating_sub(2),
+            2,
+            content,
+            TEXT,
+        ));
+    }
+    WorldSpeechOverlay { images, labels }
+}
+
+fn speech_text(text: &str) -> &str {
+    match text {
+        "text:guide_hello" => "前方的小路很安全。",
+        "text:ranger_welcome" => "森林里要注意脚下。",
+        "text:collector_found" => "我刚找到一个好东西。",
+        "text:hello_there" => "你好。",
+        _ => "……",
+    }
 }
 
 pub fn with_console(mut layers: Vec<ViewLayer>, console: Option<&CommandConsoleView>) -> GameView {
@@ -2785,6 +2848,10 @@ mod tests {
         OpponentPolicy,
     };
     use game_data::PokedexData;
+    use map_project::{
+        AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection,
+        MapProject, MapProjectId, TilePosition,
+    };
     use punctum_grid::{GridPos, GridSize};
     use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
     use world_application::{CharacterAppearanceId, Direction, Position, WorldApplication};
@@ -3496,6 +3563,58 @@ mod tests {
             Some(&CommandConsoleView::default()),
         );
         assert_eq!(with_console.layers().len(), 4);
+    }
+
+    #[test]
+    fn world_projection_adds_a_speech_label_for_an_actor_speaking() {
+        let material = CompositeTile::new(
+            CompositeTileId::new("ground").unwrap(),
+            vec![AtomicTileId::new("tile-0001").unwrap()],
+        );
+        let mut project =
+            MapProject::blank(MapProjectId::new("speech").unwrap(), 6, 4, Some(material));
+        project.player_spawn = TilePosition::new(0, 0);
+        project.actors.push(MapActor::new(
+            MapActorId::new("guide").unwrap(),
+            TilePosition::new(2, 1),
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000").unwrap(),
+        ));
+        let mut continuations = std::collections::BTreeMap::new();
+        continuations.insert(
+            narrative_cps::ContinuationId::new(0),
+            narrative_cps::CpsNode::Say {
+                text: narrative_cps::TextId::new("text:hello_there").unwrap(),
+                next: narrative_cps::ContinuationId::new(1),
+            },
+        );
+        continuations.insert(
+            narrative_cps::ContinuationId::new(1),
+            narrative_cps::CpsNode::End,
+        );
+        let script = narrative_cps::ScriptProgram::with_actor(
+            narrative_cps::ScriptId::new("script:guide").unwrap(),
+            Some(narrative_cps::ActorId::new("actor:guide").unwrap()),
+            narrative_cps::ContinuationId::new(0),
+            continuations,
+        )
+        .unwrap();
+        let observation = WorldApplication::from_map_project_with_scripts(&project, [script])
+            .unwrap()
+            .advance_npcs()
+            .observe();
+        let view = project_world(&observation);
+        assert!(
+            view.labels()
+                .any(|label| label.role == TextRole::Message && label.content == "你好。")
+        );
+        let speech_background = view.layers()[1]
+            .images
+            .iter()
+            .find(|image| image.asset == rounded_ui_asset())
+            .unwrap();
+        assert_eq!(speech_background.tint, super::SPEECH_BUBBLE);
+        assert_eq!(speech_background.bounds.size, GridSize::new(10, 2));
     }
 
     #[test]

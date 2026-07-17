@@ -1,0 +1,7 @@
+script forest_scout(actor: actor:forest-scout) {
+    face(direction: right);
+    face(direction: down);
+    face(direction: left);
+    face(direction: up);
+    end();
+}

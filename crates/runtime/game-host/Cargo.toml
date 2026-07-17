@@ -21,6 +21,9 @@ map-assets = { path = "../../presentation/map-assets" }
 map-project = { workspace = true }
 map-project-storage = { workspace = true }
 map-render = { workspace = true }
+narrative-compiler = { workspace = true }
+narrative-cps = { workspace = true }
+narrative-token = { workspace = true }
 nucleo-matcher = "0.3.1"
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }

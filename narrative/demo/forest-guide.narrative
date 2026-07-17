@@ -1,0 +1,8 @@
+script forest_guide(actor: actor:forest-guide) {
+    say(text: text:guide_hello);
+    move(direction: right);
+    move(direction: down);
+    move(direction: left);
+    move(direction: up);
+    end();
+}
