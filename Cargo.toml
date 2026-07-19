@@ -43,6 +43,7 @@ members = [
     "crates/runtime/map-editor-cli",
     "crates/runtime/tile-editor",
     "crates/quality/game-e2e",
+    "crates/quality/wslg-wgpu-clear-smoke",
 ]
 resolver = "2"
 

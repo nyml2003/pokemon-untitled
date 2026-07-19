@@ -1,0 +1,13 @@
+{
+  "schema": "arbor.skill-package/v1",
+  "id": "pokemon-untitled/rust-crate-documentation",
+  "name": "rust-crate-documentation",
+  "version": "1.0.0",
+  "format": "agent-skill",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/crate-documents.md",
+    "skill.package.json"
+  ]
+}

@@ -4027,6 +4027,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "wslg-wgpu-clear-smoke"
+version = "0.0.0"
+dependencies = [
+ "pollster",
+ "wgpu",
+ "winit",
+]
+
+[[package]]
 name = "x11-dl"
 version = "2.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -18,6 +18,8 @@ target/
 # env
 .env
 .env.local
+.direnv/
+ops.local.json
 
 # OS
 .DS_Store

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust 注释规范"
+  short_description: "为 Rust crate 编写可生成文档的 API 注释和模块说明"
+  default_prompt: "使用 $rust-commenting 为这个 Rust crate 编写或审查注释。"

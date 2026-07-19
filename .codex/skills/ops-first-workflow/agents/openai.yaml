@@ -1,0 +1,4 @@
+interface:
+  display_name: "Ops 优先工作流"
+  short_description: "Route development, tests, sync, builds, and runs through ops"
+  default_prompt: "Use $ops-first-workflow to perform this project task through ops."

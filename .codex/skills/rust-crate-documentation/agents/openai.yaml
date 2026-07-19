@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust crate 文档"
+  short_description: "为 Rust crate 编写职责边界、状态契约与设计说明文档"
+  default_prompt: "使用 $rust-crate-documentation 为这个 Rust crate 编写 README 和设计文档。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust crate 结构"
+  short_description: "拆分 Rust crate 并建立私有模块与稳定导出面"
+  default_prompt: "使用 $rust-crate-structure 拆分这个 Rust crate 并收紧公开 API。"

@@ -1,0 +1,13 @@
+{
+  "schema": "arbor.skill-package/v1",
+  "id": "pokemon-untitled/rust-commenting",
+  "name": "rust-commenting",
+  "version": "1.0.0",
+  "format": "agent-skill",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/rust-comments.md",
+    "skill.package.json"
+  ]
+}

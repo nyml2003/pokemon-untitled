@@ -1,0 +1,12 @@
+{
+  "schema": "arbor.skill-package/v1",
+  "id": "arbor/ops-first-workflow",
+  "name": "ops-first-workflow",
+  "version": "1.0.0",
+  "format": "agent-skill",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "skill.package.json"
+  ]
+}
