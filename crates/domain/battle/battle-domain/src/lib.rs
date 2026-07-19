@@ -34,4 +34,5 @@ pub use stats::{
 };
 
 #[cfg(test)]
+#[path = "../tests/unit/lib.rs"]
 mod tests;

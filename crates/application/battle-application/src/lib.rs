@@ -117,4 +117,5 @@ impl BattleApplication {
 }
 
 #[cfg(test)]
+#[path = "../tests/unit/lib.rs"]
 mod tests;

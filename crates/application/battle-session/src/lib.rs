@@ -23,4 +23,5 @@ pub use session::{
 };
 
 #[cfg(test)]
+#[path = "../tests/unit/lib.rs"]
 mod tests;

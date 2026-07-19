@@ -209,7 +209,7 @@ pub struct TileSemanticsCatalog {
 }
 
 #[cfg(test)]
-#[path = "tests.rs"]
+#[path = "../tests/unit/model.rs"]
 mod tests;
 use std::{collections::BTreeSet, fmt};
 

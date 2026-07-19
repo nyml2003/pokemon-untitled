@@ -20,4 +20,5 @@ pub use model::{
 pub use tree::{UiNode, UiTree};
 
 #[cfg(test)]
+#[path = "../tests/unit/lib.rs"]
 mod tests;
