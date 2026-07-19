@@ -15,6 +15,10 @@ class ProcessRunner(Protocol):
     def run(self, arguments: tuple[str, ...], cwd: Path, forward_output: bool = False) -> Result[int]: ...
 
 
+class OutputProcessRunner(Protocol):
+    def capture(self, arguments: tuple[str, ...], cwd: Path) -> Result[str]: ...
+
+
 class NativeRunDispatcher(Protocol):
     def dispatch(self, request: NativeRunRequest, progress: ProgressReporter | None = None) -> Result[int]: ...
 

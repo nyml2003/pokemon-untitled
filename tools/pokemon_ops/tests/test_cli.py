@@ -58,6 +58,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(arguments.command, "lint")
         self.assertTrue(arguments.json_output)
 
+    def test_lines_and_coverage_commands_are_available_with_json_output(self) -> None:
+        lines = build_parser().parse_args(["lines", "--json"])
+        coverage = build_parser().parse_args(["coverage", "--json"])
+
+        self.assertEqual(lines.command, "lines")
+        self.assertTrue(lines.json_output)
+        self.assertEqual(coverage.command, "coverage")
+        self.assertTrue(coverage.json_output)
+
     def test_docs_check_command_is_available_with_json_output(self) -> None:
         arguments = build_parser().parse_args(["docs", "check", "--json"])
 

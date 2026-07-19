@@ -20,6 +20,7 @@ class ErrorCode(StrEnum):
     WINDOWS_PYTHON_UNAVAILABLE = "WindowsPythonUnavailable"
     WINDOWS_RUNNER_UNAVAILABLE = "WindowsRunnerUnavailable"
     PROCESS_FAILED = "ProcessFailed"
+    METRICS_FAILED = "MetricsFailed"
     DIAGRAM_VALIDATION_FAILED = "DiagramValidationFailed"
     BUILD_FAILED = "BuildFailed"
     RUN_FAILED = "RunFailed"

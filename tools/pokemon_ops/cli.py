@@ -14,6 +14,7 @@ from tools.pokemon_ops.adapters.progress_reporters import JsonLinesProgressRepor
 from tools.pokemon_ops.adapters.windows_native_run_dispatcher import WindowsNativeRunDispatcher
 from tools.pokemon_ops.application.native_service import NativeService
 from tools.pokemon_ops.application.documentation_service import DocumentationService
+from tools.pokemon_ops.application.metrics_service import RustLineReport, WorkspaceMetricsService
 from tools.pokemon_ops.application.sync_service import SyncService
 from tools.pokemon_ops.application.testing_service import WslTestingService
 from tools.pokemon_ops.domain.errors import Result
@@ -34,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
     format_parser.add_argument("--check", action="store_true")
 
     command_parsers.append(commands.add_parser("lint"))
+    command_parsers.append(commands.add_parser("lines"))
+    command_parsers.append(commands.add_parser("coverage"))
 
     docs_parser = commands.add_parser("docs")
     command_parsers.append(docs_parser)
@@ -85,6 +88,15 @@ def _emit(result: Result[object], json_output: bool) -> int:
             print(f"  {key}: {value}", file=sys.stderr)
     exit_code = result.error.details.get("exit_code")
     return int(exit_code) if exit_code and exit_code.isdigit() else 1
+
+
+def _emit_lines(result: Result[RustLineReport], json_output: bool) -> int:
+    if not result.is_ok or json_output:
+        return _emit(result, json_output)
+    report = result.value
+    assert report is not None
+    print(report.render())
+    return 0
 
 
 def _load(source_root: Path) -> Result[object]:
@@ -153,6 +165,10 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
         return _emit(testing.format(config, args.check), args.json_output)
     if args.command == "lint":
         return _emit(testing.lint(config), args.json_output)
+    if args.command == "lines":
+        return _emit_lines(WorkspaceMetricsService(LocalProcessRunner()).lines(config), args.json_output)
+    if args.command == "coverage":
+        return _emit(testing.coverage(config, forward_output=not args.json_output), args.json_output)
     if args.command == "test":
         return _emit(testing.test(config, TestSuite(args.suite)), args.json_output)
     if args.command == "docs":

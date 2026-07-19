@@ -28,3 +28,26 @@ class LocalProcessRunner:
                 exit_code=str(completed.returncode),
             )
         return Result.ok(completed.returncode)
+
+    def capture(self, arguments: tuple[str, ...], cwd: Path) -> Result[str]:
+        try:
+            completed = subprocess.run(
+                arguments,
+                cwd=cwd,
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except FileNotFoundError:
+            return Result.fail(ErrorCode.PROCESS_FAILED, "required executable is unavailable", executable=arguments[0])
+        except OSError as error:
+            return Result.fail(ErrorCode.PROCESS_FAILED, "cannot start process", reason=str(error))
+        if completed.returncode != 0:
+            return Result.fail(
+                ErrorCode.PROCESS_FAILED,
+                "process exited unsuccessfully",
+                executable=arguments[0],
+                exit_code=str(completed.returncode),
+            )
+        return Result.ok(completed.stdout)

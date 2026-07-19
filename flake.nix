@@ -21,16 +21,19 @@
       devShells.${system}.default = pkgs.mkShell {
         packages = with pkgs; [
           cargo
+          cargo-llvm-cov
           clang
           clippy
           git
           git-lfs
           lld
+          llvmPackages.llvm
           pkg-config
           python3
           rust-analyzer
           rustc
           rustfmt
+          tokei
           uv
           (writeShellApplication {
             name = "ops";
@@ -48,6 +51,8 @@
         shellHook = ''
           export CC=clang
           export CXX=clang++
+          export LLVM_COV="${pkgs.llvmPackages.llvm}/bin/llvm-cov"
+          export LLVM_PROFDATA="${pkgs.llvmPackages.llvm}/bin/llvm-profdata"
         '';
       };
     };

@@ -11,6 +11,15 @@ TEST_COMMANDS: dict[str, tuple[str, ...]] = {
     "workspace": ("cargo", "test", "--workspace"),
 }
 
+COVERAGE_COMMAND = (
+    "cargo",
+    "llvm-cov",
+    "--workspace",
+    "--html",
+    "--output-dir",
+    "target/coverage",
+)
+
 PANIC_PREVENTION_LINTS = (
     "-D",
     "clippy::unwrap_used",
@@ -58,3 +67,6 @@ class WslTestingService:
             if not result.is_ok:
                 return result
         return Result.ok(0)
+
+    def coverage(self, config: LocalConfig, forward_output: bool) -> Result[int]:
+        return self._process_runner.run(COVERAGE_COMMAND, config.source_root.path, forward_output=forward_output)

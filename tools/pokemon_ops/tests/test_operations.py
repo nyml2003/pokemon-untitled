@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path, PureWindowsPath
 
 from tools.pokemon_ops.application.native_service import NativeService
-from tools.pokemon_ops.application.testing_service import WslTestingService
+from tools.pokemon_ops.application.testing_service import COVERAGE_COMMAND, WslTestingService
 from tools.pokemon_ops.domain.errors import ErrorCode, Result
 from tools.pokemon_ops.domain.model import BuildProfile, GitSyncReport, LocalConfig, MirrorRoot, NativeOperation, ProgressEvent, SourceRoot, TestSuite, WindowsRunner
 
@@ -121,6 +121,16 @@ class OperationTests(unittest.TestCase):
                 runner.calls,
                 [("cargo", "test", "--workspace")],
             )
+
+    def test_coverage_generates_a_workspace_html_report(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = RecordingProcessRunner()
+            service = WslTestingService(runner)
+
+            result = service.coverage(config_for(Path(directory)), forward_output=True)
+
+            self.assertTrue(result.is_ok)
+            self.assertEqual(runner.calls, [COVERAGE_COMMAND])
 
     def test_native_dispatch_does_not_run_after_sync_failure(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
