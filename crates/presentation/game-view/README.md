@@ -2,7 +2,7 @@
 
 ## 职责
 
-`game-view` 将世界、战斗、图鉴和命令控制台快照投影为 `GameView` 或 `UiTree`。
+`game-view` 将世界、战斗、图鉴、命令控制台和 Game Foundation 状态投影为 `GameView` 或 `UiTree`。
 它同时选择稳定的资源键和图层顺序。
 
 ## 状态契约
@@ -14,7 +14,8 @@
 ## 公开 API
 
 使用 `project_world`、`project_battle` 和 `project_console` 生成网格视图。
-使用 `project_pokedex`、`project_battle_ui` 和 `project_console_ui` 生成 `punctum-ui` 树。
+使用 `project_pokedex`、`project_battle_ui`、`project_console_ui` 和 `project_foundation` 生成 `punctum-ui` 树。
+`project_foundation` 提供旅程、背包和训练家卡片三页，产出的 `FoundationPageAction` 只描述用户意图；宿主负责将其交给 Ramus 路由。
 资源辅助函数返回 adapter 可解析的 `AssetKey`。
 
 ## 设计

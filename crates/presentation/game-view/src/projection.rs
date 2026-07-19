@@ -9,6 +9,7 @@ use battle_session::{
 };
 use game_assets::AssetKey;
 use game_data::PokedexData;
+use game_foundation::{Direction as FoundationDirection, GameState, ThinSliceContent};
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction, WorldAnimation};
 use game_ui_kit::{
     GameUiTheme, PanelTone, SpriteAppearance, TextTone, button as ui_button, column as ui_column,
@@ -110,6 +111,47 @@ const BATTLE_THEME: GameUiTheme = GameUiTheme {
     body_text_size: 18,
     title_text_size: 24,
 };
+
+const FOUNDATION_THEME: GameUiTheme = GameUiTheme {
+    screen: UiColor::new(14, 22, 32, 255),
+    header: UiColor::new(26, 68, 79, 255),
+    panel: UiColor::new(28, 44, 56, 255),
+    selected: UiColor::new(56, 151, 123, 255),
+    selected_text: UiColor::new(20, 31, 36, 255),
+    card: UiColor::new(222, 234, 222, 255),
+    image_backdrop: UiColor::new(132, 181, 153, 255),
+    text: UiColor::new(245, 248, 240, 255),
+    muted_text: UiColor::new(183, 203, 199, 255),
+    ink: UiColor::new(22, 40, 45, 255),
+    muted_ink: UiColor::new(72, 97, 96, 255),
+    small_spacing: 8,
+    medium_spacing: 16,
+    large_spacing: 24,
+    small_radius: punctum_ui::UiBorderRadius::all(6),
+    medium_radius: punctum_ui::UiBorderRadius::all(8),
+    large_radius: punctum_ui::UiBorderRadius::all(10),
+    body_text_size: 18,
+    title_text_size: 28,
+};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FoundationPage {
+    Journey,
+    Bag,
+    TrainerCard,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FoundationPageAction {
+    SelectPage(FoundationPage),
+    Move(FoundationDirection),
+    Interact,
+    Encounter,
+    ResolveBattle,
+    BuyPotion,
+    Save,
+    Close,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BattleAnimation {
@@ -300,6 +342,558 @@ impl GameView {
     pub fn labels(&self) -> impl Iterator<Item = &TextLabel> {
         self.layers.iter().flat_map(|layer| &layer.labels)
     }
+}
+
+/// 基座的多个状态页只投影不可变状态；所有游戏变化仍由 host 路由 intent。
+pub fn project_foundation(
+    content: &ThinSliceContent,
+    state: &GameState,
+    page: FoundationPage,
+) -> Result<UiTree<FoundationPageAction>, UiBuildError> {
+    let tabs = [
+        foundation_tab(
+            "旅程",
+            "foundation-tab-journey",
+            FoundationPage::Journey,
+            page,
+        )?,
+        foundation_tab("背包", "foundation-tab-bag", FoundationPage::Bag, page)?,
+        foundation_tab(
+            "训练家卡片",
+            "foundation-tab-trainer-card",
+            FoundationPage::TrainerCard,
+            page,
+        )?,
+    ];
+    let body = match page {
+        FoundationPage::Journey => foundation_journey(content, state)?,
+        FoundationPage::Bag => foundation_bag(content, state)?,
+        FoundationPage::TrainerCard => foundation_trainer_card(content, state)?,
+    };
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Header,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(48),
+                    direction: FlexDirection::Row,
+                    main_align: MainAlign::SpaceBetween,
+                    cross_align: CrossAlign::Center,
+                    padding: Insets::symmetric(12, 8),
+                    ..UiStyle::default()
+                },
+                [
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Default,
+                        "旅程记录",
+                        22,
+                        Dimension::Fill,
+                    ),
+                    foundation_action_button("×", "foundation-close", FoundationPageAction::Close)?,
+                ],
+            ),
+            ui_row(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(38),
+                    gap: 4,
+                    padding: Insets::symmetric(8, 4),
+                    ..UiStyle::default()
+                },
+                tabs,
+            ),
+            body,
+        ],
+    ))
+}
+
+fn foundation_tab(
+    label: &str,
+    key: &str,
+    target: FoundationPage,
+    selected: FoundationPage,
+) -> Result<UiNode<FoundationPageAction>, UiBuildError> {
+    let node = ui_button(
+        &FOUNDATION_THEME,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(30),
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            border_radius: FOUNDATION_THEME.small_radius,
+            ..UiStyle::default()
+        },
+        target == selected,
+        [ui_text(
+            &FOUNDATION_THEME,
+            if target == selected {
+                TextTone::Selected
+            } else {
+                TextTone::Default
+            },
+            label,
+            15,
+            Dimension::Fill,
+        )],
+    )
+    .with_key(UiKey::new(key)?);
+    Ok(node.with_action(FoundationPageAction::SelectPage(target)))
+}
+
+fn foundation_journey(
+    content: &ThinSliceContent,
+    state: &GameState,
+) -> Result<UiNode<FoundationPageAction>, UiBuildError> {
+    let mut party = party_rows(content, state);
+    if party.is_empty() {
+        party.push(ui_text(
+            &FOUNDATION_THEME,
+            TextTone::Muted,
+            "尚未获得伙伴",
+            19,
+            Dimension::Fill,
+        ));
+    }
+    let encounter = match (state.pending_encounter(), state.active_battle()) {
+        (Some(position), _) => format!("草丛遭遇  {}, {}", position.x(), position.y()),
+        (_, Some(battle)) => format!("战斗中  {}", battle.battle().as_str()),
+        (None, None) => String::from("探索中"),
+    };
+    let movement_actions = [
+        foundation_action_button(
+            "↑",
+            "foundation-move-up",
+            FoundationPageAction::Move(FoundationDirection::Up),
+        )?,
+        foundation_action_button(
+            "←",
+            "foundation-move-left",
+            FoundationPageAction::Move(FoundationDirection::Left),
+        )?,
+        foundation_action_button(
+            "↓",
+            "foundation-move-down",
+            FoundationPageAction::Move(FoundationDirection::Down),
+        )?,
+        foundation_action_button(
+            "→",
+            "foundation-move-right",
+            FoundationPageAction::Move(FoundationDirection::Right),
+        )?,
+    ];
+    let journey_actions = [
+        foundation_action_button(
+            "交互",
+            "foundation-interact",
+            FoundationPageAction::Interact,
+        )?,
+        foundation_action_button(
+            "遭遇",
+            "foundation-encounter",
+            FoundationPageAction::Encounter,
+        )?,
+        foundation_action_button(
+            "结算",
+            "foundation-resolve",
+            FoundationPageAction::ResolveBattle,
+        )?,
+        foundation_action_button("存档", "foundation-save", FoundationPageAction::Save)?,
+    ];
+    Ok(ui_panel(
+        &FOUNDATION_THEME,
+        PanelTone::Screen,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            gap: 6,
+            padding: Insets::all(8),
+            ..UiStyle::default()
+        },
+        [
+            ui_row(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(46),
+                    gap: 4,
+                    ..UiStyle::default()
+                },
+                [
+                    foundation_info_panel("地点", state.map().as_str()),
+                    foundation_info_panel(
+                        "坐标",
+                        format!("{}, {}", state.position().x(), state.position().y()),
+                    ),
+                    foundation_info_panel("状态", encounter),
+                ],
+            ),
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Panel,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 4,
+                    padding: Insets::all(8),
+                    border_radius: FOUNDATION_THEME.medium_radius,
+                    ..UiStyle::default()
+                },
+                std::iter::once(ui_text(
+                    &FOUNDATION_THEME,
+                    TextTone::Default,
+                    "队伍",
+                    16,
+                    Dimension::Fill,
+                ))
+                .chain(party),
+            ),
+            ui_column(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(60),
+                    gap: 4,
+                    ..UiStyle::default()
+                },
+                [
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            gap: 4,
+                            ..UiStyle::default()
+                        },
+                        movement_actions,
+                    ),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Fill,
+                            gap: 4,
+                            ..UiStyle::default()
+                        },
+                        journey_actions,
+                    ),
+                ],
+            ),
+        ],
+    ))
+}
+
+fn foundation_bag(
+    content: &ThinSliceContent,
+    state: &GameState,
+) -> Result<UiNode<FoundationPageAction>, UiBuildError> {
+    let mut entries = state
+        .inventory()
+        .entries()
+        .iter()
+        .map(|(item, quantity)| {
+            let category = content
+                .item(item)
+                .map(|definition| format!("{:?}", definition.category()))
+                .unwrap_or_else(|| String::from("未知"));
+            ui_row(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(42),
+                    main_align: MainAlign::SpaceBetween,
+                    cross_align: CrossAlign::Center,
+                    ..UiStyle::default()
+                },
+                [
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Default,
+                        item.as_str(),
+                        19,
+                        Dimension::Fill,
+                    ),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        category,
+                        16,
+                        Dimension::Fill,
+                    ),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Default,
+                        format!("x{quantity}"),
+                        19,
+                        Dimension::Fill,
+                    ),
+                ],
+            )
+        })
+        .collect::<Vec<_>>();
+    if entries.is_empty() {
+        entries.push(ui_text(
+            &FOUNDATION_THEME,
+            TextTone::Muted,
+            "背包为空",
+            19,
+            Dimension::Fill,
+        ));
+    }
+    Ok(ui_panel(
+        &FOUNDATION_THEME,
+        PanelTone::Screen,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            gap: 6,
+            padding: Insets::all(8),
+            ..UiStyle::default()
+        },
+        [
+            ui_row(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(46),
+                    gap: 4,
+                    ..UiStyle::default()
+                },
+                [
+                    foundation_info_panel("金钱", state.money().amount().to_string()),
+                    foundation_info_panel(
+                        "容量",
+                        format!(
+                            "{}/{}",
+                            state.inventory().entries().len(),
+                            state.inventory().capacity()
+                        ),
+                    ),
+                    foundation_action_button(
+                        "购买伤药",
+                        "foundation-buy-potion",
+                        FoundationPageAction::BuyPotion,
+                    )?,
+                ],
+            ),
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Panel,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 4,
+                    padding: Insets::all(8),
+                    border_radius: FOUNDATION_THEME.medium_radius,
+                    ..UiStyle::default()
+                },
+                entries,
+            ),
+        ],
+    ))
+}
+
+fn foundation_trainer_card(
+    content: &ThinSliceContent,
+    state: &GameState,
+) -> Result<UiNode<FoundationPageAction>, UiBuildError> {
+    let experience = state
+        .party()
+        .iter()
+        .map(|creature| creature.experience())
+        .sum::<u32>();
+    let lead = state.party().first().map_or_else(
+        || String::from("未登记"),
+        |creature| {
+            content
+                .creature(creature.template())
+                .map(|template| template.species().to_owned())
+                .unwrap_or_else(|| creature.template().as_str().to_owned())
+        },
+    );
+    Ok(ui_panel(
+        &FOUNDATION_THEME,
+        PanelTone::Screen,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            gap: 6,
+            padding: Insets::all(8),
+            ..UiStyle::default()
+        },
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Card,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                gap: 6,
+                padding: Insets::all(12),
+                border_radius: FOUNDATION_THEME.large_radius,
+                ..UiStyle::default()
+            },
+            [
+                ui_text(
+                    &FOUNDATION_THEME,
+                    TextTone::Ink,
+                    "训练家卡片",
+                    22,
+                    Dimension::Fill,
+                ),
+                ui_text(
+                    &FOUNDATION_THEME,
+                    TextTone::MutedInk,
+                    "LOCAL PLAYER",
+                    14,
+                    Dimension::Fill,
+                ),
+                trainer_card_row("伙伴", format!("{}  ·  {lead}", state.party().len())),
+                trainer_card_row("经验", experience.to_string()),
+                trainer_card_row("金钱", state.money().amount().to_string()),
+                trainer_card_row("训练师胜场", state.defeated_trainers().len().to_string()),
+                trainer_card_row("事件记录", state.flags().len().to_string()),
+            ],
+        )],
+    ))
+}
+
+fn foundation_info_panel(
+    label: impl Into<String>,
+    value: impl Into<String>,
+) -> UiNode<FoundationPageAction> {
+    ui_panel(
+        &FOUNDATION_THEME,
+        PanelTone::Panel,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            gap: 2,
+            padding: Insets::all(4),
+            border_radius: FOUNDATION_THEME.small_radius,
+            ..UiStyle::default()
+        },
+        [
+            ui_text(
+                &FOUNDATION_THEME,
+                TextTone::Muted,
+                label,
+                12,
+                Dimension::Fill,
+            ),
+            ui_text(
+                &FOUNDATION_THEME,
+                TextTone::Default,
+                value,
+                15,
+                Dimension::Fill,
+            ),
+        ],
+    )
+}
+
+fn trainer_card_row(
+    label: impl Into<String>,
+    value: impl Into<String>,
+) -> UiNode<FoundationPageAction> {
+    ui_row(
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(24),
+            main_align: MainAlign::SpaceBetween,
+            cross_align: CrossAlign::Center,
+            ..UiStyle::default()
+        },
+        [
+            ui_text(
+                &FOUNDATION_THEME,
+                TextTone::MutedInk,
+                label,
+                14,
+                Dimension::Fill,
+            ),
+            ui_text(&FOUNDATION_THEME, TextTone::Ink, value, 15, Dimension::Fill),
+        ],
+    )
+}
+
+fn party_rows(content: &ThinSliceContent, state: &GameState) -> Vec<UiNode<FoundationPageAction>> {
+    state
+        .party()
+        .iter()
+        .map(|creature| {
+            let definition = content.creature(creature.template());
+            let name = definition
+                .map(|template| template.species())
+                .unwrap_or(creature.template().as_str());
+            let max_hp = definition
+                .map(|template| template.max_hp())
+                .unwrap_or(creature.hp());
+            ui_row(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(32),
+                    main_align: MainAlign::SpaceBetween,
+                    cross_align: CrossAlign::Center,
+                    ..UiStyle::default()
+                },
+                [
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Default,
+                        name,
+                        15,
+                        Dimension::Fill,
+                    ),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        format!("HP {}/{}", creature.hp(), max_hp),
+                        14,
+                        Dimension::Fill,
+                    ),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        format!("PP {}", creature.pp()),
+                        14,
+                        Dimension::Fill,
+                    ),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Default,
+                        format!("EXP {}", creature.experience()),
+                        14,
+                        Dimension::Fill,
+                    ),
+                ],
+            )
+        })
+        .collect()
+}
+
+fn foundation_action_button(
+    label: &str,
+    key: &str,
+    action: FoundationPageAction,
+) -> Result<UiNode<FoundationPageAction>, UiBuildError> {
+    let node = ui_button(
+        &FOUNDATION_THEME,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            border_radius: FOUNDATION_THEME.small_radius,
+            ..UiStyle::default()
+        },
+        false,
+        [ui_text(
+            &FOUNDATION_THEME,
+            TextTone::Default,
+            label,
+            15,
+            Dimension::Fill,
+        )],
+    )
+    .with_key(UiKey::new(key)?);
+    Ok(node.with_action(action))
 }
 
 /// 构建响应式像素 UI 图鉴树。

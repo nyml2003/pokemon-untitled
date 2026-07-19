@@ -959,6 +959,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "game-foundation"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "world-domain",
+]
+
+[[package]]
 name = "game-fs-assets"
 version = "0.0.0"
 dependencies = [
@@ -976,8 +985,10 @@ dependencies = [
  "game-asset-plan",
  "game-assets",
  "game-data",
+ "game-foundation",
  "game-fs-assets",
  "game-native-target",
+ "game-ramus-adapter",
  "game-scene-view",
  "game-session",
  "game-ui",
@@ -1022,6 +1033,14 @@ dependencies = [
  "punctum-gpu",
  "punctum-wgpu",
  "wgpu",
+]
+
+[[package]]
+name = "game-ramus-adapter"
+version = "0.0.0"
+dependencies = [
+ "game-foundation",
+ "ramus-core",
 ]
 
 [[package]]
@@ -1082,6 +1101,7 @@ dependencies = [
  "battle-session",
  "game-assets",
  "game-data",
+ "game-foundation",
  "game-ui",
  "game-ui-kit",
  "map-project",

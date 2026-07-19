@@ -17,6 +17,7 @@ members = [
     "crates/foundation/ramus",
     "crates/application/battle-application",
     "crates/application/battle-session",
+    "crates/application/game-foundation",
     "crates/application/game-session",
     "crates/application/map-editor-core",
     "crates/application/tile-editor-core",
@@ -32,6 +33,7 @@ members = [
     "crates/presentation/map-render",
     "crates/presentation/map-editor-view",
     "crates/adapter/battle-ramus-adapter",
+    "crates/adapter/game-ramus-adapter",
     "crates/adapter/game-data-import-core",
     "crates/adapter/game-data-import",
     "crates/adapter/game-fs-assets",
@@ -57,6 +59,7 @@ rust-version = "1.88"
 battle-application = { path = "crates/application/battle-application" }
 battle-domain = { path = "crates/domain/battle/battle-domain" }
 battle-session = { path = "crates/application/battle-session" }
+game-foundation = { path = "crates/application/game-foundation" }
 world-application = { path = "crates/application/world-application" }
 map-editor-core = { path = "crates/application/map-editor-core" }
 game-session = { path = "crates/application/game-session" }
@@ -70,6 +73,7 @@ game-data-import-core = { path = "crates/adapter/game-data-import-core" }
 game-fs-assets = { path = "crates/adapter/game-fs-assets" }
 game-native-target = { path = "crates/adapter/game-native-target" }
 battle-ramus-adapter = { path = "crates/adapter/battle-ramus-adapter" }
+game-ramus-adapter = { path = "crates/adapter/game-ramus-adapter" }
 map-render = { path = "crates/presentation/map-render" }
 map-assets = { path = "crates/presentation/map-assets" }
 map-editor-view = { path = "crates/presentation/map-editor-view" }

@@ -8,10 +8,11 @@
 mod projection;
 
 pub use projection::{
-    BattleAnimation, BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, GameView, LayerKind,
-    ProjectionError, TextLabel, TextRole, ViewCell, ViewImage, ViewLayer, compose_world,
-    move_category_icon_asset, opponent_front_asset, pill_ui_asset, player_back_asset,
-    pokemon_icon_asset, project_battle, project_battle_ui, project_console, project_console_ui,
-    project_pokedex, project_world, project_world_animated, project_world_presented,
-    rounded_ui_asset, type_icon_asset, with_console, world_character_asset,
+    BattleAnimation, BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, FoundationPage,
+    FoundationPageAction, GameView, LayerKind, ProjectionError, TextLabel, TextRole, ViewCell,
+    ViewImage, ViewLayer, compose_world, move_category_icon_asset, opponent_front_asset,
+    pill_ui_asset, player_back_asset, pokemon_icon_asset, project_battle, project_battle_ui,
+    project_console, project_console_ui, project_foundation, project_pokedex, project_world,
+    project_world_animated, project_world_presented, rounded_ui_asset, type_icon_asset,
+    with_console, world_character_asset,
 };

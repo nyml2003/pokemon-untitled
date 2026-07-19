@@ -1,6 +1,7 @@
 mod map;
 mod narrative;
 mod sprites;
+mod thin_slice;
 
 use std::{
     error::Error,
@@ -10,21 +11,25 @@ use std::{
 };
 
 use game_data::{CurrentDataSet, PokedexData};
+use game_foundation::{GameState as FoundationState, ThinSliceContent};
 use game_native_target::{
     FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, WinitCommittedTextSnapshot,
     WinitKeyEventSnapshot, normalize_committed_text, normalize_key_event,
 };
+use game_ramus_adapter::{GameRamusRouter, RoutedIntent};
 use game_scene_view::{SceneFrame, SceneViewInput, game_viewport, project_scene};
 use game_session::{GameCommand, GameError, GameEvents, GameScene, GameSession};
 use game_ui::{
     GameConsole, PokedexAction, PresentationAction, PresentationState, PresentationUpdate,
 };
+use game_view::{FoundationPage, FoundationPageAction, project_foundation};
 use map::load_map;
 use map_project::MapProject;
 use map_render::AtomicTileCatalog;
 use narrative::load_narrative_scripts;
 use punctum_gpu::{PixelSize, Rgba8};
-use punctum_ui::UiFrame;
+use punctum_input::{KeyPhase, LogicalKey, NamedKey};
+use punctum_ui::{UiFrame, UiSize};
 use sprites::load_game_assets;
 use winit::{
     application::ApplicationHandler,
@@ -38,9 +43,14 @@ use winit::{
 const CLEAR_COLOR: Rgba8 = Rgba8::new(14, 18, 24, 255);
 const GAME_TEXT_SCALE: TextScale = TextScale::new(3, 5, 10, 28);
 const WORLD_LOGIC_TICK: Duration = Duration::from_secs(1);
+const FOUNDATION_SAVE_PATH: &str = "target/foundation-page.save.json";
 
 struct CreatureGameApp {
     game: Option<GameSession>,
+    foundation_content: ThinSliceContent,
+    foundation_state: FoundationState,
+    foundation_router: GameRamusRouter,
+    foundation_page: Option<FoundationPage>,
     pokedex: PokedexData,
     presentation: PresentationState,
     map_project: MapProject,
@@ -50,6 +60,7 @@ struct CreatureGameApp {
     modifiers: ModifiersState,
     cursor: Option<PhysicalPosition<f64>>,
     pokedex_frame: Option<UiFrame<PokedexAction>>,
+    foundation_frame: Option<UiFrame<FoundationPageAction>>,
     last_real_instant: Instant,
     next_world_tick: Instant,
     next_wakeup: Option<Instant>,
@@ -59,6 +70,13 @@ struct CreatureGameApp {
 
 impl CreatureGameApp {
     fn new() -> Result<Self, Box<dyn Error>> {
+        let foundation_content = ThinSliceContent::standard()
+            .map_err(|error| std::io::Error::other(format!("foundation content: {error:?}")))?;
+        let foundation_state = FoundationState::new(&foundation_content)
+            .map_err(|error| std::io::Error::other(format!("foundation state: {error:?}")))?;
+        let foundation_router = GameRamusRouter::new().map_err(|error| {
+            std::io::Error::other(format!("foundation Ramus router: {error:?}"))
+        })?;
         let loaded_map = load_map()?;
         let world = world_application::WorldApplication::from_map_project_with_scripts(
             &loaded_map.project,
@@ -81,6 +99,10 @@ impl CreatureGameApp {
         let now = Instant::now();
         Ok(Self {
             game: Some(game),
+            foundation_content,
+            foundation_state,
+            foundation_router,
+            foundation_page: None,
             pokedex,
             presentation: PresentationState::default(),
             map_project: loaded_map.project,
@@ -90,6 +112,7 @@ impl CreatureGameApp {
             modifiers: ModifiersState::empty(),
             cursor: None,
             pokedex_frame: None,
+            foundation_frame: None,
             last_real_instant: now,
             next_world_tick: now + WORLD_LOGIC_TICK,
             next_wakeup: None,
@@ -132,6 +155,62 @@ impl CreatureGameApp {
             return;
         };
         let viewport = game_viewport(surface_size);
+        if let Some(page) = self.foundation_page {
+            let tree =
+                match project_foundation(&self.foundation_content, &self.foundation_state, page) {
+                    Ok(tree) => tree,
+                    Err(error) => {
+                        eprintln!("foundation page tree construction failed: {error}");
+                        event_loop.exit();
+                        return;
+                    }
+                };
+            let frame = match tree.resolve(UiSize::new(
+                viewport.target_size.width,
+                viewport.target_size.height,
+            )) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    eprintln!("foundation page layout failed: {error}");
+                    event_loop.exit();
+                    return;
+                }
+            };
+            self.foundation_frame = Some(frame.clone());
+            let plan = match FramePlan::from_ui_frame(
+                &frame,
+                &self.assets,
+                TextScale::new(1, 1, 16, 28),
+            ) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    eprintln!("foundation page GPU planning failed: {error}");
+                    event_loop.exit();
+                    return;
+                }
+            };
+            let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
+                return;
+            };
+            match runtime.present(&plan) {
+                Ok(PresentOutcome::Reconfigured | PresentOutcome::SurfaceLost) => {
+                    runtime.resize(runtime.surface_size());
+                    window.request_redraw();
+                }
+                Ok(
+                    PresentOutcome::Presented
+                    | PresentOutcome::PresentedAndReconfigured
+                    | PresentOutcome::SkippedMinimized
+                    | PresentOutcome::SkippedTimeout
+                    | PresentOutcome::SkippedOccluded,
+                ) => {}
+                Err(error) => {
+                    eprintln!("foundation page presentation failed: {error}");
+                    event_loop.exit();
+                }
+            }
+            return;
+        }
         let Some(game) = self.game() else {
             event_loop.exit();
             return;
@@ -168,6 +247,7 @@ impl CreatureGameApp {
             SceneFrame::PokedexWithUi { base, .. } => Some(base.clone()),
             _ => None,
         };
+        self.foundation_frame = None;
         let plan_result = match projected.frame {
             SceneFrame::Grid(view) => {
                 FramePlan::from_game_view(&view, &self.assets, viewport, GAME_TEXT_SCALE)
@@ -264,6 +344,21 @@ impl CreatureGameApp {
             event.state,
             event.repeat,
         ));
+        if key.phase == KeyPhase::Press
+            && matches!(&key.logical, LogicalKey::Character(value) if value.eq_ignore_ascii_case("f"))
+        {
+            self.foundation_page = if self.foundation_page.is_some() {
+                None
+            } else {
+                Some(FoundationPage::Journey)
+            };
+            self.request_redraw();
+            return;
+        }
+        if self.foundation_page.is_some() {
+            self.handle_foundation_key(&key);
+            return;
+        }
         let Some(game) = self.game() else {
             return;
         };
@@ -297,6 +392,175 @@ impl CreatureGameApp {
         let (presentation, update) = presentation.handle_pokedex_action(action);
         self.presentation = presentation;
         self.apply_presentation_update(update);
+    }
+
+    fn handle_foundation_click(&mut self) {
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+        let Some(action) = self
+            .foundation_frame
+            .as_ref()
+            .and_then(|frame| frame.hit_action(cursor.x.max(0.0) as u32, cursor.y.max(0.0) as u32))
+            .copied()
+        else {
+            return;
+        };
+        self.dispatch_foundation_action(action);
+    }
+
+    fn handle_foundation_key(&mut self, key: &punctum_input::KeyEvent) {
+        if key.phase != KeyPhase::Press {
+            return;
+        }
+        let action = match &key.logical {
+            LogicalKey::Named(NamedKey::Escape) => Some(FoundationPageAction::Close),
+            LogicalKey::Named(NamedKey::ArrowUp) => {
+                Some(FoundationPageAction::Move(game_foundation::Direction::Up))
+            }
+            LogicalKey::Named(NamedKey::ArrowDown) => {
+                Some(FoundationPageAction::Move(game_foundation::Direction::Down))
+            }
+            LogicalKey::Named(NamedKey::ArrowLeft) => {
+                Some(FoundationPageAction::Move(game_foundation::Direction::Left))
+            }
+            LogicalKey::Named(NamedKey::ArrowRight) => Some(FoundationPageAction::Move(
+                game_foundation::Direction::Right,
+            )),
+            LogicalKey::Named(NamedKey::Enter) => Some(FoundationPageAction::Interact),
+            LogicalKey::Character(value) if value.eq_ignore_ascii_case("e") => {
+                Some(FoundationPageAction::Encounter)
+            }
+            LogicalKey::Character(value) if value.eq_ignore_ascii_case("r") => {
+                Some(FoundationPageAction::ResolveBattle)
+            }
+            LogicalKey::Character(value) if value.eq_ignore_ascii_case("b") => {
+                Some(FoundationPageAction::BuyPotion)
+            }
+            LogicalKey::Character(value) if value.eq_ignore_ascii_case("s") => {
+                Some(FoundationPageAction::Save)
+            }
+            _ => None,
+        };
+        if let Some(action) = action {
+            self.dispatch_foundation_action(action);
+        }
+    }
+
+    fn dispatch_foundation_action(&mut self, action: FoundationPageAction) {
+        match action {
+            FoundationPageAction::SelectPage(page) => self.foundation_page = Some(page),
+            FoundationPageAction::Close => self.foundation_page = None,
+            FoundationPageAction::Move(direction) => {
+                self.route_foundation_source(&format!(
+                    "/game/world move direction={}",
+                    foundation_direction(direction)
+                ));
+            }
+            FoundationPageAction::Interact => {
+                if let Some(npc) = self.foundation_npc_in_front() {
+                    self.route_foundation_source(&format!("/game/npc interact npc={npc}"));
+                } else {
+                    eprintln!("foundation interaction rejected: no NPC in front of the player");
+                }
+            }
+            FoundationPageAction::Encounter => {
+                self.route_foundation_source("/game/world encounter roll=7");
+            }
+            FoundationPageAction::ResolveBattle => {
+                let Some(creature) = self.foundation_state.party().first() else {
+                    eprintln!("foundation battle resolution rejected: party is empty");
+                    self.request_redraw();
+                    return;
+                };
+                let hp = creature.hp().saturating_sub(1).max(1);
+                let pp = creature.pp().saturating_sub(1);
+                self.route_foundation_source(&format!(
+                    "/game/battle resolve outcome=victory hp={hp} pp={pp}"
+                ));
+            }
+            FoundationPageAction::BuyPotion => {
+                if let Some(npc) = self.foundation_npc_in_front() {
+                    self.route_foundation_source(&format!(
+                        "/game/shop buy npc={npc} item=potion quantity=1"
+                    ));
+                } else {
+                    eprintln!("foundation purchase rejected: no merchant in front of the player");
+                }
+            }
+            FoundationPageAction::Save => self.route_foundation_source("/game/save save"),
+        }
+        self.request_redraw();
+    }
+
+    fn route_foundation_source(&mut self, source: &str) {
+        let intents = match self.foundation_router.route(source) {
+            Ok(intents) => intents,
+            Err(error) => {
+                eprintln!(
+                    "foundation Ramus intent rejected: {}: {}",
+                    error.code, error.message
+                );
+                return;
+            }
+        };
+        for intent in intents {
+            match intent {
+                RoutedIntent::Command(command) => {
+                    let (state, result) = self
+                        .foundation_state
+                        .clone()
+                        .transition(&self.foundation_content, command);
+                    match result {
+                        Ok(_) => self.foundation_state = state,
+                        Err(error) => {
+                            eprintln!("foundation command rejected: {error:?}");
+                            return;
+                        }
+                    }
+                }
+                RoutedIntent::Save => match thin_slice::save_and_reload(
+                    &self.foundation_content,
+                    self.foundation_state.clone(),
+                    std::path::Path::new(FOUNDATION_SAVE_PATH),
+                ) {
+                    Ok(state) => self.foundation_state = state,
+                    Err(error) => {
+                        eprintln!("foundation save rejected: {error}");
+                        return;
+                    }
+                },
+            }
+        }
+    }
+
+    fn foundation_npc_in_front(&self) -> Option<String> {
+        let position = self.foundation_state.position();
+        let facing = self.foundation_state.facing();
+        self.foundation_content
+            .npcs_on_map(self.foundation_state.map())
+            .find(|npc| {
+                let npc_position = npc.actor().position();
+                match facing {
+                    game_foundation::Direction::Up => {
+                        npc_position.x() == position.x()
+                            && npc_position.y().checked_add(1) == Some(position.y())
+                    }
+                    game_foundation::Direction::Down => {
+                        npc_position.x() == position.x()
+                            && position.y().checked_add(1) == Some(npc_position.y())
+                    }
+                    game_foundation::Direction::Left => {
+                        npc_position.y() == position.y()
+                            && npc_position.x().checked_add(1) == Some(position.x())
+                    }
+                    game_foundation::Direction::Right => {
+                        npc_position.y() == position.y()
+                            && position.x().checked_add(1) == Some(npc_position.x())
+                    }
+                }
+            })
+            .map(|npc| npc.actor().id().as_str().to_owned())
     }
 
     fn apply_presentation_update(&mut self, update: PresentationUpdate) {
@@ -462,7 +726,13 @@ impl ApplicationHandler for CreatureGameApp {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } => self.handle_pokedex_click(),
+            } => {
+                if self.foundation_page.is_some() {
+                    self.handle_foundation_click();
+                } else {
+                    self.handle_pokedex_click();
+                }
+            }
             WindowEvent::Ime(event) => self.handle_ime_event(event),
             WindowEvent::RedrawRequested => self.redraw(event_loop),
             _ => {}
@@ -507,7 +777,19 @@ fn pixel_size(size: PhysicalSize<u32>) -> PixelSize {
     PixelSize::new(size.width, size.height)
 }
 
+const fn foundation_direction(direction: game_foundation::Direction) -> &'static str {
+    match direction {
+        game_foundation::Direction::Up => "up",
+        game_foundation::Direction::Down => "down",
+        game_foundation::Direction::Left => "left",
+        game_foundation::Direction::Right => "right",
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
+    if let Some(exit) = thin_slice::run_from_arguments(std::env::args_os().skip(1))? {
+        return exit;
+    }
     let event_loop = EventLoop::new()?;
     let mut app = CreatureGameApp::new()?;
     event_loop.run_app(&mut app)?;

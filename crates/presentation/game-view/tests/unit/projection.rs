@@ -7,6 +7,7 @@ use battle_session::{
     OpponentPolicy,
 };
 use game_data::PokedexData;
+use game_foundation::{GameState, ThinSliceContent};
 use map_project::{
     AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection, MapProject,
     MapProjectId, TilePosition,
@@ -21,11 +22,54 @@ use game_ui::{
 };
 
 use super::{
-    BattleSpriteResources, LayerKind, TextRole, ViewCell, ViewLayer, compose_world,
-    move_category_icon_asset, pill_ui_asset, pokemon_icon_asset, project_battle, project_battle_ui,
-    project_console, project_console_ui, project_pokedex, project_world, rounded_ui_asset,
-    type_icon_asset, world_character_asset,
+    BattleSpriteResources, FoundationPage, FoundationPageAction, LayerKind, TextRole, ViewCell,
+    ViewLayer, compose_world, move_category_icon_asset, pill_ui_asset, pokemon_icon_asset,
+    project_battle, project_battle_ui, project_console, project_console_ui, project_foundation,
+    project_pokedex, project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
 };
+
+#[test]
+fn foundation_pages_project_state_and_expose_typed_actions() {
+    let content = ThinSliceContent::standard().unwrap();
+    let state = GameState::new(&content).unwrap();
+    for page in [
+        FoundationPage::Journey,
+        FoundationPage::Bag,
+        FoundationPage::TrainerCard,
+    ] {
+        let tree = project_foundation(&content, &state, page).unwrap();
+        for viewport in [
+            punctum_ui::UiSize::new(960, 720),
+            punctum_ui::UiSize::new(640, 480),
+            punctum_ui::UiSize::new(320, 240),
+        ] {
+            assert!(tree.resolve(viewport).is_ok());
+        }
+        let frame = tree.resolve(punctum_ui::UiSize::new(960, 720)).unwrap();
+        assert!(
+            frame
+                .action_hits()
+                .iter()
+                .any(|region| region.action == FoundationPageAction::Close)
+        );
+    }
+    let journey = project_foundation(&content, &state, FoundationPage::Journey)
+        .unwrap()
+        .resolve(punctum_ui::UiSize::new(960, 720))
+        .unwrap();
+    assert!(journey.action_hits().iter().any(|region| {
+        region.action == FoundationPageAction::Move(game_foundation::Direction::Up)
+    }));
+    let bag = project_foundation(&content, &state, FoundationPage::Bag)
+        .unwrap()
+        .resolve(punctum_ui::UiSize::new(960, 720))
+        .unwrap();
+    assert!(
+        bag.action_hits()
+            .iter()
+            .any(|region| region.action == FoundationPageAction::BuyPotion)
+    );
+}
 
 #[test]
 fn pokedex_projects_its_selected_canonical_front() {
