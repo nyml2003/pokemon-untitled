@@ -95,7 +95,7 @@ fn team(prefix: &str, lead: Pokemon, bench_hp: u32) -> Team {
 
 fn session(player: Team, opponent: Team, seed: u64) -> BattleSession<FirstMovePolicy> {
     let application = BattleApplication::new(player, opponent, seed).unwrap();
-    BattleSession::new(BattleCoordinator::new(application, FirstMovePolicy))
+    BattleSession::new(BattleCoordinator::new(application, FirstMovePolicy)).unwrap()
 }
 
 fn submit(
@@ -108,7 +108,9 @@ fn submit(
 }
 
 fn advance(session: BattleSession<FirstMovePolicy>) -> (BattleSession<FirstMovePolicy>, bool) {
-    session.advance()
+    let (session, advanced) = session.advance();
+    let advanced = advanced.unwrap();
+    (session, advanced)
 }
 
 fn drain(mut session: BattleSession<FirstMovePolicy>) -> BattleSession<FirstMovePolicy> {
@@ -130,6 +132,7 @@ fn input_and_policy_failures_leave_explicit_session_states() {
     );
     let initial = session(player.clone(), opponent.clone(), 1);
     let (initial, advanced) = initial.advance();
+    let advanced = advanced.unwrap();
     assert!(!advanced);
     let before = initial.snapshot();
     let (initial, rejected) = initial.submit(Action::Switch(TeamSlot::new(0).unwrap()));
@@ -141,7 +144,7 @@ fn input_and_policy_failures_leave_explicit_session_states() {
 
     let application = BattleApplication::new(player.clone(), opponent.clone(), 1).unwrap();
     let coordinator = BattleCoordinator::new(application, NoActionPolicy);
-    let locked = BattleSession::new(coordinator);
+    let locked = BattleSession::new(coordinator).unwrap();
     let action = locked.legal_actions()[0];
     let (_locked, result) = locked.submit(action);
     assert_eq!(result, Err(SessionError::OpponentActionUnavailable));

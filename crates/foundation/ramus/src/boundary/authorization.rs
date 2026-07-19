@@ -14,12 +14,8 @@ impl CapabilityGeneration {
         Self(1)
     }
 
-    fn next(self) -> Self {
-        Self(
-            self.0
-                .checked_add(1)
-                .expect("capability generation exhausted"),
-        )
+    fn next(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
     }
 }
 
@@ -80,6 +76,7 @@ pub struct AuthorizationRevoker {
 pub struct AuthorizationSession<'a> {
     state: MutexGuard<'a, AuthorizationState>,
     principal: &'a Principal,
+    missing_authorization: PrincipalAuthorization,
 }
 
 struct AuthorizationState {
@@ -104,7 +101,7 @@ impl AuthorizationService {
 
     pub fn create_principal(&self, id: impl Into<String>) -> Result<Principal, PrincipalError> {
         let id = PrincipalId::new(id).map_err(|_| PrincipalError::InvalidId)?;
-        let mut state = self.state.lock().expect("authorization mutex poisoned");
+        let mut state = lock_state(&self.state)?;
         if state.principals.contains_key(&id) {
             return Err(PrincipalError::DuplicateId);
         }
@@ -136,15 +133,12 @@ impl AuthorizationService {
         principal: &Principal,
     ) -> Result<CapabilityGeneration, PrincipalError> {
         self.verify_principal(principal)?;
-        Ok(self
-            .state
-            .lock()
-            .expect("authorization mutex poisoned")
+        let state = lock_state(&self.state)?;
+        state
             .principals
             .get(&principal.id)
-            .map_or(CapabilityGeneration::initial(), |authorization| {
-                authorization.generation
-            }))
+            .map(|authorization| authorization.generation)
+            .ok_or(PrincipalError::UnknownPrincipal)
     }
 
     pub fn grant(
@@ -155,26 +149,41 @@ impl AuthorizationService {
         capability: Capability,
     ) -> Result<(), PrincipalError> {
         self.verify_principal(principal)?;
-        let mut state = self.state.lock().expect("authorization mutex poisoned");
+        let mut state = lock_state(&self.state)?;
         let grant = CapabilityGrant {
             path,
             method,
             capability,
         };
-        let authorization = state.principals.entry(principal.id.clone()).or_default();
-        if authorization.grants.insert(grant) {
-            authorization.generation = authorization.generation.next();
+        let authorization = state
+            .principals
+            .get_mut(&principal.id)
+            .ok_or(PrincipalError::UnknownPrincipal)?;
+        if !authorization.grants.contains(&grant) {
+            let generation = authorization
+                .generation
+                .next()
+                .ok_or(PrincipalError::GenerationExhausted)?;
+            authorization.grants.insert(grant);
+            authorization.generation = generation;
         }
         Ok(())
     }
 
     pub fn revoke_all(&self, principal: &Principal) -> Result<(), PrincipalError> {
         self.verify_principal(principal)?;
-        let mut state = self.state.lock().expect("authorization mutex poisoned");
-        let authorization = state.principals.entry(principal.id.clone()).or_default();
+        let mut state = lock_state(&self.state)?;
+        let authorization = state
+            .principals
+            .get_mut(&principal.id)
+            .ok_or(PrincipalError::UnknownPrincipal)?;
         if !authorization.grants.is_empty() {
+            let generation = authorization
+                .generation
+                .next()
+                .ok_or(PrincipalError::GenerationExhausted)?;
             authorization.grants.clear();
-            authorization.generation = authorization.generation.next();
+            authorization.generation = generation;
         }
         Ok(())
     }
@@ -184,9 +193,14 @@ impl AuthorizationService {
         principal: &'a Principal,
     ) -> Result<AuthorizationSession<'a>, PrincipalError> {
         self.verify_principal(principal)?;
+        let state = lock_state(&self.state)?;
+        if !state.principals.contains_key(&principal.id) {
+            return Err(PrincipalError::UnknownPrincipal);
+        }
         Ok(AuthorizationSession {
-            state: self.state.lock().expect("authorization mutex poisoned"),
+            state,
             principal,
+            missing_authorization: PrincipalAuthorization::default(),
         })
     }
 
@@ -203,7 +217,7 @@ impl AuthorizationSession<'_> {
             .state
             .principals
             .get(&self.principal.id)
-            .expect("issued principals remain registered");
+            .unwrap_or(&self.missing_authorization);
         CapabilityView::new(
             self.principal,
             authorization.generation,
@@ -241,7 +255,7 @@ impl AuthorizationChecker {
         after_lock: impl FnOnce(),
     ) -> Option<EffectPermit> {
         self.verify_principal(principal).ok()?;
-        let state = self.state.lock().expect("authorization mutex poisoned");
+        let state = self.state.lock().ok()?;
         after_lock();
         let authorization = state.principals.get(&principal.id)?;
         let granted = allows(&authorization.grants, path, method, capability);
@@ -271,15 +285,19 @@ impl AuthorizationRevoker {
         after_lock: impl FnOnce(),
     ) -> Result<(), PrincipalError> {
         self.verify_principal(principal)?;
-        let mut state = self.state.lock().expect("authorization mutex poisoned");
+        let mut state = lock_state(&self.state)?;
         after_lock();
         let authorization = state
             .principals
             .get_mut(&principal.id)
-            .expect("issued principals remain registered");
+            .ok_or(PrincipalError::UnknownPrincipal)?;
         if !authorization.grants.is_empty() {
+            let generation = authorization
+                .generation
+                .next()
+                .ok_or(PrincipalError::GenerationExhausted)?;
             authorization.grants.clear();
-            authorization.generation = authorization.generation.next();
+            authorization.generation = generation;
         }
         Ok(())
     }
@@ -302,6 +320,15 @@ pub enum PrincipalError {
     InvalidId,
     DuplicateId,
     ForeignAuthority,
+    UnknownPrincipal,
+    StateUnavailable,
+    GenerationExhausted,
+}
+
+fn lock_state(
+    state: &Mutex<AuthorizationState>,
+) -> Result<MutexGuard<'_, AuthorizationState>, PrincipalError> {
+    state.lock().map_err(|_| PrincipalError::StateUnavailable)
 }
 
 impl Default for CapabilityGeneration {

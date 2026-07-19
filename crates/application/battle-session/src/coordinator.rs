@@ -1,5 +1,6 @@
 use battle_application::{
     Action, BattleApplication, BattleError, BattleObservation, BattlePerspective, BattleTransition,
+    TransitionError,
 };
 
 pub trait OpponentPolicy {
@@ -28,7 +29,7 @@ impl<P: OpponentPolicy> BattleCoordinator<P> {
         }
     }
 
-    pub fn player_observation(&self) -> BattleObservation {
+    pub fn player_observation(&self) -> Result<BattleObservation, BattleError> {
         self.application.observe(&self.player)
     }
 
@@ -40,7 +41,10 @@ impl<P: OpponentPolicy> BattleCoordinator<P> {
         mut self,
         action: Action,
     ) -> (Self, Result<BattleTransition, CoordinatorError>) {
-        let checkpoint = self.application.checkpoint(&self.player);
+        let checkpoint = match self.application.checkpoint(&self.player) {
+            Ok(checkpoint) => checkpoint,
+            Err(error) => return (self, Err(error.into())),
+        };
         let outcome = match self.application.submit(&self.player, action) {
             Ok(outcome) => outcome,
             Err(error) => return (self, Err(error.into())),
@@ -53,17 +57,14 @@ impl<P: OpponentPolicy> BattleCoordinator<P> {
         if let Err(error) = self.resolve_opponent_only_replacements() {
             return (self, Err(error));
         }
-        let transition = self
-            .application
-            .transition_since(checkpoint)
-            .expect("a coordinator checkpoint belongs to its application and event log");
-        (self, Ok(transition))
+        let transition = self.application.transition_since(checkpoint);
+        (self, transition.map_err(CoordinatorError::Transition))
     }
 
     fn resolve_opponent_only_replacements(&mut self) -> Result<(), CoordinatorError> {
         loop {
-            let player = self.application.observe(&self.player);
-            let opponent = self.application.observe(&self.opponent);
+            let player = self.application.observe(&self.player)?;
+            let opponent = self.application.observe(&self.opponent)?;
             let player_required = player.phase().requires_replacement(player.viewer());
             let opponent_required = opponent.phase().requires_replacement(opponent.viewer());
             if !opponent_required || player_required {
@@ -74,7 +75,7 @@ impl<P: OpponentPolicy> BattleCoordinator<P> {
     }
 
     fn submit_opponent(&mut self) -> Result<(), CoordinatorError> {
-        let observation = self.application.observe(&self.opponent);
+        let observation = self.application.observe(&self.opponent)?;
         let legal_actions = self.application.legal_actions(&self.opponent);
         let action = self
             .opponent_policy
@@ -88,6 +89,7 @@ impl<P: OpponentPolicy> BattleCoordinator<P> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CoordinatorError {
     Battle(BattleError),
+    Transition(TransitionError),
     OpponentActionUnavailable,
 }
 

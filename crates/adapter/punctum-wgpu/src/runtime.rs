@@ -264,11 +264,10 @@ impl<'window> GpuRuntime<'window> {
         self.present_plans_with_overlays(
             &[plan],
             move |_, device, queue, target, encoder, format, size| {
-                overlay
-                    .take()
-                    .expect("the single-plan overlay is encoded once")(
-                    device, queue, target, encoder, format, size,
-                );
+                let Some(encode) = overlay.take() else {
+                    return;
+                };
+                encode(device, queue, target, encoder, format, size);
             },
         )
     }
@@ -337,7 +336,7 @@ impl<'window> GpuRuntime<'window> {
         if policy.reconfigure {
             self.surface.configure(&self.device, &self.config);
         }
-        Ok(policy.outcome.expect("acquired frames have an outcome"))
+        policy.outcome.ok_or(GpuRuntimeError::SurfaceValidation)
     }
 
     fn finish_unacquired_frame(

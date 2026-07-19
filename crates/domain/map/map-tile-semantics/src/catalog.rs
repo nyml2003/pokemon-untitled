@@ -281,7 +281,9 @@ fn lint_patterns(
             if dx == 0 && dy == 0 || dx.unsigned_abs() > 1 || dy.unsigned_abs() > 1 {
                 continue;
             }
-            let direction = direction_for(dx, dy).expect("adjacent delta has a direction");
+            let Some(direction) = direction_for(dx, dy) else {
+                continue;
+            };
             if !neighbour_layers(project, position, direction).contains(&expected.tile) {
                 diagnostics.push(MapSemanticDiagnostic::pattern(
                     position,

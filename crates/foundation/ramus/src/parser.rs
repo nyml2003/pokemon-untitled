@@ -40,6 +40,7 @@ pub enum ForbiddenSyntax {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ParseDiagnosticKind {
     SourceTooLarge,
+    InvalidSourceBoundary,
     TooManyCalls,
     TooManyArguments,
     EmptyInput,
@@ -170,14 +171,17 @@ pub fn parse_with_limits(source: &str, limits: ParseLimits) -> Result<Document, 
         return Err(ParseFailure { diagnostics });
     }
 
-    let span = Span::new(
-        calls
-            .first()
-            .expect("non-empty source has a line")
-            .span
-            .start,
-        calls.last().expect("non-empty source has a line").span.end,
-    );
+    let (Some(first), Some(last)) = (calls.first(), calls.last()) else {
+        return Err(ParseFailure {
+            diagnostics: vec![diagnostic(
+                ParseDiagnosticKind::EmptyInput,
+                Span::new(0, source.len()),
+                1,
+                1,
+            )],
+        });
+    };
+    let span = Span::new(first.span.start, last.span.end);
     Ok(Document { calls, span })
 }
 
@@ -266,10 +270,7 @@ fn lex_line(source: &str, line: SourceLine) -> Result<Vec<Token>, ParseDiagnosti
     let mut offset = line.start;
 
     while offset < line.end {
-        let character = source[offset..line.end]
-            .chars()
-            .next()
-            .expect("offset is on a character boundary");
+        let character = character_at(source, line, offset)?;
         if matches!(character, ' ' | '\t') {
             offset += character.len_utf8();
             continue;
@@ -386,10 +387,7 @@ fn lex_quoted(
     let mut offset = start + 1;
 
     while offset < line.end {
-        let character = source[offset..line.end]
-            .chars()
-            .next()
-            .expect("offset is on a character boundary");
+        let character = character_at(source, line, offset)?;
         match character {
             '"' => return Ok((decoded, offset + 1)),
             '\\' => {
@@ -403,10 +401,7 @@ fn lex_quoted(
                         line,
                     ));
                 }
-                let escape = source[offset..line.end]
-                    .chars()
-                    .next()
-                    .expect("escape is on a character boundary");
+                let escape = character_at(source, line, offset)?;
                 let value = match escape {
                     '"' => '"',
                     '\\' => '\\',
@@ -639,13 +634,29 @@ fn forbidden_diagnostic(
     )
 }
 
+fn character_at(source: &str, line: SourceLine, offset: usize) -> Result<char, ParseDiagnostic> {
+    source
+        .get(offset..line.end)
+        .and_then(|text| text.chars().next())
+        .ok_or_else(|| {
+            source_diagnostic(
+                source,
+                ParseDiagnosticKind::InvalidSourceBoundary,
+                Span::new(offset, offset),
+                line,
+            )
+        })
+}
+
 fn source_diagnostic(
     source: &str,
     kind: ParseDiagnosticKind,
     span: Span,
     line: SourceLine,
 ) -> ParseDiagnostic {
-    let column = source[line.start..span.start].chars().count() + 1;
+    let column = source
+        .get(line.start..span.start)
+        .map_or(1, |prefix| prefix.chars().count() + 1);
     diagnostic(kind, span, line.number, column)
 }
 
@@ -668,6 +679,9 @@ impl fmt::Display for DiagnosticMessage<'_> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
             ParseDiagnosticKind::SourceTooLarge => formatter.write_str("source exceeds its limit"),
+            ParseDiagnosticKind::InvalidSourceBoundary => {
+                formatter.write_str("source contains an invalid character boundary")
+            }
             ParseDiagnosticKind::TooManyCalls => {
                 formatter.write_str("call count exceeds its limit")
             }
@@ -1120,6 +1134,10 @@ mod tests {
     #[test]
     fn formats_every_structured_diagnostic_kind() {
         let cases = [
+            (
+                ParseDiagnosticKind::InvalidSourceBoundary,
+                "source contains an invalid character boundary",
+            ),
             (
                 ParseDiagnosticKind::EmptyInput,
                 "expected at least one call",

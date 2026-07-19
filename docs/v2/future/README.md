@@ -11,7 +11,7 @@
 | 持久活世界 | 先定义世界状态、事件账本、版本化存档和 `WorldPatch` 合同。 | 可复现的状态变更、审计和失败路径都已验证。 |
 | 叙事 DSL 与 Ramus | 当前 lexer、单脚本编译和最小 capability 基线可用。 | 通用任务运行时、世界提交/审计及边界治理具备端到端测试。 |
 | 地图存储与流式加载 | 先保留现有地图项目兼容性和编辑器可读性。 | 新格式、迁移、校验与运行时加载均通过兼容性测试。 |
-| Web runtime | 复用 core、场景投影和帧计划；重新实现文件与呈现边界。 | 浏览器 API 未进入 foundation/domain/application，且独立 runtime 已完成目标平台验收。 |
+| Web runtime | 复用 core、场景投影和帧计划；重新实现文件与呈现边界。详见 [Web runtime 与 WebGL 降级方案](web-runtime-webgl.md)。 | 浏览器 API 未进入 foundation/domain/application，且独立 runtime 已完成目标平台验收。 |
 
 ## 产品方向
 

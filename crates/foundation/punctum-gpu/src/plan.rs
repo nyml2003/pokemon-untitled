@@ -133,7 +133,7 @@ pub fn plan_pixels(
         });
     }
     let viewport = Viewport::new(target_size, PixelOffset::new(0, 0), PixelSize::new(1, 1))
-        .expect("one pixel cells are valid");
+        .map_err(|_| GpuPlanError::InvalidPixelViewport { target_size })?;
     let grid_size = GridSize::new(target_size.width, target_size.height);
     let mut ordered: Vec<_> = images.iter().enumerate().collect();
     ordered.sort_by_key(|(index, image)| (image.z_index, *index));
@@ -390,6 +390,9 @@ pub enum GpuPlanError {
         images: usize,
         maximum: u32,
     },
+    InvalidPixelViewport {
+        target_size: PixelSize,
+    },
     PixelImageOutOfBounds {
         bounds: PixelRect,
         target_size: PixelSize,
@@ -429,6 +432,12 @@ impl fmt::Display for GpuPlanError {
                 formatter,
                 "{images} pixel images exceeds the GPU instance limit {maximum}"
             ),
+            Self::InvalidPixelViewport { target_size } => {
+                write!(
+                    formatter,
+                    "cannot create a pixel viewport for {target_size:?}"
+                )
+            }
             Self::PixelImageOutOfBounds {
                 bounds,
                 target_size,

@@ -103,11 +103,14 @@ impl PokedexData {
             return Err(PokedexLoadError::TrailingBytes);
         }
         if entries.len() != usize::from(GEN3_LAST_DEX - GEN3_FIRST_DEX + 1)
-            || entries.iter().enumerate().any(|(index, entry)| {
-                entry.national_dex != GEN3_FIRST_DEX + u16::try_from(index).unwrap()
-                    || entry.front_asset
-                        != format!("pokemon/{:04}/form/00/normal/front/00", entry.national_dex)
-            })
+            || entries
+                .iter()
+                .zip(GEN3_FIRST_DEX..=GEN3_LAST_DEX)
+                .any(|(entry, expected_dex)| {
+                    entry.national_dex != expected_dex
+                        || entry.front_asset
+                            != format!("pokemon/{:04}/form/00/normal/front/00", entry.national_dex)
+                })
         {
             return Err(PokedexLoadError::InvalidEntries);
         }
@@ -147,15 +150,19 @@ impl<'a> PokedexReader<'a> {
     }
 
     fn u16(&mut self) -> Result<u16, PokedexLoadError> {
-        Ok(u16::from_le_bytes(
-            self.take(2)?.try_into().expect("two bytes"),
-        ))
+        let bytes = self
+            .take(2)?
+            .try_into()
+            .map_err(|_| PokedexLoadError::Truncated)?;
+        Ok(u16::from_le_bytes(bytes))
     }
 
     fn u32(&mut self) -> Result<u32, PokedexLoadError> {
-        Ok(u32::from_le_bytes(
-            self.take(4)?.try_into().expect("four bytes"),
-        ))
+        let bytes = self
+            .take(4)?
+            .try_into()
+            .map_err(|_| PokedexLoadError::Truncated)?;
+        Ok(u32::from_le_bytes(bytes))
     }
 
     fn text(&mut self) -> Result<String, PokedexLoadError> {

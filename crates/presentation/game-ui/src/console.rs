@@ -8,15 +8,25 @@ pub struct ConsoleEntry {
     pub invocation: String,
 }
 
-#[derive(Default)]
 pub struct GameConsole {
-    adapter: BattleRamusAdapter,
+    adapter: Result<BattleRamusAdapter, AdapterDiagnostic>,
+}
+
+impl Default for GameConsole {
+    fn default() -> Self {
+        Self {
+            adapter: BattleRamusAdapter::new(),
+        }
+    }
 }
 
 impl GameConsole {
     pub fn entries(&self, legal_actions: &[Action]) -> Vec<ConsoleEntry> {
         self.adapter
-            .action_invocations(legal_actions)
+            .as_ref()
+            .map_err(|error| error.clone())
+            .and_then(|adapter| adapter.action_invocations(legal_actions))
+            .unwrap_or_default()
             .into_iter()
             .map(|item| ConsoleEntry {
                 invocation: item.invocation,
@@ -26,7 +36,9 @@ impl GameConsole {
 
     pub fn execute(&self, invocation: &str) -> Result<Action, String> {
         self.adapter
-            .execute_invocation(invocation)
+            .as_ref()
+            .map_err(|error| error.clone())
+            .and_then(|adapter| adapter.execute_invocation(invocation))
             .map_err(format_diagnostic)
     }
 }

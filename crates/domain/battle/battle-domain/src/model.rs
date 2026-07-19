@@ -1572,12 +1572,11 @@ impl Team {
                 }
             }
         }
-        let mut members = members.into_iter();
-        let members = std::array::from_fn(|_| {
-            members
-                .next()
-                .expect("team length was validated before array construction")
-        });
+        let members = members.try_into().map_err(|members: Vec<Pokemon>| {
+            ValidationError::InvalidTeamSize {
+                count: members.len(),
+            }
+        })?;
         Ok(Self { members })
     }
 

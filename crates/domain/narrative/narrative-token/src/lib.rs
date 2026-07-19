@@ -286,7 +286,12 @@ impl<S: ByteStream> Lexer<S> {
         let namespace = self.read_identifier(first)?;
         if self.peek_byte()? == Some(b':') && self.peek_nth(1)?.is_some_and(is_identifier_start) {
             self.take_byte()?;
-            let name_start = self.take_byte()?.expect("peeked resource name exists");
+            let name_start = self.take_byte()?.ok_or_else(|| {
+                LexError::new(
+                    LexErrorKind::Expected("resource name"),
+                    SourceSpan::new(self.offset, self.offset),
+                )
+            })?;
             let name = self.read_identifier(name_start)?;
             return Ok(TokenKind::Resource(ResourceToken { namespace, name }));
         }
@@ -394,9 +399,13 @@ impl<S: ByteStream> Lexer<S> {
     fn read_identifier(&mut self, first: u8) -> Result<String, LexError> {
         let mut identifier = String::from(char::from(first));
         while self.peek_byte()?.is_some_and(is_identifier_continue) {
-            identifier.push(char::from(
-                self.take_byte()?.expect("peeked identifier byte exists"),
-            ));
+            let byte = self.take_byte()?.ok_or_else(|| {
+                LexError::new(
+                    LexErrorKind::Expected("identifier byte"),
+                    SourceSpan::new(self.offset, self.offset),
+                )
+            })?;
+            identifier.push(char::from(byte));
         }
         Ok(identifier)
     }

@@ -348,9 +348,15 @@ fn read_csv<T: for<'de> Deserialize<'de>>(
         ImportFailure::missing_file(path.clone(), "input was not provided".into())
     })?;
     let mut reader = csv::Reader::from_reader(contents.as_bytes());
-    let headers = reader
-        .headers()
-        .expect("a UTF-8 in-memory CSV source cannot fail while reading its header");
+    let headers = reader.headers().map_err(|error| {
+        ImportFailure::one(
+            ImportDiagnostic::new(
+                ImportDiagnosticCode::InvalidHeader,
+                format!("cannot read CSV header: {error}"),
+            )
+            .file(&path),
+        )
+    })?;
     if let Some(missing) = required_headers
         .iter()
         .find(|required| !headers.iter().any(|header| header == **required))

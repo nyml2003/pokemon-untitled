@@ -404,6 +404,7 @@ mod tests {
         WorldApplication::from_map_project(&project)
             .unwrap()
             .observe()
+            .unwrap()
     }
 
     fn png(width: u32, height: u32) -> Vec<u8> {

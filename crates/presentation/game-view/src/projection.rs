@@ -3182,7 +3182,7 @@ mod tests {
             42,
         )
         .unwrap();
-        BattleSession::new(BattleCoordinator::new(application, FirstActionPolicy))
+        BattleSession::new(BattleCoordinator::new(application, FirstActionPolicy)).unwrap()
     }
 
     fn battle_session_fixture() -> BattleSession<FirstActionPolicy> {
@@ -3513,7 +3513,7 @@ mod tests {
             if battle.has_pending_playback() {
                 let (next, advanced) = battle.advance();
                 battle = next;
-                assert!(advanced);
+                assert!(advanced.unwrap());
             } else {
                 let action = battle.legal_actions()[0];
                 let (next, result) = battle.submit(action);
@@ -3562,11 +3562,11 @@ mod tests {
     #[test]
     fn world_projection_uses_stable_character_keys_and_explicit_layers() {
         let world = WorldApplication::demo().unwrap();
-        let observation = world.observe();
+        let observation = world.observe().unwrap();
         let appearance = observation.actors()[0].appearance();
         let view = project_world(&observation);
 
-        assert_eq!(world.observe().player(), Position::new(3, 6));
+        assert_eq!(world.observe().unwrap().player(), Position::new(3, 6));
         assert_eq!(
             view.layers()
                 .iter()
@@ -3603,7 +3603,7 @@ mod tests {
         let view = compose_world(
             map,
             GridPos::new(-5, 0),
-            &world.observe(),
+            &world.observe().unwrap(),
             WorldAnimation::Walk,
             1,
             punctum_gpu::PixelOffset::new(0, 0),
@@ -3620,7 +3620,7 @@ mod tests {
         let with_console = compose_world(
             map,
             GridPos::new(-5, 0),
-            &world.observe(),
+            &world.observe().unwrap(),
             WorldAnimation::Stand,
             0,
             punctum_gpu::PixelOffset::new(0, 0),
@@ -3666,7 +3666,9 @@ mod tests {
         let observation = WorldApplication::from_map_project_with_scripts(&project, [script])
             .unwrap()
             .advance_npcs()
-            .observe();
+            .unwrap()
+            .observe()
+            .unwrap();
         let view = project_world(&observation);
         assert!(
             view.labels()
@@ -3723,7 +3725,9 @@ mod tests {
         let observation = WorldApplication::from_map_project_with_scripts(&project, [script])
             .map_err(|error| format!("{error:?}"))?
             .advance_npcs()
-            .observe();
+            .map_err(|error| format!("{error:?}"))?
+            .observe()
+            .map_err(|error| format!("{error:?}"))?;
 
         let view = project_world(&observation);
 
@@ -3788,7 +3792,8 @@ mod tests {
         assert_eq!(super::visible_console_start(12, Some(11)), 4);
         assert_eq!(super::visible_console_start(3, None), 0);
 
-        let world = project_world(&WorldApplication::demo().unwrap().observe());
+        let observation = WorldApplication::demo().unwrap().observe().unwrap();
+        let world = project_world(&observation);
         assert_eq!(
             super::with_console(world.layers().to_vec(), None)
                 .layers()

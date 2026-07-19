@@ -453,14 +453,15 @@ mod tests {
         let player = team("player", pokemon("victim", 10, 10, 1, 1));
         let opponent = team("opponent", pokemon("killer", 100, 500, 100, 500));
         let application = BattleApplication::new(player, opponent, 9).unwrap();
-        let mut session = BattleSession::new(BattleCoordinator::new(application, FirstMove));
+        let mut session =
+            BattleSession::new(BattleCoordinator::new(application, FirstMove)).unwrap();
         let action = session.legal_actions()[0];
         let (next, result) = session.submit(action);
         result.unwrap();
         session = next;
         while session.has_pending_playback() {
             let (next, advanced) = session.advance();
-            assert!(advanced);
+            assert!(advanced.unwrap());
             session = next;
         }
         let interaction = session.snapshot().interaction().clone();
@@ -493,6 +494,7 @@ mod tests {
                 FirstMove,
             ),
         )
+        .unwrap()
         .snapshot()
         .interaction()
         {

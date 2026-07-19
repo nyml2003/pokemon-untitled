@@ -255,11 +255,7 @@ impl TileEditorApp {
 
     fn update_title(&self) {
         if let Some(window) = &self.window {
-            let dirty = if self.editor.snapshot().dirty {
-                " *"
-            } else {
-                ""
-            };
+            let dirty = if self.editor.is_dirty() { " *" } else { "" };
             window.set_title(&format!("瓦片编辑器{dirty}"));
         }
     }
@@ -340,8 +336,8 @@ fn project_ui(
     catalog: &AtomicTileCatalog,
     page: usize,
     status: &str,
-) -> Result<UiTree<TileEditorUiAction>, punctum_ui::UiBuildError> {
-    let snapshot = editor.snapshot();
+) -> Result<UiTree<TileEditorUiAction>, Box<dyn Error>> {
+    let snapshot = editor.snapshot()?;
     let mut ids = UiIds::default();
     let palette = palette_panel(&mut ids, editor, catalog, page);
     let inspector = inspector_panel(&mut ids, &snapshot, catalog, status);
@@ -358,6 +354,7 @@ fn project_ui(
             .with_content(UiContent::Fill(BACKGROUND))
             .with_children([palette, inspector]),
     )
+    .map_err(Into::into)
 }
 
 fn palette_panel(

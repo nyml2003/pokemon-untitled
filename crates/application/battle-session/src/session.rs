@@ -95,23 +95,25 @@ pub struct BattleSession<P> {
     playback: Vec<PlaybackStep>,
     playback_cursor: usize,
     pending_after: Option<BattleObservation>,
+    settled_observation: BattleObservation,
     cue: Option<BattleCue>,
 }
 
 impl<P: OpponentPolicy> BattleSession<P> {
-    pub fn new(coordinator: BattleCoordinator<P>) -> Self {
-        let observation = coordinator.player_observation();
+    pub fn new(coordinator: BattleCoordinator<P>) -> Result<Self, SessionError> {
+        let observation = coordinator.player_observation()?;
         let scene = scene_from_observation(&observation);
-        let phase = settled_phase(&coordinator, observation);
-        Self {
+        let phase = settled_phase(&coordinator, observation.clone())?;
+        Ok(Self {
             coordinator,
             scene,
             phase,
             playback: Vec::new(),
             playback_cursor: 0,
             pending_after: None,
+            settled_observation: observation,
             cue: None,
-        }
+        })
     }
 
     pub const fn phase(&self) -> &BattleSessionPhase {
@@ -157,37 +159,42 @@ impl<P: OpponentPolicy> BattleSession<P> {
             Ok(transition) => transition,
             Err(error) => return (self, Err(error.into())),
         };
-        let playback = reduce_transition(&transition)
-            .expect("a coordinator transition reduces to its published final observation");
+        let playback = match reduce_transition(&transition) {
+            Ok(playback) => playback,
+            Err(error) => return (self, Err(SessionError::Replay(error))),
+        };
         self.scene = scene_from_observation(transition.before());
         self.phase = BattleSessionPhase::Playing;
         self.playback = playback;
         self.playback_cursor = 0;
         self.pending_after = Some(transition.after().clone());
+        self.settled_observation = transition.after().clone();
         self.cue = None;
         (self, Ok(()))
     }
 
-    pub fn advance(mut self) -> (Self, bool) {
+    pub fn advance(mut self) -> (Self, Result<bool, SessionError>) {
         if !matches!(self.phase, BattleSessionPhase::Playing) {
-            return (self, false);
+            return (self, Ok(false));
         }
         if let Some(step) = self.playback.get(self.playback_cursor) {
             self.scene = step.scene().clone();
             self.cue = Some(step.cue().clone());
             self.playback_cursor += 1;
-            return (self, true);
+            return (self, Ok(true));
         }
-        let after = self
-            .pending_after
-            .take()
-            .expect("playing sessions own a final observation");
+        let Some(after) = self.pending_after.take() else {
+            return (self, Err(SessionError::MissingPendingObservation));
+        };
         self.scene = scene_from_observation(&after);
-        self.phase = settled_phase(&self.coordinator, after);
+        self.phase = match settled_phase(&self.coordinator, after) {
+            Ok(phase) => phase,
+            Err(error) => return (self, Err(error)),
+        };
         self.playback.clear();
         self.playback_cursor = 0;
         self.cue = None;
-        (self, true)
+        (self, Ok(true))
     }
 
     pub fn has_pending_playback(&self) -> bool {
@@ -199,15 +206,15 @@ impl<P: OpponentPolicy> BattleSession<P> {
     }
 
     pub fn settled_observation(&self) -> BattleObservation {
-        self.coordinator.player_observation()
+        self.settled_observation.clone()
     }
 }
 
 fn settled_phase<P: OpponentPolicy>(
     coordinator: &BattleCoordinator<P>,
     observation: BattleObservation,
-) -> BattleSessionPhase {
-    match observation.phase() {
+) -> Result<BattleSessionPhase, SessionError> {
+    Ok(match observation.phase() {
         BattlePhase::Turn => BattleSessionPhase::AwaitingAction(ActionPrompt {
             observation,
             legal_actions: coordinator.player_legal_actions(),
@@ -221,7 +228,7 @@ fn settled_phase<P: OpponentPolicy>(
         BattlePhase::Finished(outcome) => BattleSessionPhase::Finished(FinishedPrompt {
             outcome: observed_outcome(outcome, observation.viewer()),
         }),
-    }
+    })
 }
 
 const fn observed_outcome(
@@ -251,6 +258,9 @@ pub enum SessionError {
     InputLocked,
     ActionNotOffered { action: Action },
     Battle(BattleError),
+    Transition(battle_application::TransitionError),
+    Replay(crate::ReplayError),
+    MissingPendingObservation,
     OpponentActionUnavailable,
 }
 
@@ -258,8 +268,15 @@ impl From<CoordinatorError> for SessionError {
     fn from(error: CoordinatorError) -> Self {
         match error {
             CoordinatorError::Battle(error) => Self::Battle(error),
+            CoordinatorError::Transition(error) => Self::Transition(error),
             CoordinatorError::OpponentActionUnavailable => Self::OpponentActionUnavailable,
         }
+    }
+}
+
+impl From<BattleError> for SessionError {
+    fn from(error: BattleError) -> Self {
+        Self::Battle(error)
     }
 }
 

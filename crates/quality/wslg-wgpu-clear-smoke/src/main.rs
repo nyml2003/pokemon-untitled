@@ -163,7 +163,10 @@ impl ApplicationHandler for SmokeApp {
         window_id: WindowId,
         event: WindowEvent,
     ) {
-        if self.window.as_ref().map(|window| window.id()) != Some(window_id) {
+        let Some(window) = self.window.as_ref() else {
+            return;
+        };
+        if window.id() != window_id {
             return;
         }
         match event {
@@ -178,22 +181,11 @@ impl ApplicationHandler for SmokeApp {
                     return;
                 };
                 match target.present() {
-                    PresentOutcome::Presented => self
-                        .window
-                        .as_ref()
-                        .expect("the window exists while handling its event")
-                        .request_redraw(),
+                    PresentOutcome::Presented => window.request_redraw(),
                     PresentOutcome::Reconfigure => {
-                        let size = self
-                            .window
-                            .as_ref()
-                            .expect("the window exists while handling its event")
-                            .inner_size();
+                        let size = window.inner_size();
                         target.resize(size);
-                        self.window
-                            .as_ref()
-                            .expect("the window exists while handling its event")
-                            .request_redraw();
+                        window.request_redraw();
                     }
                     PresentOutcome::Skipped => {}
                     PresentOutcome::ValidationError => {

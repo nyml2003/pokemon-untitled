@@ -6,15 +6,21 @@
 
 | 分类 | 位置 | 含义 |
 | --- | --- | --- |
-| 现状 | [`current/`](current/) | 已由当前代码、配置或已验收运行结果证明的事实。 |
+| 现状 | [`current/`](current/README.md) | 已由当前代码、配置或已验收运行结果证明的事实。 |
 | 未来 | [`future/`](future/) | 尚未完成的目标、提案和待决策事项。不能把它当成实现依据。 |
 | 过时 | 不保留文件 | 已被代码或新决策替代的文档直接删除。需要背景时查 Git 历史。 |
 
 ## 从哪里开始
 
-- [当前架构](current/architecture.md)：workspace、分层、入口和数据流。
-- [当前 UI](current/ui.md)：Pixel UI、Grid 路径与迁移边界。
-- [当前开发工作流](current/development.md)：WSL、Windows 镜像和验收入口。
+- [当前架构文档](current/README.md)：按编号阅读当前架构文档。
+- [001 架构总览](current/001-架构总览/README.md)：架构入口、依赖规则和专题导航。
+- [002 系统上下文](current/002-系统上下文/README.md)：用户、工具、资产目录、桌面平台和外部能力。
+- [003 构建块与依赖](current/003-构建块与依赖/README.md)：crate 分层、能力归属、依赖方向和跨层数据合同。
+- [004 游戏运行时](current/004-游戏运行时/README.md)：游戏状态所有权、启动、输入、场景投影和帧提交。
+- [005 地图创作](current/005-地图创作/README.md)：地图与瓦片编辑、地图 CLI 和版本化存储。
+- [006 横切约束](current/006-横切约束/README.md)：资产、错误、平台、质量验证和文档维护。
+- [007 UI](current/007-UI/README.md)：Pixel UI、Grid 路径与迁移边界。
+- [008 开发与验收](current/008-开发与验收/README.md)：WSL、Windows 镜像和验收入口。
 - [未来工作](future/README.md)：尚未完成的产品与技术方向。
 - [维护规则](CONVENTIONS.md)：新建、更新和删除文档的条件。
 

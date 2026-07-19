@@ -9,7 +9,9 @@ use battle_session::{
     BattleCoordinator, BattleSession, BattleSessionSnapshot, OpponentPolicy, SessionError,
 };
 use game_data::CurrentDataSet;
-use world_application::{Direction, WorldApplication, WorldError, WorldEvent, WorldObservation};
+use world_application::{
+    Direction, WorldApplication, WorldApplicationError, WorldError, WorldEvent, WorldObservation,
+};
 
 pub use roster::{DemoSpriteManifest, RosterError};
 
@@ -119,6 +121,7 @@ impl GameBattleSnapshot {
 pub struct GameSession {
     data: CurrentDataSet,
     world: WorldApplication,
+    world_observation: WorldObservation,
     battle: Option<GameBattleSession>,
     scene: GameScene,
     roster_seed: u64,
@@ -131,9 +134,11 @@ impl GameSession {
         roster_seed: u64,
     ) -> Result<Self, GameError> {
         roster::demo_teams(&data, roster_seed).map_err(GameSetupError::from)?;
+        let world_observation = world.observe()?;
         Ok(Self {
             data,
             world,
+            world_observation,
             battle: None,
             scene: GameScene::World,
             roster_seed,
@@ -147,7 +152,7 @@ impl GameSession {
     pub fn snapshot(&self) -> GameSnapshot {
         GameSnapshot {
             scene: self.scene,
-            world: self.world.observe(),
+            world: self.world_observation.clone(),
             battle: self.battle.as_ref().map(GameBattleSession::snapshot),
         }
     }
@@ -198,6 +203,7 @@ impl GameSession {
             .world
             .transition(world_application::WorldCommand::Face(direction));
         self.world = world;
+        self.refresh_world_observation()?;
         let event = outcome.event();
         Ok(GameEvents::one(GameEvent::World(event)))
     }
@@ -208,6 +214,7 @@ impl GameSession {
             .world
             .transition(world_application::WorldCommand::Move(direction));
         self.world = world;
+        self.refresh_world_observation()?;
         let event = outcome.event();
         if outcome.starts_battle() {
             self.battle = Some(GameBattleSession::new(&self.data, self.roster_seed)?);
@@ -222,7 +229,7 @@ impl GameSession {
 
     fn step_world(&mut self, direction: Direction) -> Result<GameEvents, GameError> {
         self.require_scene(GameScene::World)?;
-        if self.world.observe().facing() == direction {
+        if self.world_observation.facing() == direction {
             self.move_world(direction)
         } else {
             self.face_world(direction)
@@ -231,13 +238,19 @@ impl GameSession {
 
     fn advance_world_tick_mut(&mut self) -> Result<GameEvents, GameError> {
         self.require_scene(GameScene::World)?;
-        self.world = self.world.advance_npcs();
+        self.world = self.world.advance_npcs()?;
+        self.refresh_world_observation()?;
         Ok(GameEvents::default())
+    }
+
+    fn refresh_world_observation(&mut self) -> Result<(), GameError> {
+        self.world_observation = self.world.observe()?;
+        Ok(())
     }
 
     fn submit_battle_action(&mut self, action: Action) -> Result<GameEvents, GameError> {
         self.require_scene(GameScene::Battle)?;
-        let battle = self.battle.take().expect("battle scene owns a battle");
+        let battle = self.battle.take().ok_or(GameError::BattleStateMissing)?;
         if battle.has_pending_playback() || battle.is_finished() {
             self.battle = Some(battle);
             return Err(GameError::PlayerActionUnavailable);
@@ -250,10 +263,11 @@ impl GameSession {
 
     fn advance_battle_playback(&mut self) -> Result<GameEvents, GameError> {
         self.require_scene(GameScene::Battle)?;
-        let battle = self.battle.take().expect("battle scene owns a battle");
+        let battle = self.battle.take().ok_or(GameError::BattleStateMissing)?;
         let (battle, advanced) = battle.advance();
         let remains = battle.has_pending_playback();
         self.battle = Some(battle);
+        let advanced = advanced?;
         if !advanced {
             return Err(GameError::PlaybackUnavailable);
         }
@@ -264,12 +278,8 @@ impl GameSession {
 
     fn leave_finished_battle(&mut self) -> Result<GameEvents, GameError> {
         self.require_scene(GameScene::Battle)?;
-        if !self
-            .battle
-            .as_ref()
-            .expect("battle scene owns a battle")
-            .is_finished()
-        {
+        let battle = self.battle.as_ref().ok_or(GameError::BattleStateMissing)?;
+        if !battle.is_finished() {
             return Err(GameError::BattleNotFinished);
         }
         self.battle = None;
@@ -310,7 +320,7 @@ impl GameBattleSession {
         let application =
             BattleApplication::new(player_team, opponent_team, roster_seed ^ 0xA2B3_C4D5)?;
         Ok(Self {
-            session: BattleSession::new(BattleCoordinator::new(application, DemoOpponentPolicy)),
+            session: BattleSession::new(BattleCoordinator::new(application, DemoOpponentPolicy))?,
             own_sprite_ids,
             opponent_sprite_ids,
         })
@@ -340,7 +350,7 @@ impl GameBattleSession {
         (self, result)
     }
 
-    fn advance(mut self) -> (Self, bool) {
+    fn advance(mut self) -> (Self, Result<bool, SessionError>) {
         let (session, advanced) = self.session.advance();
         self.session = session;
         (self, advanced)
@@ -356,9 +366,7 @@ impl GameBattleSession {
 }
 
 fn sprite_slot(ids: &[PokemonId], displayed: &PokemonId) -> usize {
-    ids.iter()
-        .position(|id| id == displayed)
-        .expect("displayed pokemon belongs to the generated roster")
+    ids.iter().position(|id| id == displayed).unwrap_or(0)
 }
 
 struct DemoOpponentPolicy;
@@ -380,10 +388,12 @@ impl OpponentPolicy for DemoOpponentPolicy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum GameError {
     World(WorldError),
+    WorldApplication(WorldApplicationError),
     Battle(SessionError),
     Setup(GameSetupError),
     PlayerActionUnavailable,
     PlaybackUnavailable,
+    BattleStateMissing,
     BattleNotFinished,
     WrongScene {
         expected: GameScene,
@@ -394,6 +404,12 @@ pub enum GameError {
 impl From<WorldError> for GameError {
     fn from(error: WorldError) -> Self {
         Self::World(error)
+    }
+}
+
+impl From<WorldApplicationError> for GameError {
+    fn from(error: WorldApplicationError) -> Self {
+        Self::WorldApplication(error)
     }
 }
 
@@ -413,6 +429,7 @@ impl From<GameSetupError> for GameError {
 pub enum GameSetupError {
     Roster(RosterError),
     Battle(BattleError),
+    Session(SessionError),
 }
 
 impl From<RosterError> for GameSetupError {
@@ -424,6 +441,12 @@ impl From<RosterError> for GameSetupError {
 impl From<BattleError> for GameSetupError {
     fn from(error: BattleError) -> Self {
         Self::Battle(error)
+    }
+}
+
+impl From<SessionError> for GameSetupError {
+    fn from(error: SessionError) -> Self {
+        Self::Session(error)
     }
 }
 

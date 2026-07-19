@@ -254,9 +254,9 @@ impl MapProject {
                 actual: self.event_cells.len(),
             });
         }
-        if self.cell_index(self.player_spawn).is_none() {
+        let Some(player_spawn_index) = self.cell_index(self.player_spawn) else {
             return Err(MapError::SpawnOutOfBounds(self.player_spawn));
-        }
+        };
 
         let mut material_ids = BTreeSet::new();
         for material in &self.materials {
@@ -285,9 +285,7 @@ impl MapProject {
                 return Err(MapError::UnknownMaterial(id.clone()));
             }
         }
-        if self.collision_cells[self.cell_index(self.player_spawn).expect("spawn checked")]
-            == Collision::Blocked
-        {
+        if self.collision_cells[player_spawn_index] == Collision::Blocked {
             return Err(MapError::SpawnBlocked(self.player_spawn));
         }
         let mut actor_ids = BTreeSet::new();

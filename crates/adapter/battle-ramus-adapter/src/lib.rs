@@ -74,34 +74,37 @@ pub struct BattleRamusAdapter {
 }
 
 impl BattleRamusAdapter {
-    pub fn new() -> Self {
-        let provider_id = ProviderId::new(PROVIDER_ID).expect("the fixed provider id is valid");
-        let catalog = build_catalog(&provider_id);
+    pub fn new() -> Result<Self, AdapterDiagnostic> {
+        let provider_id = ProviderId::new(PROVIDER_ID).map_err(configuration_diagnostic)?;
+        let catalog = build_catalog(&provider_id)?;
         let authorization = AuthorizationService::new();
         let principal = authorization
             .create_principal(PLAYER_ID)
-            .expect("the fixed local player principal is valid and unique");
-        grant_player_actions(&authorization, &principal);
+            .map_err(configuration_diagnostic)?;
+        grant_player_actions(&authorization, &principal)?;
 
         let compiler = Compiler::new(Arc::clone(&catalog));
         let mut runtime = Runtime::new(catalog, authorization.checker());
         runtime
             .bind_provider(provider_id, Arc::new(BattleProvider))
-            .expect("the battle provider is bound exactly once");
+            .map_err(configuration_diagnostic)?;
 
-        Self {
+        Ok(Self {
             authorization,
             principal,
             compiler,
             runtime,
-        }
+        })
     }
 
-    pub fn action_invocations(&self, legal_actions: &[Action]) -> Vec<ActionInvocation> {
+    pub fn action_invocations(
+        &self,
+        legal_actions: &[Action],
+    ) -> Result<Vec<ActionInvocation>, AdapterDiagnostic> {
         let session = self
             .authorization
             .session(&self.principal)
-            .expect("the local player belongs to this authority");
+            .map_err(configuration_diagnostic)?;
         let mut invocations = self
             .compiler
             .discover(&session.view())
@@ -115,7 +118,7 @@ impl BattleRamusAdapter {
             })
             .collect::<Vec<_>>();
         invocations.sort_by(|left, right| left.invocation.cmp(&right.invocation));
-        invocations
+        Ok(invocations)
     }
 
     pub fn execute_invocation(&self, invocation: &str) -> Result<Action, AdapterDiagnostic> {
@@ -124,19 +127,13 @@ impl BattleRamusAdapter {
             let session = self
                 .authorization
                 .session(&self.principal)
-                .expect("the local player belongs to this authority");
+                .map_err(configuration_diagnostic)?;
             self.compiler
                 .seal_with_limits(&session.view(), PlanDraft::from(document), COMPILE_LIMITS)
                 .map_err(seal_diagnostic)?
         };
         let report = self.runtime.execute(plan).map_err(execution_diagnostic)?;
         action_from_provider_output(&report.outputs)
-    }
-}
-
-impl Default for BattleRamusAdapter {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -196,30 +193,34 @@ fn validate_provider_request(
         .map(drop)
 }
 
-fn build_catalog(provider_id: &ProviderId) -> Arc<Catalog> {
+fn build_catalog(provider_id: &ProviderId) -> Result<Arc<Catalog>, AdapterDiagnostic> {
     let mut catalog = Catalog::new();
     for (path, method) in all_invocations() {
+        let path = NodePath::parse(path).map_err(configuration_diagnostic)?;
+        let method = MethodName::new(method).map_err(configuration_diagnostic)?;
+        let schema = MethodSchema::new(method, vec![]).map_err(configuration_diagnostic)?;
+        let schema_version = SchemaVersion::new(1)
+            .ok_or_else(|| configuration_diagnostic("schema version must be non-zero"))?;
         catalog
             .register(MethodRegistration {
                 provider_id: provider_id.clone(),
-                path: NodePath::parse(path).expect("fixed battle paths are valid"),
-                schema: MethodSchema::new(
-                    MethodName::new(method).expect("fixed battle methods are valid"),
-                    vec![],
-                )
-                .expect("parameter-free battle schemas are valid"),
-                schema_version: SchemaVersion::new(1).expect("schema version is non-zero"),
+                path,
+                schema,
+                schema_version,
                 effect: Effect::Invoke,
             })
-            .expect("fixed battle catalog entries are unique");
+            .map_err(configuration_diagnostic)?;
     }
-    Arc::new(catalog)
+    Ok(Arc::new(catalog))
 }
 
-fn grant_player_actions(authorization: &AuthorizationService, principal: &Principal) {
+fn grant_player_actions(
+    authorization: &AuthorizationService,
+    principal: &Principal,
+) -> Result<(), AdapterDiagnostic> {
     for (path, method) in all_invocations() {
-        let path = NodePath::parse(path).expect("fixed battle paths are valid");
-        let method = MethodName::new(method).expect("fixed battle methods are valid");
+        let path = NodePath::parse(path).map_err(configuration_diagnostic)?;
+        let method = MethodName::new(method).map_err(configuration_diagnostic)?;
         for capability in [
             Capability::Discover,
             Capability::Complete,
@@ -227,9 +228,10 @@ fn grant_player_actions(authorization: &AuthorizationService, principal: &Princi
         ] {
             authorization
                 .grant(principal, path.clone(), Some(method.clone()), capability)
-                .expect("the local player belongs to this authority");
+                .map_err(configuration_diagnostic)?;
         }
     }
+    Ok(())
 }
 
 fn all_invocations() -> impl Iterator<Item = (&'static str, &'static str)> {
@@ -243,14 +245,12 @@ fn action_for_parts(path: &str, method: &str) -> Option<Action> {
     MOVE_INVOCATIONS
         .iter()
         .position(|candidate| candidate.0 == path && candidate.1 == method)
-        .map(|index| Action::UseMove(MoveSlot::new(index).expect("fixed move slots are valid")))
+        .and_then(|index| MoveSlot::new(index).ok().map(Action::UseMove))
         .or_else(|| {
             SWITCH_INVOCATIONS
                 .iter()
                 .position(|candidate| candidate.0 == path && candidate.1 == method)
-                .map(|index| {
-                    Action::Switch(TeamSlot::new(index).expect("fixed team slots are valid"))
-                })
+                .and_then(|index| TeamSlot::new(index).ok().map(Action::Switch))
         })
         .or_else(|| {
             (path == STRUGGLE_INVOCATION.0 && method == STRUGGLE_INVOCATION.1)
@@ -273,6 +273,14 @@ fn invalid_provider_output() -> AdapterDiagnostic {
     }
 }
 
+fn configuration_diagnostic(error: impl std::fmt::Debug) -> AdapterDiagnostic {
+    AdapterDiagnostic {
+        stage: DiagnosticStage::Runtime,
+        code: "invalid-adapter-configuration".into(),
+        message: format!("{error:?}"),
+    }
+}
+
 fn action_from_provider_output(outputs: &[Value]) -> Result<Action, AdapterDiagnostic> {
     let [Value::String(output)] = outputs else {
         return Err(invalid_provider_output());
@@ -284,10 +292,13 @@ fn action_from_provider_output(outputs: &[Value]) -> Result<Action, AdapterDiagn
 }
 
 fn parse_diagnostic(failure: ParseFailure) -> AdapterDiagnostic {
-    let diagnostic = failure
-        .diagnostics()
-        .first()
-        .expect("every parse failure contains at least one diagnostic");
+    let Some(diagnostic) = failure.diagnostics().first() else {
+        return AdapterDiagnostic {
+            stage: DiagnosticStage::Parse,
+            code: "parse-failure".into(),
+            message: "shell text could not be parsed".into(),
+        };
+    };
     AdapterDiagnostic {
         stage: DiagnosticStage::Parse,
         code: parse_diagnostic_code(&diagnostic.kind).into(),
@@ -298,6 +309,7 @@ fn parse_diagnostic(failure: ParseFailure) -> AdapterDiagnostic {
 fn parse_diagnostic_code(kind: &ParseDiagnosticKind) -> &'static str {
     match kind {
         ParseDiagnosticKind::SourceTooLarge => "source-too-large",
+        ParseDiagnosticKind::InvalidSourceBoundary => "invalid-source-boundary",
         ParseDiagnosticKind::TooManyCalls => "too-many-calls",
         ParseDiagnosticKind::TooManyArguments => "too-many-arguments",
         ParseDiagnosticKind::EmptyInput => "empty-input",
@@ -379,13 +391,13 @@ mod tests {
 
     #[test]
     fn discovery_intersects_authorized_commands_with_current_legal_actions() {
-        let adapter = BattleRamusAdapter::new();
+        let adapter = BattleRamusAdapter::new().unwrap();
         let legal = [
             Action::UseMove(MoveSlot::new(1).unwrap()),
             Action::Switch(TeamSlot::new(4).unwrap()),
         ];
 
-        let invocations = adapter.action_invocations(&legal);
+        let invocations = adapter.action_invocations(&legal).unwrap();
 
         assert_eq!(invocations.len(), 2);
         assert_eq!(invocations[0].action, legal[0]);
@@ -396,7 +408,7 @@ mod tests {
 
     #[test]
     fn executing_an_authorized_invocation_returns_exactly_one_action() {
-        let adapter = BattleRamusAdapter::default();
+        let adapter = BattleRamusAdapter::new().unwrap();
         assert_eq!(
             adapter.execute_invocation("/battle/move/three use"),
             Ok(Action::UseMove(MoveSlot::new(2).unwrap()))
@@ -405,7 +417,7 @@ mod tests {
 
     #[test]
     fn malformed_and_unknown_invocations_are_diagnostics() {
-        let adapter = BattleRamusAdapter::new();
+        let adapter = BattleRamusAdapter::new().unwrap();
 
         let malformed = adapter.execute_invocation("").unwrap_err();
         let unknown = adapter

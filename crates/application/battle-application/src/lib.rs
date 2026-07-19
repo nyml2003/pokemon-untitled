@@ -56,7 +56,10 @@ impl BattleApplication {
         )
     }
 
-    pub fn observe(&self, perspective: &BattlePerspective) -> BattleObservation {
+    pub fn observe(
+        &self,
+        perspective: &BattlePerspective,
+    ) -> Result<BattleObservation, BattleError> {
         observation::observe(&self.battle, perspective.side)
     }
 
@@ -71,20 +74,26 @@ impl BattleApplication {
     ) -> Result<SubmitOutcome, BattleError> {
         let viewer = perspective.side;
         let outcome = self.battle.submit(BattleCommand::new(viewer, action))?;
-        Ok(observation::submit_outcome(&self.battle, outcome, viewer))
+        observation::submit_outcome(&self.battle, outcome, viewer)
     }
 
-    pub fn event_log(&self, perspective: &BattlePerspective) -> Vec<BattleEvent> {
+    pub fn event_log(
+        &self,
+        perspective: &BattlePerspective,
+    ) -> Result<Vec<BattleEvent>, BattleError> {
         observation::event_log(&self.battle, perspective.side)
     }
 
-    pub fn checkpoint(&self, perspective: &BattlePerspective) -> BattleCheckpoint {
-        BattleCheckpoint {
+    pub fn checkpoint(
+        &self,
+        perspective: &BattlePerspective,
+    ) -> Result<BattleCheckpoint, BattleError> {
+        Ok(BattleCheckpoint {
             owner: Arc::clone(&self.checkpoint_owner),
             viewer: perspective.side,
             event_offset: self.battle.events().len(),
-            before: self.observe(perspective),
-        }
+            before: self.observe(perspective)?,
+        })
     }
 
     pub fn transition_since(
@@ -99,8 +108,10 @@ impl BattleApplication {
         }
         Ok(BattleTransition::new(
             checkpoint.before,
-            observation::events_since(&self.battle, checkpoint.viewer, checkpoint.event_offset),
-            observation::observe(&self.battle, checkpoint.viewer),
+            observation::events_since(&self.battle, checkpoint.viewer, checkpoint.event_offset)
+                .map_err(TransitionError::Observation)?,
+            observation::observe(&self.battle, checkpoint.viewer)
+                .map_err(TransitionError::Observation)?,
         ))
     }
 }

@@ -37,6 +37,8 @@ pub enum WorldEvent {
     BlockedByActor { actor: WorldActorId, at: Position },
     /// 玩家从非草地进入草地，并应开始遭遇流程。
     EncounterTriggered { at: Position },
+    /// 命令无法应用到内部世界状态，世界保持不变。
+    TransitionRejected { error: WorldError },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -125,8 +127,15 @@ impl World {
             WorldCommand::Face(direction) => WorldActorCommand::Face(direction),
             WorldCommand::Move(direction) => WorldActorCommand::Move(direction),
         };
-        self.transition_with_actor(self.player_id(), command, true)
-            .expect("the player actor always exists")
+        match self.transition_with_actor(self.player_id(), command, true) {
+            Ok(result) => result,
+            Err(error) => (
+                self.clone(),
+                WorldOutcome {
+                    event: WorldEvent::TransitionRejected { error },
+                },
+            ),
+        }
     }
 
     pub fn transition_actor(
@@ -155,7 +164,7 @@ impl World {
         let direction = match command {
             WorldActorCommand::Face(direction) => {
                 next.actor_mut(actor_id)
-                    .expect("the validated actor exists")
+                    .ok_or_else(|| WorldError::UnknownActor(actor_id.clone()))?
                     .facing = direction;
                 return Ok((
                     next,
@@ -170,7 +179,7 @@ impl World {
             WorldActorCommand::Move(direction) => direction,
         };
         next.actor_mut(actor_id)
-            .expect("the validated actor exists")
+            .ok_or_else(|| WorldError::UnknownActor(actor_id.clone()))?
             .facing = direction;
         let Some(target) = from.neighbor(direction) else {
             return Ok(blocked(next, from));
@@ -200,7 +209,7 @@ impl World {
         }
 
         next.actor_mut(actor_id)
-            .expect("the validated actor exists")
+            .ok_or_else(|| WorldError::UnknownActor(actor_id.clone()))?
             .position = target;
         let entered_grass = triggers_encounters
             && next.map.tile(from) != Some(Tile::Grass)

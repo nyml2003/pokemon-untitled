@@ -57,6 +57,7 @@ pub struct TileSemanticsEditor {
     catalog: TileSemanticsCatalog,
     ids: Vec<AtomicTileId>,
     known: BTreeSet<AtomicTileId>,
+    meadow_tag: TileTag,
     selected: usize,
     dirty: bool,
 }
@@ -72,10 +73,12 @@ impl TileSemanticsEditor {
             return Err(TileEditorError::EmptyPalette);
         }
         catalog.validate(&known).map_err(TileEditorError::Catalog)?;
+        let meadow_tag = TileTag::new("meadow").map_err(TileEditorError::DefaultTag)?;
         Ok(Self {
             catalog,
             ids,
             known,
+            meadow_tag,
             selected: 0,
             dirty: false,
         })
@@ -89,13 +92,21 @@ impl TileSemanticsEditor {
         self.selected
     }
 
-    pub fn snapshot(&self) -> TileEditorSnapshot {
-        let definition = self.selected_definition();
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// Returns the selected tile's editor state.
+    ///
+    /// A catalog mutated outside this editor can invalidate the selected tile;
+    /// that condition is reported instead of being treated as an invariant panic.
+    pub fn snapshot(&self) -> Result<TileEditorSnapshot, TileEditorError> {
+        let definition = self.selected_definition()?;
         let (approved, tags, rules) = match &definition.status {
             TileStatus::Approved { tags, rules } => (true, Some(tags), Some(rules.as_ref())),
             TileStatus::Blocked { .. } => (false, None, None),
         };
-        let meadow = tags.is_some_and(|tags| tags.contains(&meadow_tag()));
+        let meadow = tags.is_some_and(|tags| tags.contains(&self.meadow_tag));
         let must_be_base = rules.is_some_and(|rules| {
             rules
                 .stack
@@ -152,7 +163,7 @@ impl TileSemanticsEditor {
                 rules.map(|rules| &rules.neighbours.north_west),
             ),
         };
-        TileEditorSnapshot {
+        Ok(TileEditorSnapshot {
             id: definition.id.clone(),
             approved,
             meadow,
@@ -160,7 +171,7 @@ impl TileSemanticsEditor {
             requires_meadow_below,
             neighbours,
             dirty: self.dirty,
-        }
+        })
     }
 
     pub fn apply(&mut self, action: TileEditorAction) -> Result<(), TileEditorError> {
@@ -179,7 +190,7 @@ impl TileSemanticsEditor {
                 self.selected = (self.selected + 1) % self.ids.len();
             }
             TileEditorAction::ToggleApproved => {
-                let definition = self.selected_definition_mut();
+                let definition = self.selected_definition_mut()?;
                 definition.status = match &definition.status {
                     TileStatus::Approved { .. } => TileStatus::Blocked {
                         reason: "not reviewed for map authoring".into(),
@@ -192,13 +203,15 @@ impl TileSemanticsEditor {
                 self.dirty = true;
             }
             TileEditorAction::ToggleMeadowTag => {
+                let meadow_tag = self.meadow_tag.clone();
                 let tags = self.approved_parts_mut()?.0;
-                if !tags.remove(&meadow_tag()) {
-                    tags.insert(meadow_tag());
+                if !tags.remove(&meadow_tag) {
+                    tags.insert(meadow_tag);
                 }
                 self.dirty = true;
             }
             TileEditorAction::ToggleStack(control) => {
+                let meadow_matcher = self.meadow_matcher();
                 let rules = self.approved_parts_mut()?.1;
                 match control {
                     StackControl::MustBeBase => toggle_rule(
@@ -210,17 +223,18 @@ impl TileSemanticsEditor {
                         &mut rules.stack,
                         |rule| matches!(rule, StackRule::RequiresBelow { matcher } if is_meadow_matcher(matcher)),
                         StackRule::RequiresBelow {
-                            matcher: meadow_matcher(),
+                            matcher: meadow_matcher,
                         },
                     ),
                 }
                 self.dirty = true;
             }
             TileEditorAction::CycleNeighbour(direction) => {
-                let id = self.ids[self.selected].clone();
+                let id = self.selected_id()?.clone();
                 if !self.pattern_neighbour_tiles(&id, direction).is_empty() {
                     return Err(TileEditorError::PatternNeighbourLocked { id, direction });
                 }
+                let meadow_matcher = self.meadow_matcher();
                 let rules = self.approved_parts_mut()?.1;
                 let rule = match direction {
                     Direction8::North => &mut rules.neighbours.north,
@@ -233,8 +247,10 @@ impl TileSemanticsEditor {
                     Direction8::NorthWest => &mut rules.neighbours.north_west,
                 };
                 *rule = match rule {
-                    NeighbourRule::Any => meadow_requirement_rule(true),
-                    NeighbourRule::Requires { .. } => meadow_requirement_rule(false),
+                    NeighbourRule::Any => meadow_requirement_rule(meadow_matcher.clone(), true),
+                    NeighbourRule::Requires { .. } => {
+                        meadow_requirement_rule(meadow_matcher, false)
+                    }
                     NeighbourRule::Forbids { .. } => NeighbourRule::Any,
                 };
                 self.dirty = true;
@@ -255,32 +271,46 @@ impl TileSemanticsEditor {
         self.dirty = false;
     }
 
-    fn selected_definition(&self) -> &TileDefinition {
-        let selected = &self.ids[self.selected];
+    fn selected_definition(&self) -> Result<&TileDefinition, TileEditorError> {
+        let selected = self.selected_id()?;
         self.catalog
             .tiles
             .iter()
             .find(|definition| &definition.id == selected)
-            .expect("validated catalog contains every palette tile")
+            .ok_or_else(|| TileEditorError::SelectedTileMissing(selected.clone()))
     }
 
-    fn selected_definition_mut(&mut self) -> &mut TileDefinition {
-        let selected = &self.ids[self.selected];
+    fn selected_definition_mut(&mut self) -> Result<&mut TileDefinition, TileEditorError> {
+        let selected = self.selected_id()?.clone();
         self.catalog
             .tiles
             .iter_mut()
-            .find(|definition| &definition.id == selected)
-            .expect("validated catalog contains every palette tile")
+            .find(|definition| definition.id == selected)
+            .ok_or(TileEditorError::SelectedTileMissing(selected))
+    }
+
+    fn selected_id(&self) -> Result<&AtomicTileId, TileEditorError> {
+        self.ids
+            .get(self.selected)
+            .ok_or(TileEditorError::SelectedIndexMissing {
+                index: self.selected,
+            })
     }
 
     fn approved_parts_mut(
         &mut self,
     ) -> Result<(&mut BTreeSet<TileTag>, &mut TileHardRules), TileEditorError> {
-        let id = self.ids[self.selected].clone();
-        let definition = self.selected_definition_mut();
+        let id = self.selected_id()?.clone();
+        let definition = self.selected_definition_mut()?;
         match &mut definition.status {
             TileStatus::Approved { tags, rules } => Ok((tags, rules)),
             TileStatus::Blocked { .. } => Err(TileEditorError::TileBlocked(id)),
+        }
+    }
+
+    fn meadow_matcher(&self) -> TileMatcher {
+        TileMatcher::Tagged {
+            tag: self.meadow_tag.clone(),
         }
     }
 
@@ -410,22 +440,14 @@ fn default_rules() -> TileHardRules {
     }
 }
 
-fn meadow_tag() -> TileTag {
-    TileTag::new("meadow").expect("fixed meadow tag is valid")
-}
-
-fn meadow_matcher() -> TileMatcher {
-    TileMatcher::Tagged { tag: meadow_tag() }
-}
-
 fn is_meadow_matcher(matcher: &TileMatcher) -> bool {
-    matches!(matcher, TileMatcher::Tagged { tag } if tag == &meadow_tag())
+    matches!(matcher, TileMatcher::Tagged { tag } if tag.as_str() == "meadow")
 }
 
-fn meadow_requirement_rule(requires: bool) -> NeighbourRule {
+fn meadow_requirement_rule(matcher: TileMatcher, requires: bool) -> NeighbourRule {
     let requirement = CellRequirement {
         scope: LayerScope::Base,
-        matcher: meadow_matcher(),
+        matcher,
     };
     if requires {
         NeighbourRule::Requires { requirement }
@@ -463,6 +485,11 @@ fn toggle_rule(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TileEditorError {
     EmptyPalette,
+    DefaultTag(TileSemanticsError),
+    SelectedIndexMissing {
+        index: usize,
+    },
+    SelectedTileMissing(AtomicTileId),
     UnknownTile(AtomicTileId),
     TileBlocked(AtomicTileId),
     PatternNeighbourLocked {
@@ -477,6 +504,16 @@ impl fmt::Display for TileEditorError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyPalette => formatter.write_str("tile palette cannot be empty"),
+            Self::DefaultTag(error) => write!(formatter, "invalid default tile tag: {error}"),
+            Self::SelectedIndexMissing { index } => {
+                write!(formatter, "selected palette index {index} is missing")
+            }
+            Self::SelectedTileMissing(id) => {
+                write!(
+                    formatter,
+                    "selected palette tile {id} is missing from the catalog"
+                )
+            }
             Self::UnknownTile(id) => write!(formatter, "unknown palette tile {id}"),
             Self::TileBlocked(id) => write!(formatter, "tile {id} is blocked"),
             Self::PatternNeighbourLocked { id, direction } => write!(
@@ -540,9 +577,9 @@ mod tests {
         ));
         let mut editor = editor();
         editor.apply(TileEditorAction::Previous).unwrap();
-        assert_eq!(editor.snapshot().id, tile("leaf"));
+        assert_eq!(editor.snapshot().unwrap().id, tile("leaf"));
         editor.apply(TileEditorAction::Next).unwrap();
-        assert_eq!(editor.snapshot().id, tile("ground"));
+        assert_eq!(editor.snapshot().unwrap().id, tile("ground"));
         assert!(matches!(
             editor.apply(TileEditorAction::Select(tile("missing"))),
             Err(TileEditorError::UnknownTile(_))
@@ -573,7 +610,7 @@ mod tests {
         editor
             .apply(TileEditorAction::CycleNeighbour(Direction8::North))
             .unwrap();
-        let snapshot = editor.snapshot();
+        let snapshot = editor.snapshot().unwrap();
         assert!(snapshot.meadow && snapshot.must_be_base && snapshot.requires_meadow_below);
         assert_eq!(
             snapshot.neighbours.north,
@@ -587,7 +624,7 @@ mod tests {
             .apply(TileEditorAction::CycleNeighbour(Direction8::North))
             .unwrap();
         assert_eq!(
-            editor.snapshot().neighbours.north,
+            editor.snapshot().unwrap().neighbours.north,
             NeighbourPreview {
                 kind: NeighbourRuleKind::Forbids,
                 accepted_tiles: vec![tile("leaf")],
@@ -598,7 +635,7 @@ mod tests {
             .apply(TileEditorAction::CycleNeighbour(Direction8::North))
             .unwrap();
         assert_eq!(
-            editor.snapshot().neighbours.north,
+            editor.snapshot().unwrap().neighbours.north,
             NeighbourPreview {
                 kind: NeighbourRuleKind::Any,
                 accepted_tiles: vec![tile("ground"), tile("leaf")],
@@ -607,20 +644,20 @@ mod tests {
         );
         assert!(editor.catalog_json().unwrap().contains("ground"));
         editor.mark_saved();
-        assert!(!editor.snapshot().dirty);
+        assert!(!editor.snapshot().unwrap().dirty);
     }
 
     #[test]
     fn blocked_tiles_require_approval_before_property_edits() {
         let mut editor = editor();
         editor.apply(TileEditorAction::ToggleApproved).unwrap();
-        assert!(!editor.snapshot().approved);
+        assert!(!editor.snapshot().unwrap().approved);
         assert!(matches!(
             editor.apply(TileEditorAction::ToggleMeadowTag),
             Err(TileEditorError::TileBlocked(_))
         ));
         editor.apply(TileEditorAction::ToggleApproved).unwrap();
-        assert!(editor.snapshot().approved);
+        assert!(editor.snapshot().unwrap().approved);
     }
 
     #[test]
@@ -637,7 +674,7 @@ mod tests {
                             pattern: PatternId::new("pair").unwrap(),
                             part: PatternCoord(0, 0),
                         },
-                        meadow_matcher(),
+                        editor.meadow_matcher(),
                     ],
                 },
             },
@@ -645,7 +682,7 @@ mod tests {
         let rules = editor.approved_parts_mut().unwrap().1;
         rules.neighbours.east = rule;
         assert_eq!(
-            editor.snapshot().neighbours.east,
+            editor.snapshot().unwrap().neighbours.east,
             NeighbourPreview {
                 kind: NeighbourRuleKind::Requires,
                 accepted_tiles: vec![tile("ground"), tile("leaf")],
@@ -679,7 +716,7 @@ mod tests {
                 .apply(TileEditorAction::CycleNeighbour(direction))
                 .unwrap();
         }
-        let snapshot = editor.snapshot();
+        let snapshot = editor.snapshot().unwrap();
         assert!(matches!(
             snapshot.neighbours.north_east.kind,
             NeighbourRuleKind::Requires
@@ -697,8 +734,8 @@ mod tests {
                 .apply(TileEditorAction::ToggleStack(control))
                 .unwrap();
         }
-        assert!(!editor.snapshot().must_be_base);
-        assert!(!editor.snapshot().requires_meadow_below);
+        assert!(!editor.snapshot().unwrap().must_be_base);
+        assert!(!editor.snapshot().unwrap().requires_meadow_below);
 
         let invalid = TileSemanticsCatalog {
             format_version: FORMAT_VERSION.into(),
@@ -747,7 +784,7 @@ mod tests {
             ],
         }];
         assert_eq!(
-            editor.snapshot().neighbours.east,
+            editor.snapshot().unwrap().neighbours.east,
             NeighbourPreview {
                 kind: NeighbourRuleKind::Requires,
                 accepted_tiles: vec![tile("leaf")],
@@ -756,7 +793,7 @@ mod tests {
         );
         editor.apply(TileEditorAction::Next).unwrap();
         assert_eq!(
-            editor.snapshot().neighbours.west,
+            editor.snapshot().unwrap().neighbours.west,
             NeighbourPreview {
                 kind: NeighbourRuleKind::Requires,
                 accepted_tiles: vec![tile("ground")],

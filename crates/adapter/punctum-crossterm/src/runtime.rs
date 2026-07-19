@@ -7,7 +7,7 @@ use crossterm::{
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use punctum_grid::{GridSize, PatchKind, Surface, diff};
+use punctum_grid::{GridSize, PatchKind, Surface, SurfaceError, diff};
 
 use punctum_terminal::{
     TerminalCell, TerminalColor, TerminalPlanError, plan_patch, validate_cell_width,
@@ -16,6 +16,7 @@ use punctum_terminal::{
 #[derive(Debug)]
 pub enum TerminalPresentError {
     Plan(TerminalPlanError),
+    Surface(SurfaceError),
     Io(io::Error),
 }
 
@@ -23,6 +24,7 @@ impl fmt::Display for TerminalPresentError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Plan(error) => write!(formatter, "terminal frame is invalid: {error}"),
+            Self::Surface(error) => write!(formatter, "terminal surface is invalid: {error}"),
             Self::Io(error) => write!(formatter, "terminal output failed: {error}"),
         }
     }
@@ -32,6 +34,7 @@ impl Error for TerminalPresentError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             Self::Plan(error) => Some(error),
+            Self::Surface(error) => Some(error),
             Self::Io(error) => Some(error),
         }
     }
@@ -40,6 +43,12 @@ impl Error for TerminalPresentError {
 impl From<TerminalPlanError> for TerminalPresentError {
     fn from(error: TerminalPlanError) -> Self {
         Self::Plan(error)
+    }
+}
+
+impl From<SurfaceError> for TerminalPresentError {
+    fn from(error: SurfaceError) -> Self {
+        Self::Surface(error)
     }
 }
 
@@ -69,8 +78,7 @@ where
     }
 
     pub fn present(&mut self, frame: &Surface<TerminalCell>) -> Result<(), TerminalPresentError> {
-        let empty = Surface::from_cells(GridSize::new(0, 0), Vec::new())
-            .expect("an empty surface is always valid");
+        let empty = Surface::from_cells(GridSize::new(0, 0), Vec::new())?;
         let patch = diff(self.previous.as_ref().unwrap_or(&empty), frame);
         let runs = plan_patch(&patch, self.cell_width)?;
 

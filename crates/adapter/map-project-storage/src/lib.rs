@@ -535,7 +535,7 @@ fn encode_visual(project: &MapProject) -> Result<Vec<u8>, MapStorageError> {
         } else {
             result.push(0);
             for value in values {
-                push_index(&mut result, value, index_width);
+                push_index(&mut result, value, index_width)?;
             }
         }
     }
@@ -570,7 +570,7 @@ fn encode_rle_indexes(values: &[u32], index_width: u8) -> Result<Vec<u8>, MapSto
     push_u16(&mut result, u16_from_usize(runs.len(), "visual run count")?);
     for (length, value) in runs {
         push_u16(&mut result, u16_from_usize(length, "visual run length")?);
-        push_index(&mut result, value, index_width);
+        push_index(&mut result, value, index_width)?;
     }
     Ok(result)
 }
@@ -1085,13 +1085,14 @@ fn index_width(material_count: usize) -> Result<u8, MapStorageError> {
     }
 }
 
-fn push_index(output: &mut Vec<u8>, value: u32, width: u8) {
+fn push_index(output: &mut Vec<u8>, value: u32, width: u8) -> Result<(), MapStorageError> {
     match width {
         1 => output.push(value as u8),
         2 => output.extend_from_slice(&(value as u16).to_le_bytes()),
         4 => output.extend_from_slice(&value.to_le_bytes()),
-        _ => unreachable!("index width is validated before encoding"),
+        _ => return Err(MapStorageError::InvalidPayload("index width")),
     }
+    Ok(())
 }
 
 fn string_index(indexes: &BTreeMap<&str, usize>, value: &str) -> Result<u32, MapStorageError> {
@@ -1152,21 +1153,17 @@ fn usize_from_u64(value: u64) -> Result<usize, ()> {
 }
 
 fn read_u32_at(input: &[u8], offset: usize) -> Result<u32, MapStorageError> {
-    let bytes = input
-        .get(offset..offset + 4)
-        .ok_or(MapStorageError::Truncated)?;
-    Ok(u32::from_le_bytes(
-        bytes.try_into().expect("slice length checked"),
-    ))
+    let end = offset.checked_add(4).ok_or(MapStorageError::Truncated)?;
+    let bytes = input.get(offset..end).ok_or(MapStorageError::Truncated)?;
+    let bytes = bytes.try_into().map_err(|_| MapStorageError::Truncated)?;
+    Ok(u32::from_le_bytes(bytes))
 }
 
 fn read_u64_at(input: &[u8], offset: usize) -> Result<u64, MapStorageError> {
-    let bytes = input
-        .get(offset..offset + 8)
-        .ok_or(MapStorageError::Truncated)?;
-    Ok(u64::from_le_bytes(
-        bytes.try_into().expect("slice length checked"),
-    ))
+    let end = offset.checked_add(8).ok_or(MapStorageError::Truncated)?;
+    let bytes = input.get(offset..end).ok_or(MapStorageError::Truncated)?;
+    let bytes = bytes.try_into().map_err(|_| MapStorageError::Truncated)?;
+    Ok(u64::from_le_bytes(bytes))
 }
 
 fn manifest_error(error: MapStorageError) -> MapStorageError {
@@ -1204,15 +1201,19 @@ impl<'a> Cursor<'a> {
     }
 
     fn u16(&mut self) -> Result<u16, MapStorageError> {
-        Ok(u16::from_le_bytes(
-            self.bytes(2)?.try_into().expect("slice length checked"),
-        ))
+        let bytes = self
+            .bytes(2)?
+            .try_into()
+            .map_err(|_| MapStorageError::Truncated)?;
+        Ok(u16::from_le_bytes(bytes))
     }
 
     fn u32(&mut self) -> Result<u32, MapStorageError> {
-        Ok(u32::from_le_bytes(
-            self.bytes(4)?.try_into().expect("slice length checked"),
-        ))
+        let bytes = self
+            .bytes(4)?
+            .try_into()
+            .map_err(|_| MapStorageError::Truncated)?;
+        Ok(u32::from_le_bytes(bytes))
     }
 
     fn string(&mut self) -> Result<String, MapStorageError> {

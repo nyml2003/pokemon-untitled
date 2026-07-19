@@ -230,6 +230,10 @@ impl PlaybackStep {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplayError {
+    InvalidStatStage {
+        participant: Participant,
+        stage: i8,
+    },
     EventTargetsInactivePokemon {
         participant: Participant,
         expected: PokemonId,
@@ -407,7 +411,10 @@ impl BattleSceneReducer {
                     .combatant_mut(*participant)
                     .stages
                     .set(*stat, *stage)
-                    .expect("domain events contain valid stat stages");
+                    .map_err(|_| ReplayError::InvalidStatStage {
+                        participant: *participant,
+                        stage: *stage,
+                    })?;
                 BattleCue::StatStageChanged {
                     participant: *participant,
                     stat: *stat,

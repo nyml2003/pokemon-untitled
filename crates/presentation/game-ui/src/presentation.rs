@@ -559,13 +559,17 @@ impl PresentationState {
                 self.turn_hold_remaining = Some(TURN_HOLD_DURATION);
             }
             WorldEvent::Moved { .. } => {
-                let (direction, gait) = pending.expect("a moved event follows a UI world step");
+                let Some((direction, gait)) = pending else {
+                    return;
+                };
                 self.turn_hold_remaining = None;
                 self.world_motion = Some(WorldMotion::new(direction, gait));
                 self.run_stop_remaining = None;
             }
             WorldEvent::Blocked { .. } | WorldEvent::BlockedByActor { .. } => {}
-            WorldEvent::EncounterTriggered { .. } => self.clear_world(),
+            WorldEvent::EncounterTriggered { .. } | WorldEvent::TransitionRejected { .. } => {
+                self.clear_world()
+            }
         }
     }
 

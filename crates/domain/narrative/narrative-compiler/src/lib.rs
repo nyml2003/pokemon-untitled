@@ -164,16 +164,20 @@ impl<S: ByteStream> Parser<S> {
             "move" => Ok(ParsedStatement::Move(self.parse_named_direction()?)),
             "face" => Ok(ParsedStatement::Face(self.parse_named_direction()?)),
             "say" => {
-                let resource = self.parse_named_resource("text", "text")?;
-                Ok(ParsedStatement::Say(
-                    TextId::new(resource.as_str()).expect("lexer-validated text ID"),
-                ))
+                let (resource, span) = self.parse_named_resource("text", "text")?;
+                TextId::new(resource.as_str())
+                    .map(ParsedStatement::Say)
+                    .map_err(|error| {
+                        Diagnostic::new(DiagnosticCode::InvalidResource, span, error.to_string())
+                    })
             }
             "wait" => {
-                let resource = self.parse_named_resource("event", "event")?;
-                Ok(ParsedStatement::Wait(
-                    EventId::new(resource.as_str()).expect("lexer-validated event ID"),
-                ))
+                let (resource, span) = self.parse_named_resource("event", "event")?;
+                EventId::new(resource.as_str())
+                    .map(ParsedStatement::Wait)
+                    .map_err(|error| {
+                        Diagnostic::new(DiagnosticCode::InvalidResource, span, error.to_string())
+                    })
             }
             "end" => {
                 self.expect_symbol(Symbol::LeftParen, "'('")?;
@@ -192,8 +196,10 @@ impl<S: ByteStream> Parser<S> {
     fn parse_named_actor(&mut self) -> Result<ActorId, Diagnostic> {
         self.expect_keyword("actor")?;
         self.expect_symbol(Symbol::Colon, "':'")?;
-        let resource = self.expect_resource("actor")?;
-        Ok(ActorId::new(resource.as_str()).expect("lexer-validated actor ID"))
+        let (resource, span) = self.expect_resource("actor")?;
+        ActorId::new(resource.as_str()).map_err(|error| {
+            Diagnostic::new(DiagnosticCode::InvalidResource, span, error.to_string())
+        })
     }
 
     fn parse_named_direction(&mut self) -> Result<ScriptDirection, Diagnostic> {
@@ -216,7 +222,7 @@ impl<S: ByteStream> Parser<S> {
         &mut self,
         parameter: &'static str,
         namespace: &'static str,
-    ) -> Result<ResourceToken, Diagnostic> {
+    ) -> Result<(ResourceToken, SourceSpan), Diagnostic> {
         self.expect_symbol(Symbol::LeftParen, "'('")?;
         self.expect_keyword(parameter)?;
         self.expect_symbol(Symbol::Colon, "':'")?;
@@ -242,11 +248,14 @@ impl<S: ByteStream> Parser<S> {
         }
     }
 
-    fn expect_resource(&mut self, expected_namespace: &str) -> Result<ResourceToken, Diagnostic> {
+    fn expect_resource(
+        &mut self,
+        expected_namespace: &str,
+    ) -> Result<(ResourceToken, SourceSpan), Diagnostic> {
         let token = self.next()?;
         match token.kind() {
             TokenKind::Resource(resource) if resource.namespace() == expected_namespace => {
-                Ok(resource.clone())
+                Ok((resource.clone(), token.span()))
             }
             TokenKind::Resource(resource) => Err(Diagnostic::new(
                 DiagnosticCode::InvalidResource,
@@ -281,10 +290,12 @@ impl<S: ByteStream> Parser<S> {
     }
 
     fn peek(&mut self) -> Result<Token, Diagnostic> {
-        if self.lookahead.is_none() {
-            self.lookahead = Some(self.lex()?);
+        if let Some(token) = &self.lookahead {
+            return Ok(token.clone());
         }
-        Ok(self.lookahead.clone().expect("lookahead was set"))
+        let token = self.lex()?;
+        self.lookahead = Some(token.clone());
+        Ok(token)
     }
 
     fn next(&mut self) -> Result<Token, Diagnostic> {

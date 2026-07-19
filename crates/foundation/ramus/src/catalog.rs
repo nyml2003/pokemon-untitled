@@ -11,8 +11,8 @@ impl CatalogGeneration {
         Self(1)
     }
 
-    fn next(self) -> Self {
-        Self(self.0.checked_add(1).expect("catalog generation exhausted"))
+    fn next(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
     }
 }
 
@@ -77,6 +77,10 @@ impl Catalog {
         if self.methods.contains_key(&key) {
             return Err(CatalogError::DuplicateMethod);
         }
+        let generation = self
+            .generation
+            .next()
+            .ok_or(CatalogError::GenerationExhausted)?;
         self.methods.insert(
             key,
             RegisteredMethod {
@@ -87,7 +91,7 @@ impl Catalog {
                 effect: registration.effect,
             },
         );
-        self.generation = self.generation.next();
+        self.generation = generation;
         Ok(())
     }
 
@@ -113,4 +117,5 @@ impl Default for Catalog {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CatalogError {
     DuplicateMethod,
+    GenerationExhausted,
 }

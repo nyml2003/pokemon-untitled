@@ -286,6 +286,7 @@ pub enum IllegalActionReason {
     SwitchToActive,
     SwitchTargetFainted,
     SwitchPrevented,
+    StateInconsistent,
 }
 
 /// 构造或推进对战时违反的领域规则。
@@ -307,6 +308,9 @@ pub enum BattleError {
     },
     BattleAlreadyFinished {
         outcome: BattleOutcome,
+    },
+    StateInconsistent {
+        detail: &'static str,
     },
 }
 
@@ -517,9 +521,9 @@ impl Battle {
         if commands_ready {
             self.publish_pending_commands();
             if matches!(self.phase, BattlePhase::ForcedReplacement(_)) {
-                self.resolve_replacements();
+                self.resolve_replacements()?;
             } else {
-                self.resolve_turn();
+                self.resolve_turn()?;
             }
         }
         Ok(!commands_ready)
@@ -574,7 +578,7 @@ impl Battle {
                 } else if self.is_trapped(side) {
                     IllegalActionReason::SwitchPrevented
                 } else {
-                    unreachable!("a legal switch was rejected")
+                    IllegalActionReason::StateInconsistent
                 }
             }
             Action::Run if self.is_trapped(side) => IllegalActionReason::SwitchPrevented,
@@ -595,23 +599,27 @@ impl Battle {
         }
     }
 
-    fn resolve_turn(&mut self) {
+    fn resolve_turn(&mut self) -> Result<(), BattleError> {
         let one = self.pending[0]
             .take()
-            .expect("turn requires side one")
+            .ok_or(BattleError::StateInconsistent {
+                detail: "turn is missing side one command",
+            })?
             .command;
         let two = self.pending[1]
             .take()
-            .expect("turn requires side two")
+            .ok_or(BattleError::StateInconsistent {
+                detail: "turn is missing side two command",
+            })?
             .command;
         self.events
             .push(BattleEvent::TurnStarted { turn: self.turn });
         self.flinched = [false; 2];
         self.protected = [false; 2];
         let order = self.action_order(one, two);
-        self.resolve_action(order[0]);
+        self.resolve_action(order[0])?;
         if !matches!(self.phase, BattlePhase::Finished(_)) {
-            self.resolve_action(order[1]);
+            self.resolve_action(order[1])?;
         }
         self.turn = self.turn.saturating_add(1);
         if !matches!(self.phase, BattlePhase::Finished(_)) {
@@ -620,6 +628,7 @@ impl Battle {
         if !matches!(self.phase, BattlePhase::Finished(_)) {
             self.update_phase_after_turn();
         }
+        Ok(())
     }
 
     fn action_order(&mut self, one: BattleCommand, two: BattleCommand) -> [BattleCommand; 2] {
@@ -653,21 +662,22 @@ impl Battle {
         }
     }
 
-    fn resolve_action(&mut self, command: BattleCommand) {
+    fn resolve_action(&mut self, command: BattleCommand) -> Result<(), BattleError> {
         if self.active(command.side).is_fainted()
             || self.active(command.side.opponent()).is_fainted()
         {
-            return;
+            return Ok(());
         }
         if !self.can_act(command.side) {
-            return;
+            return Ok(());
         }
         match command.action {
             Action::Switch(to) => self.switch(command.side, to),
-            Action::UseMove(slot) => self.use_regular_move(command.side, slot),
+            Action::UseMove(slot) => self.use_regular_move(command.side, slot)?,
             Action::Run => self.run(command.side),
             Action::Struggle => self.use_struggle(command.side),
         }
+        Ok(())
     }
 
     fn run(&mut self, side: Side) {
@@ -761,17 +771,19 @@ impl Battle {
             Ability::Drizzle => self.start_weather(Weather::Rain, None),
             Ability::Drought => self.start_weather(Weather::Sun, None),
             Ability::SandStream => self.start_weather(Weather::Sandstorm, None),
-            _ => unreachable!("entry ability was checked"),
+            _ => (),
         }
     }
 
-    fn use_regular_move(&mut self, side: Side, slot: MoveSlot) {
+    fn use_regular_move(&mut self, side: Side, slot: MoveSlot) -> Result<(), BattleError> {
         let attacker_slot = self.active_slot(side);
         let attacker = self.active(side).clone();
         let battle_move = attacker
             .moves()
             .get(slot.index())
-            .expect("validated move slot")
+            .ok_or(BattleError::StateInconsistent {
+                detail: "submitted move slot is missing from the active pokemon",
+            })?
             .clone();
         let used_move = UsedMove::Move {
             slot,
@@ -799,7 +811,9 @@ impl Battle {
             let battle_move = self.teams[side_index(side)]
                 .member_mut(attacker_slot)
                 .move_mut(slot)
-                .expect("validated move slot");
+                .ok_or(BattleError::StateInconsistent {
+                    detail: "active pokemon is missing the submitted move slot",
+                })?;
             for _ in 0..pp_cost {
                 battle_move.spend_pp();
             }
@@ -845,6 +859,7 @@ impl Battle {
                 battle_move.effect(),
             );
         }
+        Ok(())
     }
 
     fn use_struggle(&mut self, side: Side) {
@@ -983,20 +998,16 @@ impl Battle {
         }
         let fixed_damage = effect.fixed_damage_for(attacker.level());
         let critical_roll = fixed_damage.is_none() && self.rng.range_inclusive(1, 16) == 1;
-        let critical = if critical_roll
-            && matches!(
-                target.ability(),
-                Some(Ability::BattleArmor | Ability::ShellArmor)
-            ) {
-            let ability = target.ability().expect("matched ability is present");
-            self.events.push(BattleEvent::AbilityActivated {
-                side: target_side,
-                pokemon: target.id().clone(),
-                ability,
-            });
-            false
-        } else {
-            critical_roll
+        let critical = match (critical_roll, target.ability()) {
+            (true, Some(ability @ (Ability::BattleArmor | Ability::ShellArmor))) => {
+                self.events.push(BattleEvent::AbilityActivated {
+                    side: target_side,
+                    pokemon: target.id().clone(),
+                    ability,
+                });
+                false
+            }
+            _ => critical_roll,
         };
         let effectiveness = move_type.map_or(TypeEffectiveness::Normal, |attack_type| {
             type_effectiveness(attack_type, target.primary_type(), target.secondary_type())
@@ -1024,7 +1035,8 @@ impl Battle {
                 ability: Ability::FlashFire,
             });
         }
-        if fixed_damage.is_none()
+        if let Some(ability) = attacker.ability()
+            && fixed_damage.is_none()
             && effectiveness != TypeEffectiveness::Immune
             && category == DamageCategory::Physical
             && attacker.physical_attack_ability_is_active()
@@ -1032,9 +1044,7 @@ impl Battle {
             self.events.push(BattleEvent::AbilityActivated {
                 side,
                 pokemon: attacker.id().clone(),
-                ability: attacker
-                    .ability()
-                    .expect("physical attack ability was checked"),
+                ability,
             });
         }
         if fixed_damage.is_none()
@@ -1048,14 +1058,15 @@ impl Battle {
                 ability: Ability::MarvelScale,
             });
         }
-        if fixed_damage.is_none()
+        if let Some(ability) = attacker.ability()
+            && fixed_damage.is_none()
             && effectiveness != TypeEffectiveness::Immune
             && low_hp_type_boost_applies(&attacker, move_type)
         {
             self.events.push(BattleEvent::AbilityActivated {
                 side,
                 pokemon: attacker.id().clone(),
-                ability: attacker.ability().expect("low HP type boost was checked"),
+                ability,
             });
         }
         if fixed_damage.is_none()
@@ -1152,10 +1163,12 @@ impl Battle {
         }
         match pokemon.major_status() {
             Some(MajorStatus::Sleep { .. }) => {
-                let mut remaining = self.teams[side_index(side)]
+                let Some(mut remaining) = self.teams[side_index(side)]
                     .member_mut(slot)
                     .advance_sleep()
-                    .expect("active pokemon was asleep");
+                else {
+                    return false;
+                };
                 if pokemon.ability() == Some(Ability::EarlyBird) && remaining > 0 {
                     remaining = self.teams[side_index(side)]
                         .member_mut(slot)
@@ -1329,17 +1342,19 @@ impl Battle {
                         if previous == 0 {
                             continue;
                         }
-                        self.teams[side_index(affected_side)]
+                        if self.teams[side_index(affected_side)]
                             .member_mut(slot)
                             .change_stage(stat, -previous)
-                            .expect("non-neutral stage must change");
-                        self.events.push(BattleEvent::StatStageChanged {
-                            side: affected_side,
-                            pokemon: pokemon.clone(),
-                            stat,
-                            change: -previous,
-                            stage: 0,
-                        });
+                            .is_some()
+                        {
+                            self.events.push(BattleEvent::StatStageChanged {
+                                side: affected_side,
+                                pokemon: pokemon.clone(),
+                                stat,
+                                change: -previous,
+                                stage: 0,
+                            });
+                        }
                     }
                 }
             }
@@ -1546,10 +1561,12 @@ impl Battle {
             if change == 0 {
                 continue;
             }
-            let stage = self.teams[side_index(side)]
+            let Some(stage) = self.teams[side_index(side)]
                 .member_mut(slot)
                 .change_stage(stat, change)
-                .expect("difference between valid stages must be valid");
+            else {
+                continue;
+            };
             changed = true;
             self.events.push(BattleEvent::StatStageChanged {
                 side,
@@ -1606,7 +1623,7 @@ impl Battle {
                 Accuracy::Percent(value) => Accuracy::Percent((u16::from(value) * 4 / 5) as u8),
             },
             None => weather_accuracy,
-            Some(_) => unreachable!("accuracy ability was checked"),
+            Some(_) => weather_accuracy,
         }
     }
 
@@ -1654,21 +1671,23 @@ impl Battle {
             if self.active(side).is_fainted() {
                 continue;
             }
-            let status = self.active(side).major_status();
-            let Some(MajorStatus::Burn | MajorStatus::Poison | MajorStatus::BadlyPoisoned { .. }) =
-                status
+            let Some(
+                status @ (MajorStatus::Burn
+                | MajorStatus::Poison
+                | MajorStatus::BadlyPoisoned { .. }),
+            ) = self.active(side).major_status()
             else {
                 continue;
             };
             let slot = self.active_slot(side);
             let pokemon = self.active(side).clone();
-            let damage = match status.expect("status was checked") {
+            let damage = match status {
                 MajorStatus::BadlyPoisoned { stage } => {
                     u64::from((pokemon.max_hp() / 16).max(1)) * u64::from(stage)
                 }
                 MajorStatus::Burn | MajorStatus::Poison => u64::from((pokemon.max_hp() / 8).max(1)),
                 MajorStatus::Freeze | MajorStatus::Paralysis | MajorStatus::Sleep { .. } => {
-                    unreachable!("status was filtered")
+                    continue;
                 }
             };
             let actual = self.teams[side_index(side)]
@@ -1678,7 +1697,7 @@ impl Battle {
                 source: DamageSource::Status {
                     side,
                     pokemon: pokemon.id().clone(),
-                    status: status.expect("status was checked"),
+                    status,
                 },
                 target_side: side,
                 target: pokemon.id().clone(),
@@ -1691,11 +1710,11 @@ impl Battle {
                     pokemon: pokemon.id().clone(),
                 });
             }
-            if matches!(status, Some(MajorStatus::BadlyPoisoned { .. })) {
-                let stage = self.teams[side_index(side)]
+            if matches!(status, MajorStatus::BadlyPoisoned { .. })
+                && let Some(stage) = self.teams[side_index(side)]
                     .member_mut(slot)
                     .advance_badly_poison()
-                    .expect("active pokemon was badly poisoned");
+            {
                 self.events.push(BattleEvent::StatusAdvanced {
                     side,
                     pokemon: pokemon.id().clone(),
@@ -1751,10 +1770,12 @@ impl Battle {
             }
             let slot = self.active_slot(side);
             let pokemon = self.active(side).id().clone();
-            let status = self.teams[side_index(side)]
+            let Some(status) = self.teams[side_index(side)]
                 .member_mut(slot)
                 .cure_major_status()
-                .expect("status was checked");
+            else {
+                continue;
+            };
             self.events.push(BattleEvent::AbilityActivated {
                 side,
                 pokemon: pokemon.clone(),
@@ -1803,13 +1824,13 @@ impl Battle {
             }
             self.resolve_weather_abilities_end_of_turn(state.weather());
         }
-        let state = self.weather.as_mut().expect("weather was checked");
+        let Some(state) = self.weather.as_mut() else {
+            return;
+        };
         match state.elapse() {
             Some(true) => self.events.push(BattleEvent::WeatherUpdated {
                 weather: state.weather(),
-                turns_remaining: state
-                    .turns_remaining()
-                    .expect("temporary weather was checked"),
+                turns_remaining: state.turns_remaining().unwrap_or(0),
             }),
             Some(false) => {
                 let weather = state.weather();
@@ -2038,20 +2059,23 @@ impl Battle {
         }
     }
 
-    fn resolve_replacements(&mut self) {
+    fn resolve_replacements(&mut self) -> Result<(), BattleError> {
         for side in [Side::One, Side::Two] {
             if self.phase.requires_replacement(side) {
-                let pending = self.pending[side_index(side)]
-                    .take()
-                    .expect("required replacement was submitted");
-                let to = pending
-                    .replacement
-                    .expect("validated replacement carries a switch target");
+                let pending = self.pending[side_index(side)].take().ok_or(
+                    BattleError::StateInconsistent {
+                        detail: "required replacement is missing a command",
+                    },
+                )?;
+                let to = pending.replacement.ok_or(BattleError::StateInconsistent {
+                    detail: "replacement command is missing a switch target",
+                })?;
                 self.switch(side, to);
             }
         }
         self.pending = [None, None];
         self.phase = BattlePhase::Turn;
+        Ok(())
     }
 
     fn legal_switches(&self, side: Side) -> Vec<Action> {
@@ -2144,7 +2168,7 @@ fn accuracy_stage_fraction(stage: i8) -> (u8, u8) {
         4 => (7, 3),
         5 => (8, 3),
         6 => (9, 3),
-        _ => unreachable!("stat stages are clamped to the generation-three range"),
+        _ => (3, 3),
     }
 }
 

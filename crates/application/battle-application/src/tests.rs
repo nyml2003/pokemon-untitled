@@ -131,7 +131,7 @@ fn creation_rejects_a_team_without_a_conscious_pokemon() {
 fn opening_observation_reveals_own_team_and_only_the_opponents_lead() {
     let (application, one, _) = application();
 
-    let observation = application.observe(&one);
+    let observation = application.observe(&one).unwrap();
 
     assert_eq!(observation.viewer(), Side::One);
     assert_eq!(observation.turn(), 1);
@@ -217,7 +217,7 @@ fn submit_returns_only_the_events_created_by_that_command() {
     assert!(!second.is_waiting_for_opponent());
     assert!(second.events().len() > 1);
     assert_eq!(
-        application.event_log(&two).len(),
+        application.event_log(&two).unwrap().len(),
         first.events().len() + second.events().len()
     );
 }
@@ -225,10 +225,10 @@ fn submit_returns_only_the_events_created_by_that_command() {
 #[test]
 fn first_command_is_hidden_from_both_observations_until_both_sides_commit() {
     let (mut application, one, two) = application();
-    let before_one = application.observe(&one);
-    let before_two = application.observe(&two);
-    let before_one_events = application.event_log(&one);
-    let before_two_events = application.event_log(&two);
+    let before_one = application.observe(&one).unwrap();
+    let before_two = application.observe(&two).unwrap();
+    let before_one_events = application.event_log(&one).unwrap();
+    let before_two_events = application.event_log(&two).unwrap();
 
     let outcome = application
         .submit(&one, Action::UseMove(move_slot(0)))
@@ -236,10 +236,10 @@ fn first_command_is_hidden_from_both_observations_until_both_sides_commit() {
 
     assert!(outcome.is_waiting_for_opponent());
     assert!(outcome.events().is_empty());
-    assert_eq!(application.observe(&one), before_one);
-    assert_eq!(application.observe(&two), before_two);
-    assert_eq!(application.event_log(&one), before_one_events);
-    assert_eq!(application.event_log(&two), before_two_events);
+    assert_eq!(application.observe(&one).unwrap(), before_one);
+    assert_eq!(application.observe(&two).unwrap(), before_two);
+    assert_eq!(application.event_log(&one).unwrap(), before_one_events);
+    assert_eq!(application.event_log(&two).unwrap(), before_two_events);
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn used_opponent_move_is_revealed_without_exposing_pp() {
         .submit(&two, Action::UseMove(move_slot(0)))
         .unwrap();
 
-    let observation = application.observe(&one);
+    let observation = application.observe(&one).unwrap();
     let lead = observation.opponent().active();
     assert_eq!(observation.own().members()[0].current_hp(), 76);
     assert_eq!(observation.own().members()[0].moves()[0].current_pp(), 34);
@@ -283,6 +283,7 @@ fn used_opponent_move_is_revealed_without_exposing_pp() {
     assert_eq!(revealed_move.priority(), 0);
     let one_pp_events = application
         .event_log(&one)
+        .unwrap()
         .into_iter()
         .filter(|event| matches!(event, BattleEvent::OwnPpSpent { .. }))
         .collect::<Vec<_>>();
@@ -306,6 +307,7 @@ fn used_opponent_move_is_revealed_without_exposing_pp() {
     assert!(
         application
             .event_log(&one)
+            .unwrap()
             .iter()
             .any(|event| matches!(event, BattleEvent::OpponentCommandCommitted))
     );
@@ -322,7 +324,7 @@ fn switched_opponent_keeps_seen_members_revealed_and_unseen_bench_hidden() {
         .submit(&two, Action::Switch(TeamSlot::new(1).unwrap()))
         .unwrap();
 
-    let observation = application.observe(&one);
+    let observation = application.observe(&one).unwrap();
     assert_eq!(observation.opponent().active().id().as_str(), "two-1");
     assert_eq!(observation.opponent().revealed_bench().len(), 1);
     assert_eq!(
@@ -330,27 +332,39 @@ fn switched_opponent_keeps_seen_members_revealed_and_unseen_bench_hidden() {
         "two-0"
     );
     assert_eq!(observation.opponent().unrevealed_count(), TEAM_SIZE - 2);
-    assert!(application.event_log(&one).iter().any(|event| matches!(
-        event,
-        BattleEvent::OpponentSwitched { pokemon }
-            if pokemon.id().as_str() == "two-1" && pokemon.current_hp() == 100
-    )));
-    assert!(application.event_log(&two).iter().any(|event| matches!(
-        event,
-        BattleEvent::OwnSwitched { from, to, pokemon }
-            if *from == TeamSlot::new(0).unwrap()
-                && *to == TeamSlot::new(1).unwrap()
-                && pokemon.id().as_str() == "two-1"
-    )));
+    assert!(
+        application
+            .event_log(&one)
+            .unwrap()
+            .iter()
+            .any(|event| matches!(
+                event,
+                BattleEvent::OpponentSwitched { pokemon }
+                    if pokemon.id().as_str() == "two-1" && pokemon.current_hp() == 100
+            ))
+    );
+    assert!(
+        application
+            .event_log(&two)
+            .unwrap()
+            .iter()
+            .any(|event| matches!(
+                event,
+                BattleEvent::OwnSwitched { from, to, pokemon }
+                    if *from == TeamSlot::new(0).unwrap()
+                        && *to == TeamSlot::new(1).unwrap()
+                        && pokemon.id().as_str() == "two-1"
+            ))
+    );
 
-    application.observe(&two);
+    application.observe(&two).unwrap();
     application
         .submit(&one, Action::UseMove(move_slot(0)))
         .unwrap();
     application
         .submit(&two, Action::UseMove(move_slot(0)))
         .unwrap();
-    let after_move = application.observe(&one);
+    let after_move = application.observe(&one).unwrap();
     assert_eq!(after_move.opponent().active().revealed_moves().len(), 1);
 
     application
@@ -359,7 +373,7 @@ fn switched_opponent_keeps_seen_members_revealed_and_unseen_bench_hidden() {
     application
         .submit(&two, Action::Switch(TeamSlot::new(0).unwrap()))
         .unwrap();
-    let after_return = application.observe(&one);
+    let after_return = application.observe(&one).unwrap();
     assert_eq!(after_return.opponent().active().id().as_str(), "two-0");
     assert_eq!(after_return.opponent().revealed_bench().len(), 1);
     assert_eq!(
@@ -405,7 +419,7 @@ fn knockout_observation_shows_damage_and_forced_replacement_without_revealing_sk
         .submit(&two, Action::UseMove(move_slot(0)))
         .unwrap();
 
-    let knocked_out = application.observe(&one);
+    let knocked_out = application.observe(&one).unwrap();
     assert_eq!(
         knocked_out.phase(),
         BattlePhase::ForcedReplacement(ReplacementSides::Two)
@@ -413,24 +427,36 @@ fn knockout_observation_shows_damage_and_forced_replacement_without_revealing_sk
     assert_eq!(knocked_out.opponent().active().current_hp(), 0);
     assert!(knocked_out.opponent().active().is_fainted());
     assert!(knocked_out.opponent().active().revealed_moves().is_empty());
-    assert!(application.event_log(&one).iter().any(|event| matches!(
-        event,
-        BattleEvent::Fainted {
-            participant: Participant::Opponent,
-            pokemon,
-        } if pokemon.as_str() == "victim"
-    )));
-    assert!(application.event_log(&one).iter().any(|event| matches!(
-        event,
-        BattleEvent::ForcedReplacement {
-            participant: Participant::Opponent
-        }
-    )));
+    assert!(
+        application
+            .event_log(&one)
+            .unwrap()
+            .iter()
+            .any(|event| matches!(
+                event,
+                BattleEvent::Fainted {
+                    participant: Participant::Opponent,
+                    pokemon,
+                } if pokemon.as_str() == "victim"
+            ))
+    );
+    assert!(
+        application
+            .event_log(&one)
+            .unwrap()
+            .iter()
+            .any(|event| matches!(
+                event,
+                BattleEvent::ForcedReplacement {
+                    participant: Participant::Opponent
+                }
+            ))
+    );
 
     application
         .submit(&two, Action::Switch(TeamSlot::new(1).unwrap()))
         .unwrap();
-    let replaced = application.observe(&one);
+    let replaced = application.observe(&one).unwrap();
     assert_eq!(replaced.phase(), BattlePhase::Turn);
     assert_eq!(replaced.opponent().active().id().as_str(), "victim-bench-1");
     assert_eq!(replaced.opponent().revealed_bench().len(), 1);
@@ -473,15 +499,21 @@ fn final_knockout_is_visible_as_a_finished_battle() {
         .unwrap();
 
     assert_eq!(
-        application.observe(&one).phase(),
+        application.observe(&one).unwrap().phase(),
         BattlePhase::Finished(BattleOutcome::Winner(Side::One))
     );
-    assert!(application.event_log(&one).iter().any(|event| matches!(
-        event,
-        BattleEvent::BattleFinished {
-            outcome: ObservedBattleOutcome::Winner(Participant::Own)
-        }
-    )));
+    assert!(
+        application
+            .event_log(&one)
+            .unwrap()
+            .iter()
+            .any(|event| matches!(
+                event,
+                BattleEvent::BattleFinished {
+                    outcome: ObservedBattleOutcome::Winner(Participant::Own)
+                }
+            ))
+    );
 }
 
 #[test]
@@ -515,9 +547,9 @@ fn struggle_recoil_draw_is_visible_without_revealing_an_unexecuted_opponent_acti
     application.submit(&one, Action::Struggle).unwrap();
     application.submit(&two, Action::Struggle).unwrap();
 
-    let events = application.event_log(&one);
+    let events = application.event_log(&one).unwrap();
     assert_eq!(
-        application.observe(&one).phase(),
+        application.observe(&one).unwrap().phase(),
         BattlePhase::Finished(BattleOutcome::Draw)
     );
     assert_eq!(
@@ -593,13 +625,13 @@ fn first_pending_replacement_is_hidden_when_both_sides_must_replace() {
     application.submit(&one, Action::Struggle).unwrap();
     application.submit(&two, Action::Struggle).unwrap();
     assert_eq!(
-        application.observe(&one).phase(),
+        application.observe(&one).unwrap().phase(),
         BattlePhase::ForcedReplacement(ReplacementSides::Both)
     );
-    let before_one = application.observe(&one);
-    let before_two = application.observe(&two);
-    let before_one_events = application.event_log(&one);
-    let before_two_events = application.event_log(&two);
+    let before_one = application.observe(&one).unwrap();
+    let before_two = application.observe(&two).unwrap();
+    let before_one_events = application.event_log(&one).unwrap();
+    let before_two_events = application.event_log(&two).unwrap();
 
     let pending = application
         .submit(&one, Action::Switch(TeamSlot::new(1).unwrap()))
@@ -607,16 +639,32 @@ fn first_pending_replacement_is_hidden_when_both_sides_must_replace() {
 
     assert!(pending.is_waiting_for_opponent());
     assert!(pending.events().is_empty());
-    assert_eq!(application.observe(&one), before_one);
-    assert_eq!(application.observe(&two), before_two);
-    assert_eq!(application.event_log(&one), before_one_events);
-    assert_eq!(application.event_log(&two), before_two_events);
+    assert_eq!(application.observe(&one).unwrap(), before_one);
+    assert_eq!(application.observe(&two).unwrap(), before_two);
+    assert_eq!(application.event_log(&one).unwrap(), before_one_events);
+    assert_eq!(application.event_log(&two).unwrap(), before_two_events);
 
     application
         .submit(&two, Action::Switch(TeamSlot::new(1).unwrap()))
         .unwrap();
-    assert_eq!(application.observe(&one).own().active_slot().index(), 1);
-    assert_eq!(application.observe(&two).own().active_slot().index(), 1);
+    assert_eq!(
+        application
+            .observe(&one)
+            .unwrap()
+            .own()
+            .active_slot()
+            .index(),
+        1
+    );
+    assert_eq!(
+        application
+            .observe(&two)
+            .unwrap()
+            .own()
+            .active_slot()
+            .index(),
+        1
+    );
 }
 
 #[test]
@@ -655,7 +703,7 @@ fn miss_and_critical_events_remain_public_after_sanitizing() {
             .submit(&two, Action::UseMove(move_slot(0)))
             .unwrap();
 
-        let events = application.event_log(&one);
+        let events = application.event_log(&one).unwrap();
         assert_eq!(
             events.iter().any(|event| matches!(
                 event,
@@ -682,18 +730,18 @@ fn miss_and_critical_events_remain_public_after_sanitizing() {
 #[test]
 fn rejected_submit_does_not_change_observations_or_event_logs() {
     let (mut application, one, two) = application();
-    let before_one = application.observe(&one);
-    let before_two = application.observe(&two);
-    let before_one_events = application.event_log(&one);
-    let before_two_events = application.event_log(&two);
+    let before_one = application.observe(&one).unwrap();
+    let before_two = application.observe(&two).unwrap();
+    let before_one_events = application.event_log(&one).unwrap();
+    let before_two_events = application.event_log(&two).unwrap();
 
     let result = application.submit(&one, Action::Struggle);
 
     assert!(result.is_err());
-    assert_eq!(application.observe(&one), before_one);
-    assert_eq!(application.observe(&two), before_two);
-    assert_eq!(application.event_log(&one), before_one_events);
-    assert_eq!(application.event_log(&two), before_two_events);
+    assert_eq!(application.observe(&one).unwrap(), before_one);
+    assert_eq!(application.observe(&two).unwrap(), before_two);
+    assert_eq!(application.event_log(&one).unwrap(), before_one_events);
+    assert_eq!(application.event_log(&two).unwrap(), before_two_events);
 }
 
 #[test]
@@ -724,12 +772,12 @@ fn rejected_submit_does_not_advance_rng_or_change_public_replay() {
         control.observe(&control_two)
     );
     assert_eq!(
-        candidate.event_log(&candidate_one),
-        control.event_log(&control_one)
+        candidate.event_log(&candidate_one).unwrap(),
+        control.event_log(&control_one).unwrap()
     );
     assert_eq!(
-        candidate.event_log(&candidate_two),
-        control.event_log(&control_two)
+        candidate.event_log(&candidate_two).unwrap(),
+        control.event_log(&control_two).unwrap()
     );
 }
 
@@ -753,15 +801,21 @@ fn identical_inputs_produce_identical_observations_and_event_logs() {
 
     assert_eq!(first.observe(&first_one), second.observe(&second_one));
     assert_eq!(first.observe(&first_two), second.observe(&second_two));
-    assert_eq!(first.event_log(&first_one), second.event_log(&second_one));
-    assert_eq!(first.event_log(&first_two), second.event_log(&second_two));
+    assert_eq!(
+        first.event_log(&first_one).unwrap(),
+        second.event_log(&second_one).unwrap()
+    );
+    assert_eq!(
+        first.event_log(&first_two).unwrap(),
+        second.event_log(&second_two).unwrap()
+    );
 }
 
 #[test]
 fn transition_keeps_one_perspective_for_before_events_and_after() {
     let (mut application, one, two) = application();
-    let one_checkpoint = application.checkpoint(&one);
-    let two_checkpoint = application.checkpoint(&two);
+    let one_checkpoint = application.checkpoint(&one).unwrap();
+    let two_checkpoint = application.checkpoint(&two).unwrap();
 
     application
         .submit(&one, Action::UseMove(move_slot(0)))
@@ -797,7 +851,7 @@ fn transition_keeps_one_perspective_for_before_events_and_after() {
 #[test]
 fn checkpoint_cannot_be_used_with_another_application() {
     let (first, first_one, _) = application();
-    let mut checkpoint = first.checkpoint(&first_one);
+    let mut checkpoint = first.checkpoint(&first_one).unwrap();
     checkpoint.event_offset = usize::MAX;
     assert_eq!(
         first.transition_since(checkpoint.clone()),

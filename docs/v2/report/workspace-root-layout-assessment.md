@@ -80,7 +80,7 @@
 ## 证据
 
 - 根 `Cargo.toml`：workspace 成员与共享依赖。
-- `docs/v2/current/architecture.md`：`assets/`、`maps/` 的 workspace 归属和资产边界。
+- `docs/v2/current/001-架构总览/README.md`：`assets/`、`maps/` 的 workspace 归属和资产边界。
 - `flake.nix`：`ops` 对 `tools.pokemon_ops` 的模块入口。
 - `tools/pokemon_ops/adapters/local_config.py`：`ops.local.json` 的根目录约定。
 - `crates/domain/data/game-data/src/lib.rs`、`crates/adapter/game-data-import-core/src/lib.rs`、`crates/runtime/game-host/src/{map,narrative,sprites}.rs`、`crates/runtime/{map-editor,map-editor-cli,tile-editor}/src/`：共享内容目录的直接路径与嵌入引用。

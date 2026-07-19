@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 pub use map_project::CharacterAppearanceId;
-use map_project::{Collision, MapDirection, MapEventKind, MapProject};
+use map_project::{Collision, MapDirection, MapError, MapEventKind, MapProject};
 pub use narrative_cps::TextId;
 use narrative_cps::{CpsNode, ScriptDirection, ScriptProgram};
 pub use world_domain::{
@@ -118,10 +118,27 @@ struct NpcScriptState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum WorldApplicationError {
     World(WorldError),
-    UnboundScript { script: narrative_cps::ScriptId },
-    ScriptActorMissing { actor: narrative_cps::ActorId },
+    Appearance(MapError),
+    UnboundScript {
+        script: narrative_cps::ScriptId,
+    },
+    ScriptActorMissing {
+        actor: narrative_cps::ActorId,
+    },
+    MalformedScriptActor {
+        actor: narrative_cps::ActorId,
+    },
     ScriptControlsPlayer,
-    DuplicateScriptActor { actor: narrative_cps::ActorId },
+    DuplicateScriptActor {
+        actor: narrative_cps::ActorId,
+    },
+    MissingAppearance {
+        actor: WorldActorId,
+    },
+    MissingContinuation {
+        script: narrative_cps::ScriptId,
+        continuation: narrative_cps::ContinuationId,
+    },
 }
 
 impl From<WorldError> for WorldApplicationError {
@@ -130,23 +147,28 @@ impl From<WorldError> for WorldApplicationError {
     }
 }
 
+impl From<MapError> for WorldApplicationError {
+    fn from(error: MapError) -> Self {
+        Self::Appearance(error)
+    }
+}
+
 impl WorldApplication {
-    pub fn new(world: World) -> Self {
-        let default_appearance =
-            CharacterAppearanceId::new("red").expect("the fixed player appearance is valid");
+    pub fn new(world: World) -> Result<Self, WorldApplicationError> {
+        let default_appearance = CharacterAppearanceId::new("red")?;
         let appearances = world
             .actors()
             .map(|actor| (actor.id().clone(), default_appearance.clone()))
             .collect();
-        Self {
+        Ok(Self {
             world,
             appearances,
             npc_scripts: BTreeMap::new(),
             speech: BTreeMap::new(),
-        }
+        })
     }
 
-    pub fn demo() -> Result<Self, WorldError> {
+    pub fn demo() -> Result<Self, WorldApplicationError> {
         let mut tiles = vec![Tile::Ground; usize::from(DEMO_MAP_WIDTH * DEMO_MAP_HEIGHT)];
         for y in 0..DEMO_MAP_HEIGHT {
             for x in 0..DEMO_MAP_WIDTH {
@@ -166,10 +188,10 @@ impl WorldApplication {
         }
         let map = TileMap::new(DEMO_MAP_WIDTH, DEMO_MAP_HEIGHT, tiles)?;
         let world = World::new(map, Position::new(3, 6), Direction::Down)?;
-        Ok(Self::new(world))
+        Self::new(world)
     }
 
-    pub fn from_map_project(project: &MapProject) -> Result<Self, WorldError> {
+    pub fn from_map_project(project: &MapProject) -> Result<Self, WorldApplicationError> {
         let tiles = project
             .collision_cells
             .iter()
@@ -182,10 +204,8 @@ impl WorldApplication {
             .collect();
         let map = TileMap::new(project.width, project.height, tiles)?;
         let spawn = Position::new(project.player_spawn.x(), project.player_spawn.y());
-        let mut appearances = BTreeMap::from([(
-            WorldActorId::player(),
-            CharacterAppearanceId::new("red").expect("the fixed player appearance is valid"),
-        )]);
+        let mut appearances =
+            BTreeMap::from([(WorldActorId::player(), CharacterAppearanceId::new("red")?)]);
         let mut actors = Vec::with_capacity(project.actors.len());
         for actor in &project.actors {
             let id = WorldActorId::new(actor.id.as_str())?;
@@ -228,8 +248,12 @@ impl WorldApplication {
             if actor.as_str() == "actor:player" {
                 return Err(WorldApplicationError::ScriptControlsPlayer);
             }
-            let actor_id = WorldActorId::new(&actor.as_str()["actor:".len()..])
-                .expect("a validated actor resource has a non-empty name");
+            let actor_id =
+                WorldActorId::new(actor.as_str().strip_prefix("actor:").ok_or_else(|| {
+                    WorldApplicationError::MalformedScriptActor {
+                        actor: actor.clone(),
+                    }
+                })?)?;
             if !self
                 .world
                 .actors()
@@ -251,8 +275,12 @@ impl WorldApplication {
         Ok(self)
     }
 
-    pub fn observe(&self) -> WorldObservation {
-        WorldObservation {
+    /// Builds a renderable observation of the current world state.
+    ///
+    /// Missing appearance data is reported so a corrupted map cannot silently
+    /// omit or misrender an actor.
+    pub fn observe(&self) -> Result<WorldObservation, WorldApplicationError> {
+        Ok(WorldObservation {
             width: self.world.map().width(),
             height: self.world.map().height(),
             tiles: self.world.map().tiles().to_vec(),
@@ -261,24 +289,29 @@ impl WorldApplication {
             actors: self
                 .world
                 .actors()
-                .map(|actor| WorldActorObservation {
-                    id: actor.id().clone(),
-                    role: if actor.id() == self.world.player_id() {
-                        WorldActorRole::Player
-                    } else {
-                        WorldActorRole::Npc
-                    },
-                    position: actor.position(),
-                    facing: actor.facing(),
-                    appearance: self
+                .map(|actor| {
+                    let appearance = self
                         .appearances
                         .get(actor.id())
-                        .expect("every world actor has an appearance")
-                        .clone(),
-                    speech: self.speech.get(actor.id()).cloned(),
+                        .ok_or_else(|| WorldApplicationError::MissingAppearance {
+                            actor: actor.id().clone(),
+                        })?
+                        .clone();
+                    Ok(WorldActorObservation {
+                        id: actor.id().clone(),
+                        role: if actor.id() == self.world.player_id() {
+                            WorldActorRole::Player
+                        } else {
+                            WorldActorRole::Npc
+                        },
+                        position: actor.position(),
+                        facing: actor.facing(),
+                        appearance,
+                        speech: self.speech.get(actor.id()).cloned(),
+                    })
                 })
-                .collect(),
-        }
+                .collect::<Result<Vec<_>, WorldApplicationError>>()?,
+        })
     }
 
     pub const fn player(&self) -> Position {
@@ -302,7 +335,7 @@ impl WorldApplication {
     ///
     /// The caller supplies the cadence. Keeping real time outside this pure
     /// application boundary makes the resulting world state deterministic.
-    pub fn advance_npcs(&self) -> Self {
+    pub fn advance_npcs(&self) -> Result<Self, WorldApplicationError> {
         let mut world = self.world.clone();
         let mut scripts = self.npc_scripts.clone();
         let mut speech = self.speech.clone();
@@ -310,7 +343,10 @@ impl WorldApplication {
             let node = state
                 .program
                 .continuation(state.continuation)
-                .expect("validated script continuations always exist")
+                .ok_or_else(|| WorldApplicationError::MissingContinuation {
+                    script: state.program.id().clone(),
+                    continuation: state.continuation,
+                })?
                 .clone();
             match node {
                 CpsNode::Move { direction, next } => {
@@ -341,12 +377,12 @@ impl WorldApplication {
                 CpsNode::End => state.continuation = state.program.entry(),
             }
         }
-        Self {
+        Ok(Self {
             world,
             appearances: self.appearances.clone(),
             npc_scripts: scripts,
             speech,
-        }
+        })
     }
 }
 
@@ -385,7 +421,7 @@ mod tests {
     #[test]
     fn demo_map_exposes_a_walkable_spawn_and_nearby_grass() {
         let mut application = WorldApplication::demo().unwrap();
-        let opening = application.observe();
+        let opening = application.observe().unwrap();
 
         assert_eq!(opening.player(), Position::new(3, 6));
         assert_eq!(opening.width(), 16);
@@ -447,7 +483,8 @@ mod tests {
         ));
         let observation = WorldApplication::from_map_project(&project)
             .unwrap()
-            .observe();
+            .observe()
+            .unwrap();
         assert_eq!(observation.actors().len(), 2);
         let npc = observation
             .actors()
@@ -477,7 +514,7 @@ mod tests {
         ));
         let world = WorldApplication::from_map_project(&project).unwrap();
         let (world, _) = world.transition(WorldCommand::Move(Direction::Right));
-        let observation = world.observe();
+        let observation = world.observe().unwrap();
         let npc = observation
             .actors()
             .iter()
@@ -537,7 +574,7 @@ mod tests {
         let world = WorldApplication::from_map_project_with_scripts(&project, [script]).unwrap();
         let (after_player_move, outcome) = world.transition(WorldCommand::Move(Direction::Right));
         assert!(matches!(outcome.event(), super::WorldEvent::Moved { .. }));
-        let after_player_move = after_player_move.observe();
+        let after_player_move = after_player_move.observe().unwrap();
         let npc_after_player_move = after_player_move
             .actors()
             .iter()
@@ -547,8 +584,8 @@ mod tests {
         assert_eq!(npc_after_player_move.facing(), Direction::Left);
         assert_eq!(npc_after_player_move.speech(), None);
 
-        let world = world.advance_npcs();
-        let observation = world.observe();
+        let world = world.advance_npcs().unwrap();
+        let observation = world.observe().unwrap();
         let npc = observation
             .actors()
             .iter()
@@ -557,9 +594,10 @@ mod tests {
         assert_eq!(npc.position(), Position::new(3, 1));
         assert_eq!(npc.speech().unwrap().as_str(), "text:hello");
 
-        let world = world.advance_npcs();
+        let world = world.advance_npcs().unwrap();
         let npc = world
             .observe()
+            .unwrap()
             .actors()
             .iter()
             .find(|actor| actor.id().as_str() == "forest-guide")
@@ -569,8 +607,14 @@ mod tests {
         assert_eq!(npc.facing(), Direction::Right);
         assert_eq!(npc.speech(), None);
 
-        let world = world.advance_npcs().advance_npcs().advance_npcs();
-        let observation = world.observe();
+        let world = world
+            .advance_npcs()
+            .unwrap()
+            .advance_npcs()
+            .unwrap()
+            .advance_npcs()
+            .unwrap();
+        let observation = world.observe().unwrap();
         let npc = observation
             .actors()
             .iter()
