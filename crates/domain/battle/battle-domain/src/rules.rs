@@ -3,12 +3,14 @@ use crate::{
     WeatherMoveModifier, model::Pokemon,
 };
 
+/// 第三世代按属性划分的伤害类别。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DamageCategory {
     Physical,
     Special,
 }
 
+/// 返回属性在第三世代规则中的物理或特殊伤害类别。
 pub const fn damage_category(move_type: PokemonType) -> DamageCategory {
     match move_type {
         PokemonType::Normal
@@ -31,6 +33,7 @@ pub const fn damage_category(move_type: PokemonType) -> DamageCategory {
     }
 }
 
+/// 攻击属性相对于一只宝可梦全部属性的倍率。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TypeEffectiveness {
     Immune,
@@ -49,6 +52,7 @@ pub(crate) enum SingleTypeFactor {
     Double,
 }
 
+/// 计算攻击属性对一个主属性和可选副属性的总倍率。
 pub const fn type_effectiveness(
     attack: PokemonType,
     primary: PokemonType,
@@ -177,8 +181,7 @@ pub(crate) fn calculate_damage(
 ) -> u64 {
     let (attack, defense) = damage_stats(attacker, defender, category, critical);
 
-    // Level, power, and stats are bounded by u8/u16 inputs, so this chain is
-    // below u64::MAX even after every generation-three modifier is applied.
+    // 等级、威力和能力值均受 u8/u16 限制，因此所有第三世代修正后的中间值仍小于 u64::MAX。
     let level_factor = u64::from(attacker.level()) * 2 / 5 + 2;
     let mut damage =
         level_factor * u64::from(power) * u64::from(attack) / u64::from(defense) / 50 + 2;

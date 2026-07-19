@@ -11,6 +11,7 @@ use crate::{
     type_effectiveness,
 };
 
+/// 一方在当前对战阶段可以提交的动作。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Action {
     UseMove(MoveSlot),
@@ -19,6 +20,7 @@ pub enum Action {
     Struggle,
 }
 
+/// 一方提交给对战状态机的动作。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BattleCommand {
     side: Side,
@@ -26,11 +28,13 @@ pub struct BattleCommand {
 }
 
 impl BattleCommand {
+    /// 创建指定阵营的一条命令。
     pub const fn new(side: Side, action: Action) -> Self {
         Self { side, action }
     }
 }
 
+/// 已结束对战的结果。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BattleOutcome {
     Winner(Side),
@@ -38,6 +42,7 @@ pub enum BattleOutcome {
     Draw,
 }
 
+/// 对战状态机当前接受的命令类型。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BattlePhase {
     Turn,
@@ -46,6 +51,7 @@ pub enum BattlePhase {
 }
 
 impl BattlePhase {
+    /// 返回此阶段是否要求指定阵营先替换倒下的出战宝可梦。
     pub const fn requires_replacement(self, side: Side) -> bool {
         match self {
             Self::ForcedReplacement(sides) => sides.contains(side),
@@ -54,6 +60,7 @@ impl BattlePhase {
     }
 }
 
+/// 需要在强制替换阶段提交换人命令的阵营集合。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplacementSides {
     One,
@@ -62,6 +69,7 @@ pub enum ReplacementSides {
 }
 
 impl ReplacementSides {
+    /// 返回指定阵营是否在此集合中。
     pub const fn contains(self, side: Side) -> bool {
         match self {
             Self::One => matches!(side, Side::One),
@@ -71,12 +79,14 @@ impl ReplacementSides {
     }
 }
 
+/// 事件中记录的实际出招。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum UsedMove {
     Move { slot: MoveSlot, id: MoveId },
     Struggle,
 }
 
+/// 伤害事件的直接来源。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DamageSource {
     Move {
@@ -103,6 +113,9 @@ pub enum DamageSource {
     },
 }
 
+/// 对战结算产生的有序事实记录。
+///
+/// 事件只描述已经发生的状态变化；调用方不应依靠事件重放来绕过 `Battle` 的合法性校验。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BattleEvent {
     CommandAccepted {
@@ -263,6 +276,7 @@ pub enum BattleEvent {
     },
 }
 
+/// 动作在当前状态下不合法的具体原因。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IllegalActionReason {
     WrongPhase,
@@ -274,6 +288,7 @@ pub enum IllegalActionReason {
     SwitchPrevented,
 }
 
+/// 构造或推进对战时违反的领域规则。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BattleError {
     NoLivingPokemon {
@@ -295,6 +310,9 @@ pub enum BattleError {
     },
 }
 
+/// 单次成功提交后产生的增量结果。
+///
+/// `events` 只含本次提交新增的事件，而不是整个对战的事件历史。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SubmitOutcome {
     events: Vec<BattleEvent>,
@@ -303,19 +321,25 @@ pub struct SubmitOutcome {
 }
 
 impl SubmitOutcome {
+    /// 返回本次提交新增的事件。
     pub fn events(&self) -> &[BattleEvent] {
         &self.events
     }
 
+    /// 返回命令处理后的对战阶段。
     pub const fn phase(&self) -> BattlePhase {
         self.phase
     }
 
+    /// 返回对战是否仍在等待另一方提交命令。
     pub fn is_waiting_for_opponent(&self) -> bool {
         self.waiting_for_opponent
     }
 }
 
+/// 维护回合、队伍和事件历史的确定性双人对战状态机。
+///
+/// 通过 [`Battle::legal_actions`] 查询可提交动作，再使用 [`Battle::submit`] 推进状态。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Battle {
     teams: [Team; 2],
@@ -332,6 +356,9 @@ pub struct Battle {
 }
 
 impl Battle {
+    /// 用两支各含存活成员的队伍和确定性种子创建对战。
+    ///
+    /// 两队不得包含相同的 `PokemonId`。
     pub fn new(team_one: Team, team_two: Team, seed: u64) -> Result<Self, BattleError> {
         let active_one = team_one
             .first_living_slot()
@@ -369,18 +396,24 @@ impl Battle {
         Ok(battle)
     }
 
+    /// 返回当前需要提交的命令阶段。
     pub const fn phase(&self) -> BattlePhase {
         self.phase
     }
 
+    /// 返回从一开始递增的当前回合编号。
     pub const fn turn_number(&self) -> u32 {
         self.turn
     }
 
+    /// 返回对战开始以来累积的全部事件。
     pub fn events(&self) -> &[BattleEvent] {
         &self.events
     }
 
+    /// 返回当前天气及其剩余回合数。
+    ///
+    /// 天气仍会保留在此处，即使 Air Lock 或 Cloud Nine 暂时压制其战斗效果。
     pub const fn weather(&self) -> Option<WeatherState> {
         self.weather
     }
@@ -397,18 +430,24 @@ impl Battle {
         (!suppressed).then_some(weather)
     }
 
+    /// 返回指定阵营的完整队伍。
     pub fn team(&self, side: Side) -> &Team {
         &self.teams[side_index(side)]
     }
 
+    /// 返回指定阵营当前出战成员的队伍槽位。
     pub fn active_slot(&self, side: Side) -> TeamSlot {
         self.active[side_index(side)]
     }
 
+    /// 返回指定阵营当前出战的宝可梦。
     pub fn active(&self, side: Side) -> &Pokemon {
         self.team(side).member(self.active_slot(side))
     }
 
+    /// 返回指定阵营此刻可提交的全部动作。
+    ///
+    /// 已提交命令的一方、非当前操作阶段的一方和已结束的对战都会返回空列表。
     pub fn legal_actions(&self, side: Side) -> Vec<Action> {
         if self.pending[side_index(side)].is_some() {
             return Vec::new();
@@ -442,6 +481,9 @@ impl Battle {
         }
     }
 
+    /// 原子地提交一条已校验的命令并在双方命令齐备时结算。
+    ///
+    /// 如果命令不合法，状态和事件历史都保持不变。
     pub fn submit(&mut self, command: BattleCommand) -> Result<SubmitOutcome, BattleError> {
         let mut candidate = self.clone();
         let start = candidate.events.len();

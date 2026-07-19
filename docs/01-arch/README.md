@@ -17,16 +17,17 @@
 5. [固定地图网格与 3x3 预加载窗口](006-proposals/005-standard-map-grid-and-preload-window.md)：标准地图尺寸、稀疏坐标与相邻地图预加载的分阶段方案。
 6. [地图瓦片语义目录与硬校验](006-proposals/006-map-tile-semantics-and-validation.md)：原子瓦片的图层、八邻域、图样和叠加校验方案。
 7. [Git 驱动的 Windows 运行镜像方案](006-proposals/007-git-backed-windows-mirror.md)：用已推送提交更新 Windows 原生验收目录，避免逐文件复制大型资源。
-8. [宏观战略版：设定总纲与核心架构](000-interviews/002-macro-strategy-outline.md)：公平准则、培育、经济、势力、终局和长线战略。它是战略输入，不等于实现决策。
-9. [Agent 与活世界：战略访谈记录](000-interviews/001-agent-world-vision-interview.md)：本轮产品、世界和 UI 访谈的原始结论；本轮已结束。
-10. [架构大纲](001-overview/001-architecture-outline.md)：文档范围、问题清单和目录。
-11. [系统总览](001-overview/002-system-overview.md)：分层、工作区边界和核心术语。
-12. [运行时流程](001-overview/003-runtime-flows.md)：游戏、地图编辑器和数据导入的端到端路径。
-13. `002-domains/`：战斗、世界地图、数据资产三个业务领域。
-14. `003-layers/`：各层 crate 的职责、依赖方向和例外。
-15. `004-cross-cutting/`：状态、渲染、输入、资产和质量策略等横切问题。
-16. `005-evolution/`：已发现的边界风险、扩展点和待决策问题。
-17. `006-proposals/`：基于已确认战略输入编写、但尚未实施的改造方案。
+8. [Ops 进度日志流方案](006-proposals/008-ops-progress-log-stream.md)：为 Git、LFS、原生构建和游戏运行提供持续的阶段日志与 JSON Lines 事件。
+9. [宏观战略版：设定总纲与核心架构](000-interviews/002-macro-strategy-outline.md)：公平准则、培育、经济、势力、终局和长线战略。它是战略输入，不等于实现决策。
+10. [Agent 与活世界：战略访谈记录](000-interviews/001-agent-world-vision-interview.md)：本轮产品、世界和 UI 访谈的原始结论；本轮已结束。
+11. [架构大纲](001-overview/001-architecture-outline.md)：文档范围、问题清单和目录。
+12. [系统总览](001-overview/002-system-overview.md)：分层、工作区边界和核心术语。
+13. [运行时流程](001-overview/003-runtime-flows.md)：游戏、地图编辑器和数据导入的端到端路径。
+14. `002-domains/`：战斗、世界地图、数据资产三个业务领域。
+15. `003-layers/`：各层 crate 的职责、依赖方向和例外。
+16. `004-cross-cutting/`：状态、渲染、输入、资产和质量策略等横切问题。
+17. `005-evolution/`：已发现的边界风险、扩展点和待决策问题。
+18. `006-proposals/`：基于已确认战略输入编写、但尚未实施的改造方案。
 
 ## 文档约定
 

@@ -22,6 +22,7 @@ class ErrorCode(StrEnum):
     PROCESS_FAILED = "ProcessFailed"
     BUILD_FAILED = "BuildFailed"
     RUN_FAILED = "RunFailed"
+    CANCELLED = "Cancelled"
     UNSUPPORTED_HOST = "UnsupportedHost"
 
 

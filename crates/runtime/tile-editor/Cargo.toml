@@ -6,10 +6,10 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-1{ workspace = true }
-1{ workspace = true }
-1{ workspace = true }
-1{ workspace = true }
+game-assets = { workspace = true }
+game-fs-assets = { workspace = true }
+game-native-target = { workspace = true }
+map-assets = { workspace = true }
 map-project = { workspace = true }
 map-render = { workspace = true }
 map-tile-semantics = { workspace = true }

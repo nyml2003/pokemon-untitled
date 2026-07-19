@@ -10,6 +10,7 @@ from pathlib import Path
 from tools.pokemon_ops.adapters.local_config import load_local_config
 from tools.pokemon_ops.adapters.local_git_mirror import LocalGitMirror
 from tools.pokemon_ops.adapters.local_process_runner import LocalProcessRunner
+from tools.pokemon_ops.adapters.progress_reporters import JsonLinesProgressReporter, TextProgressReporter
 from tools.pokemon_ops.adapters.windows_native_run_dispatcher import WindowsNativeRunDispatcher
 from tools.pokemon_ops.application.native_service import NativeService
 from tools.pokemon_ops.application.sync_service import SyncService
@@ -82,8 +83,8 @@ def _load(source_root: Path) -> Result[object]:
     return load_local_config(source_root)
 
 
-def _report_progress(message: str) -> None:
-    print(f"ops: {message}", file=sys.stderr, flush=True)
+def _progress_reporter(json_output: bool) -> TextProgressReporter | JsonLinesProgressReporter:
+    return JsonLinesProgressReporter() if json_output else TextProgressReporter()
 
 
 def run(arguments: list[str] | None = None, source_root: Path | None = None) -> int:
@@ -101,9 +102,10 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
     config = loaded.value
     assert config is not None
 
+    progress = _progress_reporter(args.json_output)
     sync_service = SyncService(LocalGitMirror())
     if args.command == "init-mirror":
-        return _emit(sync_service.initialize(config, _report_progress), args.json_output)
+        return _emit(sync_service.initialize(config, progress), args.json_output)
     if args.command == "check":
         return _emit(sync_service.check(config), args.json_output)
     if args.command == "doctor":
@@ -144,8 +146,8 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
     if args.command == "test":
         return _emit(testing.test(config, TestSuite(args.suite)), args.json_output)
     if args.command == "sync":
-        return _emit(sync_service.sync(config, _report_progress), args.json_output)
+        return _emit(sync_service.sync(config, progress), args.json_output)
 
     operation = NativeOperation.BUILD_GAME_HOST if args.command == "build" else NativeOperation.RUN_GAME_HOST
     native = NativeService(sync_service, WindowsNativeRunDispatcher(config))
-    return _emit(native.execute(config, operation, BuildProfile(args.profile), _report_progress), args.json_output)
+    return _emit(native.execute(config, operation, BuildProfile(args.profile), progress), args.json_output)

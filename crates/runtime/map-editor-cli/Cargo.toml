@@ -6,9 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-1{ workspace = true }
-1{ workspace = true }
-1{ workspace = true }
+game-fs-assets = { workspace = true }
+map-assets = { workspace = true }
+map-editor-core = { workspace = true }
 map-project = { workspace = true }
 map-tile-semantics = { workspace = true }
 map-project-storage = { workspace = true }

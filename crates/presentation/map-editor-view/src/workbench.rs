@@ -3,12 +3,12 @@
 use std::{error::Error, fmt};
 
 use game_assets::AssetKey;
-use game_view::{GameView, LayerKind, TextLabel, TextRole, ViewCell, ViewImage, ViewLayer};
+use game_view::{GameView, LayerKind, ViewImage, ViewLayer};
 use map_editor_core::{EditorIntent, EditorMapViewport, EditorModel, EditorTool, layout};
 use map_project::{Collision, MapEventKind, TilePosition};
 use map_render::{AtomicTileCatalog, MapCamera, MapGridLayout, MapRenderInput, project_map};
 use punctum_gpu::{PixelOffset, PixelSize, Rgba8, Viewport};
-use punctum_grid::{GridPos, GridRect, GridSize, Surface, SurfaceError};
+use punctum_grid::{GridPos, GridRect, GridSize};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
     UiContentId, UiId, UiNode as RawUiNode, UiStyle, UiTree,
@@ -752,133 +752,6 @@ const fn ui_color(color: Rgba8) -> UiColor {
     UiColor::new(color.red, color.green, color.blue, color.alpha)
 }
 
-fn project_chrome(
-    surface: &mut Surface<ViewCell>,
-    model: &EditorModel,
-) -> Result<(), SurfaceError> {
-    let ui = layout::workbench();
-    surface.fill(sprite(UI_BG));
-    fill(surface, ui.right_panel, PANEL)?;
-    fill(surface, ui.material_panel, PANEL)?;
-    fill(surface, ui.divider, BORDER)?;
-    for rect in [
-        ui.previous_assets,
-        ui.next_assets,
-        ui.previous_materials,
-        ui.next_materials,
-        ui.add_layer,
-        ui.remove_layer,
-        ui.delete_material,
-        ui.save,
-        ui.undo,
-        ui.redo,
-        ui.help,
-        ui.visual,
-        ui.walkable,
-        ui.blocked,
-        ui.encounter,
-        ui.clear_event,
-    ] {
-        fill(surface, rect, BUTTON)?;
-    }
-    if model.selected_atomic < layout::ASSET_PAGE_SIZE {
-        fill(surface, ui.previous_assets, PANEL)?;
-    }
-    let last_asset_page = model.atomic_ids.len().saturating_sub(1) / layout::ASSET_PAGE_SIZE;
-    if model.selected_atomic / layout::ASSET_PAGE_SIZE >= last_asset_page {
-        fill(surface, ui.next_assets, PANEL)?;
-    }
-    if model.selected_material < layout::MATERIAL_PAGE_SIZE {
-        fill(surface, ui.previous_materials, PANEL)?;
-    }
-    let last_material_page =
-        model.project.materials.len().saturating_sub(1) / layout::MATERIAL_PAGE_SIZE;
-    if model.selected_material / layout::MATERIAL_PAGE_SIZE >= last_material_page {
-        fill(surface, ui.next_materials, PANEL)?;
-    }
-    let selected = match model.tool {
-        EditorTool::Visual => ui.visual,
-        EditorTool::Collision(Collision::Walkable) => ui.walkable,
-        EditorTool::Collision(Collision::Blocked) => ui.blocked,
-        EditorTool::Event(Some(MapEventKind::Encounter)) => ui.encounter,
-        EditorTool::Event(None) => ui.clear_event,
-    };
-    fill(surface, selected, SELECTED)?;
-    Ok(())
-}
-
-fn project_assets(images: &mut Vec<ViewImage>, model: &EditorModel, catalog: &AtomicTileCatalog) {
-    let ui = layout::workbench();
-    let page_start = (model.selected_atomic / layout::ASSET_PAGE_SIZE) * layout::ASSET_PAGE_SIZE;
-    for (index, id) in model
-        .atomic_ids
-        .iter()
-        .enumerate()
-        .skip(page_start)
-        .take(layout::ASSET_PAGE_SIZE)
-    {
-        let position = ui.asset_slots[index - page_start].origin;
-        if let Some(asset) = catalog.asset(id) {
-            images.push(image(
-                position,
-                GridSize::new(2, 2),
-                asset.clone(),
-                Rgba8::new(255, 255, 255, 255),
-                3,
-            ));
-        }
-        if index == model.selected_atomic {
-            images.push(image(
-                position,
-                GridSize::new(2, 2),
-                white_asset(),
-                Rgba8::new(55, 205, 181, 72),
-                4,
-            ));
-        }
-    }
-}
-
-fn project_materials(
-    images: &mut Vec<ViewImage>,
-    model: &EditorModel,
-    catalog: &AtomicTileCatalog,
-) {
-    let ui = layout::workbench();
-    let page_start =
-        (model.selected_material / layout::MATERIAL_PAGE_SIZE) * layout::MATERIAL_PAGE_SIZE;
-    for (index, material) in model
-        .project
-        .materials
-        .iter()
-        .enumerate()
-        .skip(page_start)
-        .take(layout::MATERIAL_PAGE_SIZE)
-    {
-        let position = ui.material_slots[index - page_start].origin;
-        for layer in &material.layers {
-            if let Some(asset) = catalog.asset(layer) {
-                images.push(image(
-                    position,
-                    GridSize::new(3, 3),
-                    asset.clone(),
-                    Rgba8::new(255, 255, 255, 255),
-                    3,
-                ));
-            }
-        }
-        if index == model.selected_material {
-            images.push(image(
-                position,
-                GridSize::new(3, 3),
-                white_asset(),
-                Rgba8::new(55, 205, 181, 72),
-                4,
-            ));
-        }
-    }
-}
-
 fn project_semantics(
     images: &mut Vec<ViewImage>,
     model: &EditorModel,
@@ -912,221 +785,6 @@ fn project_semantics(
     }
 }
 
-fn project_labels(model: &EditorModel, hover: Option<TilePosition>) -> Vec<TextLabel> {
-    let ui = layout::workbench();
-    let asset_page = model.selected_atomic / layout::ASSET_PAGE_SIZE;
-    let asset_pages = model.atomic_ids.len().div_ceil(layout::ASSET_PAGE_SIZE);
-    let selected_atomic = model
-        .atomic_ids
-        .get(model.selected_atomic)
-        .map_or("none", |id| id.as_str());
-    let selected_material = model.project.materials.get(model.selected_material);
-    let material_page = model.selected_material / layout::MATERIAL_PAGE_SIZE;
-    let material_pages = model
-        .project
-        .materials
-        .len()
-        .div_ceil(layout::MATERIAL_PAGE_SIZE)
-        .max(1);
-    let mut labels = vec![
-        label_rect(ui.asset_title, "原子素材", TEXT),
-        label_rect(
-            ui.asset_summary,
-            &format!("{}  {}/{}", selected_atomic, asset_page + 1, asset_pages),
-            MUTED,
-        ),
-        label_rect(ui.previous_assets, "上一页", TEXT),
-        label_rect(ui.next_assets, "下一页", TEXT),
-        label_rect(
-            ui.material_title,
-            &format!("组合素材  {}/{}", material_page + 1, material_pages),
-            TEXT,
-        ),
-        label_rect(ui.previous_materials, "上一页", TEXT),
-        label_rect(ui.next_materials, "下一页", TEXT),
-        label_rect(ui.visual, "贴图", TEXT),
-        label_rect(ui.walkable, "可通行", TEXT),
-        label_rect(ui.blocked, "阻挡", TEXT),
-        label_rect(ui.encounter, "遭遇事件", TEXT),
-        label_rect(ui.clear_event, "清除事件", TEXT),
-        label_rect(ui.composition_title, "当前组合", TEXT),
-        label_rect(ui.add_layer, "添加一层", TEXT),
-        label_rect(ui.remove_layer, "移除顶层", TEXT),
-        label_rect(ui.delete_material, "删除当前组合", TEXT),
-        label_rect(ui.tool_title, "工具", TEXT),
-        label_rect(ui.save, "保存", TEXT),
-        label_rect(ui.undo, "撤销", TEXT),
-        label_rect(ui.redo, "重做", TEXT),
-        label_rect(ui.help, "帮助", TEXT),
-    ];
-    let asset_start = asset_page * layout::ASSET_PAGE_SIZE;
-    for (index, id) in model
-        .atomic_ids
-        .iter()
-        .enumerate()
-        .skip(asset_start)
-        .take(layout::ASSET_PAGE_SIZE)
-    {
-        let slot = ui.asset_slots[index - asset_start];
-        labels.push(label(
-            slot.origin.col as u32,
-            (slot.origin.row + 2) as u32,
-            slot.size.cols,
-            id.as_str().strip_prefix("tile-").unwrap_or(id.as_str()),
-            MUTED,
-        ));
-    }
-    let material_start =
-        (model.selected_material / layout::MATERIAL_PAGE_SIZE) * layout::MATERIAL_PAGE_SIZE;
-    for (index, material) in model
-        .project
-        .materials
-        .iter()
-        .enumerate()
-        .skip(material_start)
-        .take(layout::MATERIAL_PAGE_SIZE)
-    {
-        let slot = ui.material_slots[index - material_start];
-        labels.push(label(
-            slot.origin.col as u32,
-            (slot.origin.row + 3) as u32,
-            slot.size.cols,
-            material
-                .id
-                .as_str()
-                .strip_prefix("material-")
-                .unwrap_or(material.id.as_str()),
-            MUTED,
-        ));
-    }
-    if let Some(material) = selected_material {
-        labels.push(label_rect(
-            ui.composition_summary,
-            material.id.as_str(),
-            MUTED,
-        ));
-        labels.push(label_rect(
-            ui.layer_summary,
-            &format!("{} 层", material.layers.len()),
-            MUTED,
-        ));
-    }
-    let coordinate = hover.map_or_else(String::new, |position| {
-        format!(" | {}, {}", position.x(), position.y())
-    });
-    labels.push(label_rect(
-        ui.status,
-        &format!("{}{}", model.status, coordinate),
-        if model.status.starts_with("错误") {
-            Rgba8::new(255, 133, 116, 255)
-        } else {
-            MUTED
-        },
-    ));
-    labels
-}
-
-fn project_help_labels(panel: GridRect) -> Vec<TextLabel> {
-    let col = panel.origin.col as u32 + 2;
-    let width = panel.size.cols.saturating_sub(4);
-    let row = panel.origin.row as u32;
-    vec![
-        label(col, row + 1, width, "地图编辑器使用说明", TEXT),
-        label(
-            col,
-            row + 3,
-            width,
-            "1. 在右侧“原子素材”中点击一张 16x16 素材。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 5,
-            width,
-            "2. 在底部“组合素材”中选择画笔，左键点击地图绘制。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 7,
-            width,
-            "3. 右键点击地图可擦除当前图层内容。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 9,
-            width,
-            "4. 点击“添加一层”，会用当前原子素材创建新组合。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 11,
-            width,
-            "5. “删除当前组合”只能删除未被地图使用的素材。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 13,
-            width,
-            "6. 切换“可通行 / 阻挡 / 遭遇事件”后再点击地图。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 15,
-            width,
-            "7. “贴图”只改画面；碰撞和事件不会修改贴图。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 17,
-            width,
-            "8. 保存后，游戏会读取同一份地图文件。",
-            TEXT,
-        ),
-        label(
-            col,
-            row + 19,
-            width,
-            "快捷键：Delete 删除组合，Ctrl+S 保存，Ctrl+Z 撤销。",
-            MUTED,
-        ),
-        label(
-            col,
-            row + 21,
-            width,
-            "再次点击右下角“帮助”关闭本说明。",
-            MUTED,
-        ),
-    ]
-}
-
-fn label_rect(rect: GridRect, content: &str, color: Rgba8) -> TextLabel {
-    label(
-        rect.origin.col as u32,
-        rect.origin.row as u32,
-        rect.size.cols,
-        content,
-        color,
-    )
-}
-
-fn label(col: u32, row: u32, width: u32, content: &str, color: Rgba8) -> TextLabel {
-    TextLabel {
-        role: TextRole::Editor,
-        col,
-        row,
-        width,
-        height: 1,
-        content: content.into(),
-        color,
-    }
-}
-
 fn image(
     position: GridPos,
     size: GridSize,
@@ -1137,14 +795,6 @@ fn image(
     ViewImage::new(GridRect::new(position, size), asset, tint, z_index as u16)
 }
 
-const fn sprite(color: Rgba8) -> ViewCell {
-    ViewCell::Fill(color)
-}
-
-fn fill(surface: &mut Surface<ViewCell>, rect: GridRect, color: Rgba8) -> Result<(), SurfaceError> {
-    surface.fill_rect(rect, sprite(color))
-}
-
 fn white_asset() -> AssetKey {
     AssetKey::new("solid/white").expect("the white asset key is valid")
 }
@@ -1152,7 +802,6 @@ fn white_asset() -> AssetKey {
 #[derive(Debug)]
 pub enum EditorViewError {
     Map(String),
-    Surface(SurfaceError),
     Ui(UiBuildError),
 }
 
@@ -1160,7 +809,6 @@ impl fmt::Display for EditorViewError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Map(error) => write!(formatter, "map projection failed: {error}"),
-            Self::Surface(error) => write!(formatter, "workbench projection failed: {error}"),
             Self::Ui(error) => write!(formatter, "workbench UI projection failed: {error}"),
         }
     }
@@ -1361,12 +1009,5 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().starts_with("map projection failed:"));
-        let surface_error =
-            Surface::<ViewCell>::from_cells(GridSize::new(1, 1), vec![]).unwrap_err();
-        assert!(
-            EditorViewError::Surface(surface_error)
-                .to_string()
-                .starts_with("workbench projection failed:")
-        );
     }
 }

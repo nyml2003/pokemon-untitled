@@ -6,8 +6,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-1{ workspace = true }
-1{ workspace = true }
+game-assets = { workspace = true }
+game-view = { workspace = true }
 map-project = { workspace = true }
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }

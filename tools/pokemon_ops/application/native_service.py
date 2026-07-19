@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from tools.pokemon_ops.application.sync_service import SyncService
 from tools.pokemon_ops.domain.errors import Result
-from tools.pokemon_ops.domain.model import BuildProfile, GitSyncReport, LocalConfig, NativeOperation, NativeRunRequest
+from tools.pokemon_ops.domain.model import BuildProfile, GitSyncReport, LocalConfig, NativeOperation, NativeRunRequest, ProgressEvent, ProgressEventType
 from tools.pokemon_ops.ports.interfaces import NativeRunDispatcher, ProgressReporter
 
 
@@ -21,11 +21,13 @@ class NativeService:
         synced = self._sync_service.sync(config, progress=progress)
         if not synced.is_ok:
             return Result(error=synced.error)
+        action = "building" if operation is NativeOperation.BUILD_GAME_HOST else "running"
+        stage = "build.start" if operation is NativeOperation.BUILD_GAME_HOST else "run.start"
         if progress is not None:
-            action = "building" if operation is NativeOperation.BUILD_GAME_HOST else "running"
-            progress(f"{action} game-host on Windows; native output follows")
+            progress.report(ProgressEvent(ProgressEventType.PROGRESS, stage, f"{action} game-host on Windows; native output follows"))
         dispatched = self._dispatcher.dispatch(
-            NativeRunRequest(operation=operation, profile=profile, mirror_root=config.mirror_root)
+            NativeRunRequest(operation=operation, profile=profile, mirror_root=config.mirror_root),
+            progress=progress,
         )
         if not dispatched.is_ok:
             return Result(error=dispatched.error)

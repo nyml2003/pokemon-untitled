@@ -1,6 +1,9 @@
+/// 一支对战队伍必须包含的成员数量。
 pub const TEAM_SIZE: usize = 6;
+/// 一只宝可梦可携带的招式数量上限。
 pub const MAX_MOVES: usize = 4;
 
+/// 对战中两支队伍的稳定标识。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Side {
     One,
@@ -8,6 +11,7 @@ pub enum Side {
 }
 
 impl Side {
+    /// 返回另一支队伍的标识。
     pub const fn opponent(self) -> Self {
         match self {
             Self::One => Self::Two,
@@ -16,10 +20,14 @@ impl Side {
     }
 }
 
+/// 队伍内零基且已验证的成员位置。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct TeamSlot(u8);
 
 impl TeamSlot {
+    /// 从零基索引创建队伍位置。
+    ///
+    /// 索引必须小于 [`TEAM_SIZE`]。
     pub fn new(index: usize) -> Result<Self, ValidationError> {
         if index < TEAM_SIZE {
             Ok(Self(index as u8))
@@ -37,10 +45,14 @@ impl TeamSlot {
     }
 }
 
+/// 招式列表内零基且已验证的位置。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct MoveSlot(u8);
 
 impl MoveSlot {
+    /// 从零基索引创建招式位置。
+    ///
+    /// 索引必须小于 [`MAX_MOVES`]。
     pub fn new(index: usize) -> Result<Self, ValidationError> {
         if index < MAX_MOVES {
             Ok(Self(index as u8))
@@ -58,10 +70,12 @@ impl MoveSlot {
     }
 }
 
+/// 宝可梦的非空稳定业务标识。
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct PokemonId(String);
 
 impl PokemonId {
+    /// 创建非空标识。
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         Self::from_string(value.into())
     }
@@ -79,10 +93,12 @@ impl PokemonId {
     }
 }
 
+/// 招式的非空稳定业务标识。
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct MoveId(String);
 
 impl MoveId {
+    /// 创建非空标识。
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         Self::from_string(value.into())
     }
@@ -100,6 +116,7 @@ impl MoveId {
     }
 }
 
+/// 第三世代属性相性使用的十八种属性。
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum PokemonType {
     Normal,
@@ -121,6 +138,7 @@ pub enum PokemonType {
     Dark,
 }
 
+/// 招式在伤害计算中的类别。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MoveCategory {
     Physical,
@@ -128,6 +146,7 @@ pub enum MoveCategory {
     Status,
 }
 
+/// 一只宝可梦同时最多拥有一种的主要异常状态。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MajorStatus {
     Burn,
@@ -138,6 +157,7 @@ pub enum MajorStatus {
     Sleep { turns_remaining: u8 },
 }
 
+/// 不含睡眠或剧毒回合数的主要异常状态分类。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MajorStatusKind {
     Burn,
@@ -148,12 +168,14 @@ pub enum MajorStatusKind {
     Sleep,
 }
 
+/// 不使用常规伤害公式的固定伤害来源。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum FixedDamage {
     Amount(u16),
     UserLevel,
 }
 
+/// 当前领域模型已实现或需要保留的特性。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Ability {
     AirLock,
@@ -208,9 +230,12 @@ pub enum Ability {
     WhiteSmoke,
 }
 
+/// 能力阶级允许的最小值。
 pub const MIN_STAT_STAGE: i8 = -6;
+/// 能力阶级允许的最大值。
 pub const MAX_STAT_STAGE: i8 = 6;
 
+/// 可被能力阶级修改的战斗能力值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BattleStat {
     Attack,
@@ -223,6 +248,7 @@ pub enum BattleStat {
 }
 
 impl BattleStat {
+    /// 按稳定顺序列出全部可修改能力值。
     pub const ALL: [Self; 7] = [
         Self::Attack,
         Self::Defense,
@@ -234,6 +260,7 @@ impl BattleStat {
     ];
 }
 
+/// 一只宝可梦当前七项能力阶级。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StatStages {
     attack: i8,
@@ -246,6 +273,7 @@ pub struct StatStages {
 }
 
 impl StatStages {
+    /// 返回所有能力阶级为零的状态。
     pub const fn neutral() -> Self {
         Self {
             attack: 0,
@@ -258,6 +286,7 @@ impl StatStages {
         }
     }
 
+    /// 返回指定能力值当前的阶级。
     pub const fn get(self, stat: BattleStat) -> i8 {
         match stat {
             BattleStat::Attack => self.attack,
@@ -270,6 +299,9 @@ impl StatStages {
         }
     }
 
+    /// 将指定能力值设为一个有效阶级。
+    ///
+    /// 阶级必须在 [`MIN_STAT_STAGE`] 至 [`MAX_STAT_STAGE`] 之间。
     pub fn set(&mut self, stat: BattleStat, stage: i8) -> Result<(), ValidationError> {
         if !(MIN_STAT_STAGE..=MAX_STAT_STAGE).contains(&stage) {
             return Err(ValidationError::InvalidStageChange);
@@ -309,6 +341,7 @@ impl StatStages {
     }
 }
 
+/// 一次招式效果要施加到七项能力阶级上的增减量。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StageChanges {
     attack: i8,
@@ -321,6 +354,7 @@ pub struct StageChanges {
 }
 
 impl StageChanges {
+    /// 创建至少修改一项且每项都在有效范围内的阶级变化。
     pub fn new(
         attack: i8,
         defense: i8,
@@ -359,6 +393,7 @@ impl StageChanges {
         })
     }
 
+    /// 创建只修改一项能力值的阶级变化。
     pub fn single(stat: BattleStat, amount: i8) -> Result<Self, ValidationError> {
         match stat {
             BattleStat::Attack => Self::new(amount, 0, 0, 0, 0, 0, 0),
@@ -384,12 +419,14 @@ impl StageChanges {
     }
 }
 
+/// 招式效果施加到使用者或对手的目标选择。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EffectTarget {
     User,
     Opponent,
 }
 
+/// 会持续多个回合的天气种类。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Weather {
     Hail,
@@ -398,6 +435,9 @@ pub enum Weather {
     Sun,
 }
 
+/// 当前天气及其持续时间。
+///
+/// `None` 表示永久天气，`Some(0)` 只会在结算阶段短暂存在。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WeatherState {
     weather: Weather,
@@ -405,14 +445,17 @@ pub struct WeatherState {
 }
 
 impl WeatherState {
+    /// 返回当前天气种类。
     pub const fn weather(self) -> Weather {
         self.weather
     }
 
+    /// 返回临时天气剩余回合数，或永久天气的 `None`。
     pub const fn turns_remaining(self) -> Option<u8> {
         self.turns_remaining
     }
 
+    /// 创建在指定回合数后结束的天气。
     pub const fn with_turns(weather: Weather, turns_remaining: u8) -> Self {
         Self {
             weather,
@@ -420,6 +463,7 @@ impl WeatherState {
         }
     }
 
+    /// 创建不会自行结束的天气。
     pub const fn permanent(weather: Weather) -> Self {
         Self {
             weather,
@@ -436,6 +480,7 @@ impl WeatherState {
 }
 
 impl MajorStatus {
+    /// 返回不包含状态内部回合数的分类。
     pub const fn kind(self) -> MajorStatusKind {
         match self {
             Self::Burn => MajorStatusKind::Burn,
@@ -448,6 +493,9 @@ impl MajorStatus {
     }
 }
 
+/// 附加在招式上的非基础伤害效果。
+///
+/// 通过构造函数创建时，会校验概率和比例参数。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MoveEffect {
     None,
@@ -490,10 +538,12 @@ pub enum MoveEffect {
 }
 
 impl MoveEffect {
+    /// 返回没有额外效果的招式效果。
     pub const fn none() -> Self {
         Self::None
     }
 
+    /// 创建以给定概率施加主要异常状态的效果。
     pub fn inflict_major_status(
         status: MajorStatusKind,
         chance: u8,
@@ -508,6 +558,7 @@ impl MoveEffect {
         Self::ChangeStages { target, changes }
     }
 
+    /// 创建以给定概率改变能力阶级的效果。
     pub fn change_stages_with_chance(
         target: EffectTarget,
         changes: StageChanges,
@@ -523,6 +574,7 @@ impl MoveEffect {
         })
     }
 
+    /// 创建按造成伤害比例回复使用者 HP 的效果。
     pub fn heal_user(numerator: u8, denominator: u8) -> Result<Self, ValidationError> {
         validate_fraction(numerator, denominator)?;
         Ok(Self::HealUser {
@@ -531,6 +583,7 @@ impl MoveEffect {
         })
     }
 
+    /// 创建按造成伤害比例回复使用者 HP 的吸取效果。
     pub fn drain_user(numerator: u8, denominator: u8) -> Result<Self, ValidationError> {
         validate_fraction(numerator, denominator)?;
         Ok(Self::DrainUser {
@@ -539,6 +592,7 @@ impl MoveEffect {
         })
     }
 
+    /// 创建按造成伤害比例伤害使用者的反伤效果。
     pub fn recoil_user(numerator: u8, denominator: u8) -> Result<Self, ValidationError> {
         validate_fraction(numerator, denominator)?;
         Ok(Self::RecoilUser {
@@ -576,6 +630,7 @@ impl MoveEffect {
         )
     }
 
+    /// 创建以给定概率使目标畏缩的效果。
     pub fn flinch_target(chance: u8) -> Result<Self, ValidationError> {
         if !(1..=100).contains(&chance) {
             return Err(ValidationError::InvalidEffectChance { value: chance });
@@ -658,6 +713,7 @@ fn validate_fraction(numerator: u8, denominator: u8) -> Result<(), ValidationErr
 }
 
 impl MoveCategory {
+    /// 返回属性在第三世代规则中默认的伤害类别。
     pub const fn for_gen3_type(move_type: PokemonType) -> Self {
         match move_type {
             PokemonType::Normal
@@ -681,23 +737,27 @@ impl MoveCategory {
     }
 }
 
+/// 招式命中率。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Accuracy {
     Percent(u8),
     AlwaysHit,
 }
 
+/// 受天气影响的命中率规则。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WeatherAccuracyModifier {
     Thunder,
 }
 
+/// 受天气影响的威力、属性或类别规则。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum WeatherMoveModifier {
     WeatherBall,
 }
 
 impl Accuracy {
+    /// 创建 1 至 100 的百分比命中率。
     pub fn percent(value: u8) -> Result<Self, ValidationError> {
         if (1..=100).contains(&value) {
             Ok(Self::Percent(value))
@@ -707,6 +767,7 @@ impl Accuracy {
     }
 }
 
+/// 已验证且均大于零的五项战斗能力值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BattleStats {
     attack: u16,
@@ -717,6 +778,9 @@ pub struct BattleStats {
 }
 
 impl BattleStats {
+    /// 创建五项战斗能力值。
+    ///
+    /// 任一能力值为零时返回错误，因为伤害和速度计算不能使用零值。
     pub fn new(
         attack: u16,
         defense: u16,
@@ -773,6 +837,7 @@ impl BattleStats {
     }
 }
 
+/// 可在对战中消耗 PP 并携带一个附加效果的招式定义。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Move {
     id: MoveId,
@@ -790,6 +855,7 @@ pub struct Move {
 }
 
 impl Move {
+    /// 使用第三世代属性默认类别创建不含附加效果的招式。
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: MoveId,
@@ -814,6 +880,7 @@ impl Move {
         )
     }
 
+    /// 使用指定类别创建不含附加效果的招式。
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_category(
         id: MoveId,
@@ -840,6 +907,9 @@ impl Move {
         )
     }
 
+    /// 使用完整招式定义创建招式。
+    ///
+    /// 名称、威力、PP 和效果参数必须满足 [`ValidationError`] 所列规则。
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_category_and_effect(
         id: MoveId,
@@ -956,6 +1026,7 @@ impl Move {
         self.effect
     }
 
+    /// 返回新的招式值，并为其设置命中率天气修正。
     pub const fn with_weather_accuracy(mut self, modifier: WeatherAccuracyModifier) -> Self {
         self.weather_accuracy = Some(modifier);
         self
@@ -965,6 +1036,7 @@ impl Move {
         self.weather_accuracy
     }
 
+    /// 返回新的招式值，并为其设置威力天气修正。
     pub const fn with_weather_move(mut self, modifier: WeatherMoveModifier) -> Self {
         self.weather_move = Some(modifier);
         self
@@ -979,6 +1051,7 @@ impl Move {
     }
 }
 
+/// 一只可进入战斗的宝可梦及其可变战斗状态。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Pokemon {
     id: PokemonId,
@@ -998,6 +1071,9 @@ pub struct Pokemon {
 }
 
 impl Pokemon {
+    /// 创建不带特性的宝可梦。
+    ///
+    /// 等级必须在 1 至 100 之间，当前 HP 不得超过最大 HP，且招式列表必须含一至四个不同标识的招式。
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: PokemonId,
@@ -1028,6 +1104,9 @@ impl Pokemon {
         )
     }
 
+    /// 创建带有一个特性的宝可梦。
+    ///
+    /// 其余输入限制与 [`Pokemon::new`] 相同。
     #[allow(clippy::too_many_arguments)]
     pub fn new_with_ability(
         id: PokemonId,
@@ -1200,10 +1279,12 @@ impl Pokemon {
         }
     }
 
+    /// 返回应用攻击特性和攻击阶级后的物理攻击值。
     pub fn effective_attack(&self) -> u16 {
         stage_modified_stat(self.physical_attack(), self.stages.get(BattleStat::Attack))
     }
 
+    /// 返回应用防御特性和防御阶级后的物理防御值。
     pub fn effective_defense(&self) -> u16 {
         let defense = if self.ability == Some(Ability::MarvelScale) && self.major_status.is_some() {
             self.stats.defense.saturating_mul(3) / 2
@@ -1246,6 +1327,7 @@ impl Pokemon {
         stage_modified_stat(speed, self.stages.get(BattleStat::Speed))
     }
 
+    /// 返回应用天气速度特性后的有效速度。
     pub fn effective_speed_in_weather(&self, weather: Option<Weather>) -> u16 {
         match (self.ability, weather) {
             (Some(Ability::Chlorophyll), Some(Weather::Sun))
@@ -1467,12 +1549,14 @@ impl Pokemon {
     }
 }
 
+/// 固定包含六只宝可梦且标识互不重复的对战队伍。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Team {
     members: [Pokemon; TEAM_SIZE],
 }
 
 impl Team {
+    /// 从恰好六只且标识互不重复的宝可梦创建队伍。
     pub fn new(members: Vec<Pokemon>) -> Result<Self, ValidationError> {
         if members.len() != TEAM_SIZE {
             return Err(ValidationError::InvalidTeamSize {
@@ -1497,10 +1581,12 @@ impl Team {
         Ok(Self { members })
     }
 
+    /// 返回按队伍槽位顺序排列的全部成员。
     pub fn members(&self) -> &[Pokemon; TEAM_SIZE] {
         &self.members
     }
 
+    /// 返回指定有效槽位中的成员。
     pub fn member(&self, slot: TeamSlot) -> &Pokemon {
         &self.members[slot.index()]
     }
@@ -1521,6 +1607,7 @@ impl Team {
     }
 }
 
+/// 构造领域值对象时违反的输入约束。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ValidationError {
     InvalidTeamSlot { index: usize },

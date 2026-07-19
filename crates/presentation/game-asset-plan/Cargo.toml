@@ -6,15 +6,15 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-1{ workspace = true }
-1{ workspace = true }
+battle-application = { workspace = true }
+game-assets = { workspace = true }
 game-data = { workspace = true }
-1{ workspace = true }
+game-native-plan = { workspace = true }
 game-session = { workspace = true }
-1{ workspace = true }
-1{ workspace = true }
+game-ui = { workspace = true }
+game-view = { workspace = true }
 punctum-gpu = { workspace = true }
-1{ workspace = true }
+world-application = { workspace = true }
 
 [dev-dependencies]
 game-data = { workspace = true }

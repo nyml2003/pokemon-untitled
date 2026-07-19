@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Callable, Protocol
+from pathlib import Path
+from typing import Protocol
 
 from tools.pokemon_ops.domain.errors import Result
-from tools.pokemon_ops.domain.model import GitMirrorStatus, GitSyncReport, LocalConfig, NativeRunRequest
+from tools.pokemon_ops.domain.model import GitMirrorStatus, GitSyncReport, LocalConfig, NativeRunRequest, ProgressEvent
 
 
-ProgressReporter = Callable[[str], None]
+class ProgressReporter(Protocol):
+    def report(self, event: ProgressEvent) -> None: ...
 
 
 class ProcessRunner(Protocol):
@@ -14,7 +16,7 @@ class ProcessRunner(Protocol):
 
 
 class NativeRunDispatcher(Protocol):
-    def dispatch(self, request: NativeRunRequest) -> Result[int]: ...
+    def dispatch(self, request: NativeRunRequest, progress: ProgressReporter | None = None) -> Result[int]: ...
 
 
 class GitMirror(Protocol):

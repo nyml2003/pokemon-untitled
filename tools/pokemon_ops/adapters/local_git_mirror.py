@@ -2,16 +2,17 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
-from typing import Iterable
 
+from tools.pokemon_ops.adapters.streaming_process import run_streamed_process
 from tools.pokemon_ops.domain.errors import ErrorCode, Result
-from tools.pokemon_ops.domain.model import GitMirrorStatus, GitSyncReport, LocalConfig
+from tools.pokemon_ops.domain.model import GitMirrorStatus, GitSyncReport, LocalConfig, ProgressEvent, ProgressEventType
 from tools.pokemon_ops.ports.interfaces import ProgressReporter
 
 
 class LocalGitMirror:
     def initialize(self, config: LocalConfig, progress: ProgressReporter | None = None) -> Result[GitSyncReport]:
         mirror = config.mirror_root.wsl_mount_path
+        self._report_progress(progress, "mirror.validate", "validating mirror directory")
         if mirror.exists() and any(mirror.iterdir()):
             return Result.fail(
                 ErrorCode.UNSAFE_MIRROR,
@@ -23,9 +24,8 @@ class LocalGitMirror:
         source_remote = self._source_remote(config)
         if not source_remote.is_ok:
             return Result(error=source_remote.error)
-        if progress is not None:
-            progress(f"cloning {config.git_mirror.remote_name}/{config.git_mirror.branch} into the Windows mirror")
-        cloned = self._run_forwarded(
+        self._report_progress(progress, "mirror.clone", f"cloning {config.git_mirror.remote_name}/{config.git_mirror.branch} into the Windows mirror")
+        cloned = self._run_streamed(
             (
                 "git",
                 "clone",
@@ -38,13 +38,19 @@ class LocalGitMirror:
             config.source_root.path,
             ErrorCode.GIT_SYNC_FAILED,
             "cannot clone the configured mirror branch",
+            progress,
+            "mirror.clone",
         )
         if not cloned.is_ok:
             return Result(error=cloned.error)
-        lfs = self._pull_lfs(mirror, config, progress)
+        lfs = self._pull_lfs(mirror, config, progress, "mirror.lfs")
         if not lfs.is_ok:
             return Result(error=lfs.error)
-        return self._report(config, mirror_before="", fast_forwarded=True)
+        self._report_progress(progress, "mirror.verify", "verifying initialized mirror")
+        reported = self._report(config, mirror_before="", fast_forwarded=True)
+        if reported.is_ok:
+            self._report_progress(progress, "mirror.done", "mirror initialization completed")
+        return reported
 
     def inspect(self, config: LocalConfig) -> Result[GitMirrorStatus]:
         mirror = config.mirror_root.wsl_mount_path
@@ -93,6 +99,7 @@ class LocalGitMirror:
 
     def sync(self, config: LocalConfig, progress: ProgressReporter | None = None) -> Result[GitSyncReport]:
         mirror = config.mirror_root.wsl_mount_path
+        self._report_progress(progress, "sync.inspect", "inspecting mirror state")
         valid = self._validate_mirror(config)
         if not valid.is_ok:
             return Result(error=valid.error)
@@ -107,13 +114,14 @@ class LocalGitMirror:
                 mirror_root=str(mirror),
                 remediation="commit or discard the mirror changes before running ops",
             )
-        if progress is not None:
-            progress(f"fetching {config.git_mirror.remote_name}/{config.git_mirror.branch}")
-        fetched = self._run_forwarded(
+        self._report_progress(progress, "sync.fetch", f"fetching {config.git_mirror.remote_name}/{config.git_mirror.branch}")
+        fetched = self._run_streamed(
             ("git", "fetch", "--no-tags", config.git_mirror.remote_name, config.git_mirror.branch),
             mirror,
             ErrorCode.GIT_SYNC_FAILED,
             "cannot fetch the configured mirror branch",
+            progress,
+            "sync.fetch",
         )
         if not fetched.is_ok:
             return Result(error=fetched.error)
@@ -131,25 +139,33 @@ class LocalGitMirror:
                 remote_head=remote_head.value or "",
             )
         if mirror_before != remote_head.value:
-            if progress is not None:
-                progress(f"fast-forwarding mirror to {remote_head.value}")
-            merged = self._run_forwarded(
+            self._report_progress(progress, "sync.fast_forward", f"fast-forwarding mirror to {remote_head.value}")
+            merged = self._run_streamed(
                 ("git", "merge", "--ff-only", "FETCH_HEAD"),
                 mirror,
                 ErrorCode.GIT_SYNC_FAILED,
                 "cannot fast-forward the mirror",
+                progress,
+                "sync.fast_forward",
             )
             if not merged.is_ok:
                 return Result(error=merged.error)
-        lfs = self._pull_lfs(mirror, config, progress)
-        if not lfs.is_ok:
-            return Result(error=lfs.error)
-        return self._report(
+            lfs = self._pull_lfs(mirror, config, progress, "sync.lfs")
+            if not lfs.is_ok:
+                return Result(error=lfs.error)
+        else:
+            self._report_progress(progress, "sync.lfs", "skipping Git LFS: mirror already matches the remote commit")
+        self._report_progress(progress, "sync.verify", "verifying synchronized mirror")
+        reported = self._report(
             config,
             mirror_before=mirror_before,
             fast_forwarded=mirror_before != remote_head.value,
             remote_head=remote_head.value or "",
         )
+        if reported.is_ok:
+            message = "mirror fast-forward completed" if reported.value and reported.value.fast_forwarded else "mirror already matches the remote commit"
+            self._report_progress(progress, "sync.done", message)
+        return reported
 
     def _source_remote(self, config: LocalConfig) -> Result[str]:
         return self._output(
@@ -206,17 +222,18 @@ class LocalGitMirror:
             )
         return self._output(("git", "rev-parse", "HEAD"), mirror, ErrorCode.UNSAFE_MIRROR, "cannot read mirror revision")
 
-    def _pull_lfs(self, mirror: Path, config: LocalConfig, progress: ProgressReporter | None) -> Result[None]:
+    def _pull_lfs(self, mirror: Path, config: LocalConfig, progress: ProgressReporter | None, stage: str) -> Result[None]:
         attributes = mirror / ".gitattributes"
         if not attributes.is_file() or "filter=lfs" not in attributes.read_text(encoding="utf-8"):
             return Result.ok(None)
-        if progress is not None:
-            progress("updating Git LFS objects")
-        pulled = self._run_forwarded(
+        self._report_progress(progress, stage, "updating Git LFS objects")
+        pulled = self._run_streamed(
             ("git", "lfs", "pull", config.git_mirror.remote_name, config.git_mirror.branch),
             mirror,
             ErrorCode.GIT_LFS_UNAVAILABLE,
             "cannot update Git LFS objects",
+            progress,
+            stage,
         )
         if not pulled.is_ok:
             return Result(error=pulled.error)
@@ -262,19 +279,55 @@ class LocalGitMirror:
             )
         return Result.ok(completed.stdout.strip())
 
-    def _run_forwarded(self, arguments: tuple[str, ...], cwd: Path, code: ErrorCode, message: str) -> Result[None]:
-        completed = self._completed(arguments, cwd)
+    def _run_streamed(
+        self,
+        arguments: tuple[str, ...],
+        cwd: Path,
+        code: ErrorCode,
+        message: str,
+        progress: ProgressReporter | None,
+        stage: str,
+    ) -> Result[None]:
+        completed = run_streamed_process(
+            arguments,
+            cwd,
+            progress,
+            stage,
+            unavailable_code=ErrorCode.GIT_UNAVAILABLE,
+            start_failure_code=ErrorCode.GIT_SYNC_FAILED,
+        )
         if not completed.is_ok:
+            assert completed.error is not None
+            self._report_error(progress, stage, completed.error.code, completed.error.message)
             return Result(error=completed.error)
-        if completed.value != 0:
-            return Result.fail(code, message, executable=arguments[0], exit_code=str(completed.value))
+        assert completed.value is not None
+        if completed.value.exit_code != 0:
+            details = {
+                "executable": arguments[0],
+                "exit_code": str(completed.value.exit_code),
+            }
+            if completed.value.output_tail:
+                details["output_tail"] = "\n".join(completed.value.output_tail)
+            self._report_error(progress, stage, code, message)
+            return Result.fail(code, message, **details)
         return Result.ok(None)
 
-    def _completed(self, arguments: Iterable[str], cwd: Path) -> Result[int]:
+    @staticmethod
+    def _completed(arguments: tuple[str, ...], cwd: Path) -> Result[int]:
         try:
-            completed = subprocess.run(tuple(arguments), cwd=cwd, check=False)
+            completed = subprocess.run(arguments, cwd=cwd, check=False)
         except FileNotFoundError:
             return Result.fail(ErrorCode.GIT_UNAVAILABLE, "Git executable is unavailable", executable="git")
         except OSError as error:
             return Result.fail(ErrorCode.GIT_SYNC_FAILED, "cannot start Git", reason=str(error))
         return Result.ok(completed.returncode)
+
+    @staticmethod
+    def _report_progress(progress: ProgressReporter | None, stage: str, message: str) -> None:
+        if progress is not None:
+            progress.report(ProgressEvent(ProgressEventType.PROGRESS, stage, message))
+
+    @staticmethod
+    def _report_error(progress: ProgressReporter | None, stage: str, code: ErrorCode, message: str) -> None:
+        if progress is not None:
+            progress.report(ProgressEvent(ProgressEventType.ERROR, stage, message, code=code.value))

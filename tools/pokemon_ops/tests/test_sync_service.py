@@ -8,7 +8,7 @@ from pathlib import Path, PureWindowsPath
 from tools.pokemon_ops.adapters.local_git_mirror import LocalGitMirror
 from tools.pokemon_ops.application.sync_service import SyncService
 from tools.pokemon_ops.domain.errors import ErrorCode
-from tools.pokemon_ops.domain.model import LocalConfig, MirrorRoot, SourceRoot, TestSuite, WindowsRunner
+from tools.pokemon_ops.domain.model import LocalConfig, MirrorRoot, ProgressEvent, SourceRoot, TestSuite, WindowsRunner
 
 
 def git(cwd: Path, *arguments: str) -> str:
@@ -37,6 +37,14 @@ def config_for(root: Path) -> LocalConfig:
         windows_runner=WindowsRunner(Path("/mnt/c/Python/python.exe"), "tools.pokemon_ops.native_runner"),
         unit_suites={TestSuite.CORE: ("core",), TestSuite.WORLD: ("world",), TestSuite.ALL: ("workspace",)},
     )
+
+
+class RecordingProgress:
+    def __init__(self) -> None:
+        self.events: list[ProgressEvent] = []
+
+    def report(self, event: ProgressEvent) -> None:
+        self.events.append(event)
 
 
 class GitSyncServiceTests(unittest.TestCase):
@@ -112,3 +120,15 @@ class GitSyncServiceTests(unittest.TestCase):
             self.assertFalse(result.is_ok)
             assert result.error is not None
             self.assertEqual(result.error.code, ErrorCode.UNSAFE_MIRROR)
+
+    def test_unchanged_mirror_skips_lfs_and_reports_completion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = config_for(Path(directory))
+            self.assertTrue(self.service.initialize(config).is_ok)
+            progress = RecordingProgress()
+
+            result = self.service.sync(config, progress)
+
+            self.assertTrue(result.is_ok)
+            self.assertTrue(any(event.stage == "sync.lfs" and event.message.startswith("skipping Git LFS") for event in progress.events))
+            self.assertTrue(any(event.stage == "sync.done" for event in progress.events))

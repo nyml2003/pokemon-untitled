@@ -21,6 +21,28 @@ class NativeOperation(StrEnum):
     RUN_GAME_HOST = "run_game_host"
 
 
+class ProgressEventType(StrEnum):
+    PROGRESS = "progress"
+    OUTPUT = "output"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class ProcessStream(StrEnum):
+    STDOUT = "stdout"
+    STDERR = "stderr"
+
+
+@dataclass(frozen=True)
+class ProgressEvent:
+    type: ProgressEventType
+    stage: str
+    message: str
+    stream: ProcessStream | None = None
+    code: str | None = None
+    remediation: str | None = None
+
+
 @dataclass(frozen=True)
 class SourceRoot:
     path: Path

@@ -9,7 +9,7 @@ rust-version.workspace = true
 battle-application = { workspace = true }
 battle-session = { workspace = true }
 game-data = { workspace = true }
-1{ workspace = true }
+world-application = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

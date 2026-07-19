@@ -6,9 +6,9 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-1{ workspace = true }
-1{ workspace = true }
-1{ workspace = true }
+game-asset-plan = { workspace = true }
+game-assets = { workspace = true }
+map-assets = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

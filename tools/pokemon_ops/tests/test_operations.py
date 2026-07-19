@@ -7,7 +7,7 @@ from pathlib import Path, PureWindowsPath
 from tools.pokemon_ops.application.native_service import NativeService
 from tools.pokemon_ops.application.testing_service import WslTestingService
 from tools.pokemon_ops.domain.errors import ErrorCode, Result
-from tools.pokemon_ops.domain.model import BuildProfile, GitSyncReport, LocalConfig, MirrorRoot, NativeOperation, SourceRoot, TestSuite, WindowsRunner
+from tools.pokemon_ops.domain.model import BuildProfile, GitSyncReport, LocalConfig, MirrorRoot, NativeOperation, ProgressEvent, SourceRoot, TestSuite, WindowsRunner
 
 
 def config_for(root: Path) -> LocalConfig:
@@ -50,9 +50,17 @@ class RecordingDispatcher:
     def __init__(self) -> None:
         self.called = False
 
-    def dispatch(self, request: object) -> Result[int]:
+    def dispatch(self, request: object, progress: object = None) -> Result[int]:
         self.called = True
         return Result.ok(0)
+
+
+class RecordingProgress:
+    def __init__(self) -> None:
+        self.events: list[ProgressEvent] = []
+
+    def report(self, event: ProgressEvent) -> None:
+        self.events.append(event)
 
 
 class OperationTests(unittest.TestCase):
@@ -81,14 +89,14 @@ class OperationTests(unittest.TestCase):
             config = config_for(root)
             dispatcher = RecordingDispatcher()
             service = NativeService(RecordingSyncService(), dispatcher)  # type: ignore[arg-type]
-            progress: list[str] = []
+            progress = RecordingProgress()
 
             result = service.execute(
                 config,
                 NativeOperation.RUN_GAME_HOST,
                 BuildProfile.DEBUG,
-                progress=progress.append,
+                progress=progress,
             )
 
             self.assertTrue(result.is_ok)
-            self.assertIn("running game-host on Windows; native output follows", progress)
+            self.assertTrue(any(event.stage == "run.start" for event in progress.events))

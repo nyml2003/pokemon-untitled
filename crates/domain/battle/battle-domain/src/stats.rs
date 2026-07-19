@@ -1,9 +1,13 @@
 use crate::{BattleStats, ValidationError};
 
+/// 单项个体值允许的最大值。
 pub const MAX_INDIVIDUAL_VALUE: u8 = 31;
+/// 单项努力值允许的最大值。
 pub const MAX_EFFORT_VALUE: u16 = 255;
+/// 六项努力值之和允许的最大值。
 pub const MAX_TOTAL_EFFORT_VALUE: u16 = 510;
 
+/// 用于报告投影错误的六项能力值名称。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StatName {
     Hp,
@@ -14,6 +18,7 @@ pub enum StatName {
     Speed,
 }
 
+/// 性格可以提高或降低的非 HP 能力值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NonHpStat {
     Attack,
@@ -23,6 +28,7 @@ pub enum NonHpStat {
     Speed,
 }
 
+/// 按 HP、攻击、防御、特攻、特防和速度排序的一组六项数值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct StatBlock<T> {
     pub hp: T,
@@ -34,6 +40,7 @@ pub struct StatBlock<T> {
 }
 
 impl<T> StatBlock<T> {
+    /// 按 HP、攻击、防御、特攻、特防和速度创建一组数值。
     pub const fn new(
         hp: T,
         attack: T,
@@ -53,10 +60,12 @@ impl<T> StatBlock<T> {
     }
 }
 
+/// 已验证的六项个体值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndividualValues(StatBlock<u8>);
 
 impl IndividualValues {
+    /// 创建个体值，任何一项超过 31 时返回错误。
     pub fn new(values: StatBlock<u8>) -> Result<Self, StatProjectionError> {
         for (stat, value) in named_values(values) {
             if value > MAX_INDIVIDUAL_VALUE {
@@ -66,15 +75,18 @@ impl IndividualValues {
         Ok(Self(values))
     }
 
+    /// 返回所有六项均为 31 的个体值。
     pub const fn perfect() -> Self {
         Self(StatBlock::new(31, 31, 31, 31, 31, 31))
     }
 }
 
+/// 已验证并按每项生效值截断的六项努力值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct EffortValues(StatBlock<u8>);
 
 impl EffortValues {
+    /// 创建努力值，单项超过 255 或总和超过 510 时返回错误。
     pub fn new(values: StatBlock<u16>) -> Result<Self, StatProjectionError> {
         for (stat, value) in named_values(values) {
             if value > MAX_EFFORT_VALUE {
@@ -103,11 +115,13 @@ impl EffortValues {
         )))
     }
 
+    /// 返回所有六项均为零的努力值。
     pub const fn untrained() -> Self {
         Self(StatBlock::new(0, 0, 0, 0, 0, 0))
     }
 }
 
+/// 对一项非 HP 能力值加成并对另一项减成的性格。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Nature {
     raised: Option<NonHpStat>,
@@ -115,6 +129,7 @@ pub struct Nature {
 }
 
 impl Nature {
+    /// 返回不改变任何能力值的性格。
     pub const fn neutral() -> Self {
         Self {
             raised: None,
@@ -122,6 +137,9 @@ impl Nature {
         }
     }
 
+    /// 创建加成和减成性格。
+    ///
+    /// 同一项能力值不能同时被提高和降低。
     pub fn adjusted(raised: NonHpStat, lowered: NonHpStat) -> Result<Self, StatProjectionError> {
         if raised == lowered {
             return Err(StatProjectionError::InvalidNature { raised, lowered });
@@ -143,6 +161,7 @@ impl Nature {
     }
 }
 
+/// 参与能力值投影的个体值、努力值和性格。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct TrainingValues {
     ivs: IndividualValues,
@@ -151,10 +170,12 @@ pub struct TrainingValues {
 }
 
 impl TrainingValues {
+    /// 组合已验证的训练参数。
     pub const fn new(ivs: IndividualValues, evs: EffortValues, nature: Nature) -> Self {
         Self { ivs, evs, nature }
     }
 
+    /// 返回满个体值、零努力值和中性性格的训练参数。
     pub const fn perfect_untrained() -> Self {
         Self::new(
             IndividualValues::perfect(),
@@ -164,6 +185,7 @@ impl TrainingValues {
     }
 }
 
+/// 从基础种族值投影出的最大 HP 和战斗能力值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CalculatedStats {
     max_hp: u32,
@@ -171,15 +193,18 @@ pub struct CalculatedStats {
 }
 
 impl CalculatedStats {
+    /// 返回投影后的最大 HP。
     pub const fn max_hp(self) -> u32 {
         self.max_hp
     }
 
+    /// 返回投影后的五项战斗能力值。
     pub const fn battle(self) -> BattleStats {
         self.battle
     }
 }
 
+/// 第三世代能力值投影的输入或输出错误。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum StatProjectionError {
     InvalidLevel {
@@ -211,6 +236,9 @@ pub enum StatProjectionError {
     InvalidBattleStats,
 }
 
+/// 按第三世代整数公式投影一只宝可梦的能力值。
+///
+/// 等级必须在 1 至 100 之间，六项基础种族值都必须大于零。
 pub fn calculate_gen3_stats(
     base: StatBlock<u16>,
     level: u8,

@@ -53,7 +53,7 @@ impl PokedexData {
     pub fn embedded_gen3() -> Result<Self, PokedexLoadError> {
         Self::from_bytes(include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../../../assets/source/data/game/pokedex/gen3.v1.bin"
+            "/../../../../assets/source/data/game/pokedex/gen3.v1.bin"
         )))
     }
 
@@ -326,7 +326,7 @@ impl CurrentDataSet {
 
     pub fn embedded() -> Result<Self, DataLoadError> {
         Self::from_json(include_bytes!(
-            "../../../../assets/source/data/game/current-dataset/v2.json"
+            "../../../../../assets/source/data/game/current-dataset/v2.json"
         ))
     }
 

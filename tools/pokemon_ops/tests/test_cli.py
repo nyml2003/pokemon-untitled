@@ -67,7 +67,8 @@ class CliTests(unittest.TestCase):
             self.assertEqual(exit_code, 0)
             self.assertTrue(json.loads(output.getvalue())["ok"])
             self.assertTrue((mirror / ".git").is_dir())
-            self.assertIn("ops: cloning origin/master", errors.getvalue())
+            events = [json.loads(line) for line in errors.getvalue().splitlines()]
+            self.assertTrue(any(event["type"] == "progress" and event["stage"] == "mirror.clone" for event in events))
 
     def test_sync_reports_git_progress_to_stderr_without_breaking_json_stdout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -84,4 +85,6 @@ class CliTests(unittest.TestCase):
 
             self.assertEqual(exit_code, 0)
             self.assertTrue(json.loads(output.getvalue())["ok"])
-            self.assertIn("ops: fetching origin/master", errors.getvalue())
+            events = [json.loads(line) for line in errors.getvalue().splitlines()]
+            self.assertTrue(any(event["type"] == "progress" and event["stage"] == "sync.fetch" for event in events))
+            self.assertTrue(any(event["type"] == "output" and event["stream"] == "stderr" for event in events))
