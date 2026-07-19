@@ -1,7 +1,7 @@
 # UI 框架升级报告
 
 > 日期：2026-07-19
-> 状态：P0 核心 API、图鉴迁移和 P1 基础组件已完成；其他页面与编辑器仍未迁移
+> 状态：P0 核心 API、P1 基础组件、图鉴和战斗主菜单/招式详情迁移已完成；其他页面与编辑器仍未迁移
 > 范围：`punctum-ui`、游戏页面投影、地图编辑器与瓦片编辑器的 UI 接线。
 
 ## 结论
@@ -154,7 +154,7 @@ fn pokedex_page(state: &PokedexPageState) -> UiTree<PokedexAction> {
 
 **目的**：让页面表达结构和语义，而不是重复填写低层样式。
 
-**当前状态（2026-07-19）**：`game-ui-kit` 已实现 `GameUiTheme`、`screen`、`panel`、`row`、`column`、`stack`、`text`、`image`、`sprite` 和 `selectable_list_item`。图鉴已使用这些组件。`button`、`modal`、`tab_bar`、通用 `selectable_list` 以及第二个页面迁移仍未开始。
+**当前状态（2026-07-19）**：`game-ui-kit` 已实现 `GameUiTheme`、`screen`、`panel`、`row`、`column`、`stack`、`text`、`image`、`sprite`、`selectable_list_item`、`button`、`modal` 和 `tab_bar`。图鉴已完整使用组件。战斗页的主菜单、招式列表和招式详情已迁移。战斗宝可梦选择页、控制台和通用 `selectable_list` 仍未迁移。
 
 **位置**：新建 `crates/presentation/game-ui-kit`。它依赖 `punctum-ui`，不依赖 GPU、窗口或 `GameSession`。
 
@@ -162,7 +162,7 @@ fn pokedex_page(state: &PokedexPageState) -> UiTree<PokedexAction> {
 
 - `GameUiTheme`：颜色、边框、圆角、间距、字号和层级。
 - 基础组件：`screen`、`panel`、`row`、`column`、`stack`、`text`、`image`、`sprite`。
-- 交互组件：已实现 `selectable_list_item`；后续增加 `button`、`selectable_list`、`modal`、`tab_bar`。
+- 交互组件：`selectable_list_item` 携带 `Action`。`button`、`modal`、`tab_bar` 目前只表达视觉结构；页面业务 action 和焦点路由留给 P7。后续增加 `selectable_list`。
 - 页面只能通过组件或少数明确的低层 escape hatch 构树。
 
 `punctum-ui` 保留 `UiContent::Image`、`ImageTinted` 和 `ImageStyled` 等图像原语，不新增游戏组件。`game-ui-kit::image` 负责把内容 ID、尺寸和通用样式构造成节点。`game-ui-kit::sprite` 在此基础上封装染色、像素偏移、圆角和裁剪。两者都不能依赖图集、GPU、资源加载或游戏状态。
@@ -172,6 +172,7 @@ fn pokedex_page(state: &PokedexPageState) -> UiTree<PokedexAction> {
 **验收标准**：
 
 - 图鉴的重复面板、列表项、文本和图像构造已移到组件层。
+- 战斗主菜单、招式列表和招式详情已使用主题与组件；旧命中区域在 P7 前保持兼容。
 - `image` 覆盖普通图像；`sprite` 覆盖普通、染色和带像素偏移的精灵。
 - 已迁移的页面函数不再出现 `UiId(n)` 或节点 ID 偏移。
 - 改变 `GameUiTheme` 的面板 token 可影响图鉴全部同类组件；第二个页面迁移后再验证跨页面效果。
@@ -267,8 +268,8 @@ fn pokedex_page(state: &PokedexPageState) -> UiTree<PokedexAction> {
 | 阶段 | 交付 | 首个迁移对象 | 完成条件 |
 | --- | --- | --- | --- |
 | 1 | P0 自动 ID、`Action`、`UiKey` | `punctum-ui` fixture、图鉴 | 已完成：新旧 API 并存，图鉴可由键盘或鼠标选择条目。 |
-| 2 | P1 `game-ui-kit` 与 token | 图鉴 | 基础组件和图鉴迁移已完成；通用交互组件与第二个页面迁移待完成。 |
-| 3 | P1 迁移 | 战斗、控制台 | 使用主题和组件，保留现有页面业务输入。 |
+| 2 | P1 `game-ui-kit` 与 token | 图鉴 | 基础组件和图鉴迁移已完成；`button`、`modal`、`tab_bar` 已可用。 |
+| 3 | P1 迁移 | 战斗、控制台 | 战斗主菜单、招式列表和招式详情已完成；继续迁移宝可梦选择页和控制台，保留现有页面业务输入。 |
 | 4 | P3 滚动 | 图鉴完整列表 | 可见项窗口化，选择与滚动稳定。 |
 | 5 | P4 文本 | 图鉴、控制台 | 文本测量、换行和截断可验证。 |
 | 6 | P5/P6 | 全部 Pixel 页面 | 语义、截图和性能基线可回归验证。 |
@@ -281,7 +282,7 @@ fn pokedex_page(state: &PokedexPageState) -> UiTree<PokedexAction> {
 
 1. P0 先增加新 API，不删除 `UiId`、`UiNode::new(UiId)` 或 `hit_test`。
 2. `UiId` API 标记为 legacy，但不立刻废弃，避免阻断地图和瓦片编辑器的现有工作。
-3. `game-view` 的图鉴已迁移到 `UiTree<PokedexAction>`，不再使用手写 ID 或私有 `with_generated_ui_ids`。战斗和控制台仍待迁移。
+3. `game-view` 的图鉴已迁移到 `UiTree<PokedexAction>`，不再使用手写 ID 或私有 `with_generated_ui_ids`。战斗主菜单和招式详情已改用组件，但整页仍通过 `with_generated_ui_ids` 兼容 legacy 命中区域；控制台仍待迁移。
 4. `map-editor-view` 迁移到 `UiTree<EditorIntent>` 后，删除 `intent_for_ui_hit` 的数字映射。
 5. `tile-editor` 迁移到 `UiTree<TileEditorAction>` 后，删除本地 `UiIds` 计数器。
 6. 三条路径完成且 native 输入验收后，才删除 legacy ID API。
@@ -302,7 +303,7 @@ fn pokedex_page(state: &PokedexPageState) -> UiTree<PokedexAction> {
 | 泛型 Action 扩散导致 API 复杂 | 只让 `UiTree`、`UiNode`、`UiFrame` 带 Action。布局几何和 GPU 计划仍不带业务类型。 |
 | 自动 ID 因列表重排而变化 | NodeId 只作内部身份；跨重建状态一律使用显式 `UiKey`。 |
 | 组件层重新实现业务逻辑 | `game-ui-kit` 只返回节点和 action，不读取或修改 `GameSession`。 |
-| 迁移改变战斗视觉 | 先迁移图鉴；战斗和控制台必须有 frame/screenshot 对比。 |
+| 迁移改变战斗视觉 | 战斗主菜单和招式详情已有 frame 测试；继续迁移宝可梦选择页和控制台时必须补 frame/screenshot 对比。 |
 | 滚动变成无边界的通用控件工程 | P3 仅支持列表所需的显式 offset、clip 和窗口化。 |
 | 新 API 没有真正减少页面代码 | 每阶段测量迁移页面的 `UiId`、重复 style 字段和本地 ID 分配器数量。 |
 

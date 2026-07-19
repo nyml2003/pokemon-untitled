@@ -202,6 +202,45 @@ pub fn selectable_list_item<Action>(
     .with_action(action)
 }
 
+/// A purely visual selectable surface. Pages attach their own business action
+/// when interaction semantics are available.
+pub fn button<Action>(
+    theme: &GameUiTheme,
+    style: UiStyle,
+    selected: bool,
+    children: impl IntoIterator<Item = UiNode<Action>>,
+) -> UiNode<Action> {
+    panel(
+        theme,
+        if selected {
+            PanelTone::Selected
+        } else {
+            PanelTone::Panel
+        },
+        style,
+        children,
+    )
+}
+
+/// A visual row that owns the shared background of a tab control.
+pub fn tab_bar<Action>(
+    theme: &GameUiTheme,
+    mut style: UiStyle,
+    children: impl IntoIterator<Item = UiNode<Action>>,
+) -> UiNode<Action> {
+    style.direction = FlexDirection::Row;
+    panel(theme, PanelTone::Panel, style, children)
+}
+
+/// A visual dialog surface. Its visibility and dismissal stay with the page.
+pub fn modal<Action>(
+    theme: &GameUiTheme,
+    style: UiStyle,
+    children: impl IntoIterator<Item = UiNode<Action>>,
+) -> UiNode<Action> {
+    panel(theme, PanelTone::Card, style, children)
+}
+
 #[cfg(test)]
 mod tests {
     use punctum_ui::{UiBorderRadius, UiDrawCommand, UiSize, UiTree};
@@ -286,5 +325,35 @@ mod tests {
             frame.commands()[0],
             UiDrawCommand::Image { pixel_offset, .. } if pixel_offset == UiPixelOffset::new(2, -1)
         ));
+    }
+
+    #[test]
+    fn button_tab_bar_and_modal_use_their_theme_surfaces() {
+        let tree = UiTree::<()>::new(column(
+            UiStyle {
+                width: Dimension::Px(60),
+                height: Dimension::Px(60),
+                ..UiStyle::default()
+            },
+            [
+                button(&THEME, UiStyle::fixed(60, 20), true, std::iter::empty()),
+                tab_bar(&THEME, UiStyle::fixed(60, 20), std::iter::empty()),
+                modal(&THEME, UiStyle::fixed(60, 20), std::iter::empty()),
+            ],
+        ))
+        .unwrap();
+        let frame = tree.resolve(UiSize::new(60, 60)).unwrap();
+        let colors = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                UiDrawCommand::Fill { color, .. } => Some(*color),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert!(colors.contains(&THEME.selected));
+        assert!(colors.contains(&THEME.panel));
+        assert!(colors.contains(&THEME.card));
     }
 }

@@ -11,15 +11,15 @@ use game_assets::AssetKey;
 use game_data::PokedexData;
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction, WorldAnimation};
 use game_ui_kit::{
-    GameUiTheme, PanelTone, SpriteAppearance, TextTone, column as ui_column, image as ui_image,
-    panel as ui_panel, row as ui_row, screen as ui_screen,
+    GameUiTheme, PanelTone, SpriteAppearance, TextTone, button as ui_button, column as ui_column,
+    image as ui_image, modal as ui_modal, panel as ui_panel, row as ui_row, screen as ui_screen,
     selectable_list_item as ui_selectable_list_item, sprite as ui_sprite, text as ui_text,
 };
 use punctum_gpu::{PixelOffset, Rgba8};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
-    UiContentId, UiId, UiKey, UiNode, UiStyle, UiTextSize, UiTree,
+    UiContentId, UiId, UiKey, UiNode, UiStyle, UiTree,
 };
 use world_application::{
     CharacterAppearanceId, Direction as WorldDirection, WorldActorObservation, WorldActorRole,
@@ -86,6 +86,28 @@ const POKEDEX_THEME: GameUiTheme = GameUiTheme {
     large_radius: punctum_ui::UiBorderRadius::all(16),
     body_text_size: 18,
     title_text_size: 28,
+};
+
+const BATTLE_THEME: GameUiTheme = GameUiTheme {
+    screen: UiColor::new(146, 211, 218, 255),
+    header: UiColor::new(19, 25, 34, 255),
+    panel: UiColor::new(30, 38, 49, 255),
+    selected: UiColor::new(73, 211, 168, 255),
+    selected_text: UiColor::new(26, 39, 45, 255),
+    card: UiColor::new(242, 246, 239, 255),
+    image_backdrop: UiColor::new(75, 143, 105, 255),
+    text: UiColor::new(244, 246, 239, 255),
+    muted_text: UiColor::new(182, 194, 194, 255),
+    ink: UiColor::new(26, 39, 45, 255),
+    muted_ink: UiColor::new(82, 96, 98, 255),
+    small_spacing: 6,
+    medium_spacing: 10,
+    large_spacing: 16,
+    small_radius: punctum_ui::UiBorderRadius::all(6),
+    medium_radius: punctum_ui::UiBorderRadius::all(10),
+    large_radius: punctum_ui::UiBorderRadius::all(12),
+    body_text_size: 18,
+    title_text_size: 24,
 };
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -818,60 +840,59 @@ impl UiColorExt for Rgba8 {
 fn battle_main_actions_flex(selected: usize) -> UiNode {
     let buttons = ["战斗", "宝可梦", "包包", "逃走"];
     let rows = (0_usize..2).map(|row| {
-        UiNode::new(UiId(9_100 + row as u32))
-            .with_style(UiStyle {
+        ui_row(
+            UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
-                direction: FlexDirection::Row,
                 ..UiStyle::default()
-            })
-            .with_children((0..2).map(|column| {
+            },
+            (0..2).map(|column| {
                 let index = row * 2 + column;
                 battle_main_action_button(9_110 + index as u32, buttons[index], index == selected)
-            }))
+            }),
+        )
     });
-    UiNode::new(UiId(9_010))
-        .with_style(UiStyle {
+    ui_panel(
+        &BATTLE_THEME,
+        PanelTone::Panel,
+        UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
-            direction: FlexDirection::Column,
-            border_radius: punctum_ui::UiBorderRadius::all(12),
+            border_radius: BATTLE_THEME.large_radius,
             clip: true,
             ..UiStyle::default()
-        })
-        .with_content(UiContent::Fill(ACTION_PANEL_ALT.into_ui()))
-        .with_children(rows)
+        },
+        rows,
+    )
 }
 
+#[allow(deprecated)]
 fn battle_main_action_button(id: u32, content: &str, selected: bool) -> UiNode {
-    UiNode::new(UiId(id))
-        .with_style(UiStyle {
+    let mut button = ui_button(
+        &BATTLE_THEME,
+        UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
-            border_radius: punctum_ui::UiBorderRadius::all(10),
-            interactive: true,
+            border_radius: BATTLE_THEME.medium_radius,
             ..UiStyle::default()
-        })
-        .with_content(if selected {
-            UiContent::Fill(SELECTED.into_ui())
-        } else {
-            UiContent::Empty
-        })
-        .with_children([UiNode::new(UiId(id + 100))
-            .with_style(UiStyle {
-                width: Dimension::Fill,
-                height: Dimension::Fill,
-                ..UiStyle::default()
-            })
-            .with_content(UiContent::TextScaled {
-                content: content.to_owned(),
-                color: if selected {
-                    BATTLE_INK.into_ui()
-                } else {
-                    TEXT.into_ui()
-                },
-                font_size: UiTextSize::Px(18),
-            })])
+        },
+        selected,
+        [ui_text(
+            &BATTLE_THEME,
+            if selected {
+                TextTone::Selected
+            } else {
+                TextTone::Default
+            },
+            content,
+            BATTLE_THEME.body_text_size,
+            Dimension::Fill,
+        )],
+    );
+    // Preserve the legacy hit regions until P7 supplies battle actions.
+    button.id = UiId(id);
+    button.style.interactive = true;
+    button
 }
 
 fn battle_move_menu(
@@ -884,35 +905,36 @@ fn battle_move_menu(
         move_detail_panel(9_300, *move_type, *category, detail)
     });
 
-    UiNode::new(UiId(9_100))
-        .with_style(UiStyle {
+    ui_row(
+        UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
-            direction: FlexDirection::Row,
-            gap: 10,
+            gap: BATTLE_THEME.medium_spacing,
             ..UiStyle::default()
-        })
-        .with_children([
-            UiNode::new(UiId(9_110))
-                .with_style(UiStyle {
+        },
+        [
+            ui_column(
+                UiStyle {
                     width: Dimension::Ratio { units: 3, base: 5 },
                     height: Dimension::Fill,
-                    direction: FlexDirection::Column,
-                    gap: 6,
+                    gap: BATTLE_THEME.small_spacing,
                     clip: true,
                     ..UiStyle::default()
-                })
-                .with_children(moves.iter().enumerate().map(|(index, (name, ..))| {
+                },
+                moves.iter().enumerate().map(|(index, (name, ..))| {
                     battle_main_action_button(9_120 + index as u32, name, index == selected)
-                })),
-            UiNode::new(UiId(9_200))
-                .with_style(UiStyle {
+                }),
+            ),
+            ui_column(
+                UiStyle {
                     width: Dimension::Ratio { units: 2, base: 5 },
                     height: Dimension::Fill,
                     ..UiStyle::default()
-                })
-                .with_children(detail),
-        ])
+                },
+                detail,
+            ),
+        ],
+    )
 }
 
 fn move_detail_panel(
@@ -921,49 +943,50 @@ fn move_detail_panel(
     category: MoveCategory,
     detail: &str,
 ) -> UiNode {
-    panel(
-        id,
+    let mut modal = ui_modal(
+        &BATTLE_THEME,
         UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
             direction: FlexDirection::Column,
-            gap: 8,
-            padding: Insets::all(10),
-            border_radius: punctum_ui::UiBorderRadius::all(10),
+            gap: BATTLE_THEME.small_spacing,
+            padding: Insets::all(BATTLE_THEME.medium_spacing),
+            border_radius: BATTLE_THEME.medium_radius,
             ..UiStyle::default()
         },
-        ACTION_PANEL_ALT.into_ui(),
         [
-            text(
-                id + 1,
+            ui_text(
+                &BATTLE_THEME,
+                TextTone::MutedInk,
                 "招式详情",
-                MUTED_TEXT.into_ui(),
                 15,
                 Dimension::Fill,
             ),
-            UiNode::new(UiId(id + 2))
-                .with_style(UiStyle {
+            ui_row(
+                UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(28),
-                    direction: FlexDirection::Row,
-                    gap: 8,
+                    gap: BATTLE_THEME.small_spacing,
                     ..UiStyle::default()
-                })
-                .with_children([
-                    image(
-                        id + 3,
-                        type_icon_asset(move_type).as_str(),
+                },
+                [
+                    ui_image(
+                        UiContentId::new(type_icon_asset(move_type).as_str())
+                            .expect("static UI asset keys are non-empty"),
                         UiStyle::fixed(72, 28),
                     ),
-                    image(
-                        id + 4,
-                        move_category_icon_asset(category).as_str(),
+                    ui_image(
+                        UiContentId::new(move_category_icon_asset(category).as_str())
+                            .expect("static UI asset keys are non-empty"),
                         UiStyle::fixed(72, 28),
                     ),
-                ]),
-            text(id + 5, detail, TEXT.into_ui(), 17, Dimension::Fill),
+                ],
+            ),
+            ui_text(&BATTLE_THEME, TextTone::Ink, detail, 17, Dimension::Fill),
         ],
-    )
+    );
+    modal.id = UiId(id);
+    modal
 }
 
 fn battle_unavailable_page(message: &str) -> UiNode {
