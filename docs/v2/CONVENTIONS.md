@@ -45,8 +45,8 @@
 
 - Mermaid 用于分层、数据流、状态机和较短的运行流程；PlantUML 用于参与者较多的时序图或组件关系图。
 - 一张图对应一个明确问题，并放在说明该问题的编号内容页中。正文必须在图前说明范围、在图后解释结论和代码证据。
-- 图示源码与所在页面同目录：Mermaid 使用同名 `.mmd`，PlantUML 使用同名 `.puml`；二者都提交同名 `.svg` 渲染产物。页面引用 SVG，不直接依赖宿主对 Markdown 图示语法的支持。
-- 图示文件名沿用页面编号，例如 `004-场景投影与帧提交-运行流程.mmd`、`004-场景投影与帧提交-运行流程.svg`。一个源码文件只生成一个 SVG。
+- 图示源码直接写在 Markdown 正文的 `mermaid` 或 `plantuml` fenced code block 中。文档不提交 PNG、SVG、独立 `.mmd` 或 `.puml` 文件；正文文本是唯一需要评审和维护的来源。
+- 图前写清范围，图后写出结论及对应 crate、类型或函数。没有证据定位的图不进入 `current/`。
 - 新增或修改图示前，安装并使用持久化 Nix profile 中的 `mmdc`、`plantuml` 和 `dot`。工具安装命令为 `nix profile add nixpkgs#mermaid-cli nixpkgs#plantuml nixpkgs#graphviz`。
-- 校验时必须将源码渲染到仓库外的临时目录，再与提交的 SVG 比对；Mermaid 使用 `mmdc -i <源码.mmd> -o <临时.svg>`，PlantUML 使用 `plantuml -tsvg -o <临时目录> <源码.puml>`。渲染失败或产物不一致时不得提交。
-- SVG 比对通过后，仍须打开渲染结果作视觉复核，确认中文字、箭头方向、布局和边界均可读。图示变更说明中记录渲染器版本和校验结果。
+- 校验时运行 `ops docs check`。该 ops 子命令从 Markdown 提取每个图示块到系统临时目录，Mermaid 用 `mmdc` 渲染为 PNG，PlantUML 用 `plantuml -tpng` 渲染为 PNG；任一提取或渲染失败即失败。临时产物会在校验结束时删除，不进入仓库。
+- 渲染通过后仍须打开临时 PNG 作视觉复核，确认字体、箭头方向、边界、布局和文本可读性。图示变更说明中记录渲染器版本和校验结果。

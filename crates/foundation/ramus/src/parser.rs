@@ -232,7 +232,7 @@ fn parse_line(
     line: SourceLine,
     max_arguments: usize,
 ) -> Result<Call, ParseDiagnostic> {
-    let text = &source[line.start..line.end];
+    let text = source_slice(source, line.start, line.end, line)?;
     if text.bytes().all(|byte| matches!(byte, b' ' | b'\t')) {
         return Err(source_diagnostic(
             source,
@@ -321,7 +321,7 @@ fn lex_line(source: &str, line: SourceLine) -> Result<Vec<Token>, ParseDiagnosti
                 ));
             }
             '$' => {
-                let end = if source[start + 1..line.end].starts_with('(') {
+                let end = if source_slice(source, start + 1, line.end, line)?.starts_with('(') {
                     start + 2
                 } else {
                     start + 1
@@ -351,9 +351,9 @@ fn lex_line(source: &str, line: SourceLine) -> Result<Vec<Token>, ParseDiagnosti
                 ));
             }
             _ => {
-                offset = lex_bare_end(source, line, start);
+                offset = lex_bare_end(source, line, start)?;
                 tokens.push(Token {
-                    kind: TokenKind::Bare(source[start..offset].to_owned()),
+                    kind: TokenKind::Bare(source_slice(source, start, offset, line)?.to_owned()),
                     span: Span::new(start, offset),
                 });
             }
@@ -363,9 +363,9 @@ fn lex_line(source: &str, line: SourceLine) -> Result<Vec<Token>, ParseDiagnosti
     Ok(tokens)
 }
 
-fn lex_bare_end(source: &str, line: SourceLine, start: usize) -> usize {
+fn lex_bare_end(source: &str, line: SourceLine, start: usize) -> Result<usize, ParseDiagnostic> {
     let mut end = start;
-    for (relative, character) in source[start..line.end].char_indices() {
+    for (relative, character) in source_slice(source, start, line.end, line)?.char_indices() {
         if matches!(
             character,
             ' ' | '\t' | '=' | '"' | '|' | '<' | '>' | ';' | '$' | '`'
@@ -375,7 +375,7 @@ fn lex_bare_end(source: &str, line: SourceLine, start: usize) -> usize {
         }
         end = start + relative + character.len_utf8();
     }
-    end
+    Ok(end)
 }
 
 fn lex_quoted(
@@ -646,6 +646,22 @@ fn character_at(source: &str, line: SourceLine, offset: usize) -> Result<char, P
                 line,
             )
         })
+}
+
+fn source_slice(
+    source: &str,
+    start: usize,
+    end: usize,
+    line: SourceLine,
+) -> Result<&str, ParseDiagnostic> {
+    source.get(start..end).ok_or_else(|| {
+        source_diagnostic(
+            source,
+            ParseDiagnosticKind::InvalidSourceBoundary,
+            Span::new(start, end),
+            line,
+        )
+    })
 }
 
 fn source_diagnostic(

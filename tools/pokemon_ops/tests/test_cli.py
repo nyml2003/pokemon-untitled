@@ -58,6 +58,13 @@ class CliTests(unittest.TestCase):
         self.assertEqual(arguments.command, "lint")
         self.assertTrue(arguments.json_output)
 
+    def test_docs_check_command_is_available_with_json_output(self) -> None:
+        arguments = build_parser().parse_args(["docs", "check", "--json"])
+
+        self.assertEqual(arguments.command, "docs")
+        self.assertEqual(arguments.docs_command, "check")
+        self.assertTrue(arguments.json_output)
+
     def test_init_mirror_creates_git_clone_and_preserves_json_stdout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

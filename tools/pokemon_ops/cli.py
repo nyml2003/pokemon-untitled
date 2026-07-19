@@ -13,6 +13,7 @@ from tools.pokemon_ops.adapters.local_process_runner import LocalProcessRunner
 from tools.pokemon_ops.adapters.progress_reporters import JsonLinesProgressReporter, TextProgressReporter
 from tools.pokemon_ops.adapters.windows_native_run_dispatcher import WindowsNativeRunDispatcher
 from tools.pokemon_ops.application.native_service import NativeService
+from tools.pokemon_ops.application.documentation_service import DocumentationService
 from tools.pokemon_ops.application.sync_service import SyncService
 from tools.pokemon_ops.application.testing_service import WslTestingService
 from tools.pokemon_ops.domain.errors import Result
@@ -33,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     format_parser.add_argument("--check", action="store_true")
 
     command_parsers.append(commands.add_parser("lint"))
+
+    docs_parser = commands.add_parser("docs")
+    command_parsers.append(docs_parser)
+    docs_check_parser = docs_parser.add_subparsers(dest="docs_command", required=True).add_parser("check")
+    command_parsers.append(docs_check_parser)
 
     test_parser = commands.add_parser("test")
     command_parsers.append(test_parser)
@@ -149,6 +155,8 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
         return _emit(testing.lint(config), args.json_output)
     if args.command == "test":
         return _emit(testing.test(config, TestSuite(args.suite)), args.json_output)
+    if args.command == "docs":
+        return _emit(DocumentationService(LocalProcessRunner()).check(config, forward_output=not args.json_output), args.json_output)
     if args.command == "sync":
         return _emit(sync_service.sync(config, progress), args.json_output)
 

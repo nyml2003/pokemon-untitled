@@ -24,6 +24,8 @@ PANIC_PREVENTION_LINTS = (
     "clippy::unimplemented",
     "-D",
     "clippy::unreachable",
+    "-D",
+    "clippy::string_slice",
 )
 
 DEFAULT_LINT_COMMAND = ("cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings")

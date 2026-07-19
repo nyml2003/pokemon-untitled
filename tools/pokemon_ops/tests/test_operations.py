@@ -105,6 +105,8 @@ class OperationTests(unittest.TestCase):
                         "clippy::unimplemented",
                         "-D",
                         "clippy::unreachable",
+                        "-D",
+                        "clippy::string_slice",
                     )
                 ],
             )

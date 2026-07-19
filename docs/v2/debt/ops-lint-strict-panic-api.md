@@ -8,6 +8,7 @@
 | --- | --- | --- | --- |
 | `game-session` | 对战快照根据显示中的宝可梦 ID 查找精灵槽位；当前无错误返回的 `snapshot()` 不能传播查找失败。 | 将 `GameSession::snapshot()` 和展示调用链改为可返回 `GameError::SpriteSlotMissing`，移除临时首槽位回退。 | 未知宝可梦 ID 不会被错误地渲染为首只精灵，且保持严格 lint 通过。 |
 | `game-ui` console | console 默认构造会保存 Ramus adapter 初始化失败，但打开 console 的命令列表 API 尚不能显示该诊断。 | 让 `GameConsole::entries` 返回诊断结果，并由宿主传给 console 状态显示。 | adapter 初始化失败时 UI 显示具体诊断，而不是仅显示“没有可用指令”。 |
+| 全局集合访问 | `clippy::indexing_slicing` 在现有 domain 和 foundation 代码中发现大量索引与切片访问；直接全局拒绝会使主 lint 长期失绿。 | 先在 `punctum-grid`、battle 和 map 的值对象中提供可证明边界的查询 API，再按 crate 纳入严格 lint。 | 不再依赖裸索引处理可变或外部输入，且全工作区启用该 lint 后通过。 |
 
 ## 推进规则
 
