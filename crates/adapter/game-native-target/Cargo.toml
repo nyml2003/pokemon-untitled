@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-game-native-plan = { path = "../../presentation/game-native-plan" }
+1{ workspace = true }
 glyphon = "0.12.0"
 pollster = "0.4.0"
 punctum-gpu = { workspace = true }

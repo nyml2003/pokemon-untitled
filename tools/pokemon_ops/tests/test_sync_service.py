@@ -79,6 +79,28 @@ class GitSyncServiceTests(unittest.TestCase):
             self.assertEqual(result.error.code, ErrorCode.MIRROR_DIRTY)
             self.assertEqual(mirror_file.read_text(encoding="utf-8"), "local change\n")
 
+    def test_rejects_a_diverged_mirror_without_merging(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = config_for(Path(directory))
+            self.assertTrue(self.service.initialize(config).is_ok)
+            mirror = config.mirror_root.wsl_mount_path
+            git(mirror, "config", "user.email", "ops@example.invalid")
+            git(mirror, "config", "user.name", "Pokemon Ops")
+            (mirror / "mirror-only.txt").write_text("local\n", encoding="utf-8")
+            git(mirror, "add", "mirror-only.txt")
+            git(mirror, "commit", "-m", "mirror change")
+            (config.source_root.path / "source-only.txt").write_text("remote\n", encoding="utf-8")
+            git(config.source_root.path, "add", "source-only.txt")
+            git(config.source_root.path, "commit", "-m", "source change")
+            git(config.source_root.path, "push")
+
+            result = self.service.sync(config)
+
+            self.assertFalse(result.is_ok)
+            assert result.error is not None
+            self.assertEqual(result.error.code, ErrorCode.MIRROR_DIVERGED)
+            self.assertTrue((mirror / "mirror-only.txt").exists())
+
     def test_rejects_non_empty_directory_during_initialization(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = config_for(Path(directory))

@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-battle-application = { path = "../../application/battle-application" }
+1{ workspace = true }
 ramus-core = { workspace = true }
 
 [lib]

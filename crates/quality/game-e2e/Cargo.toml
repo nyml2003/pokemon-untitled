@@ -6,10 +6,10 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-battle-application = { path = "../../application/battle-application" }
+1{ workspace = true }
 game-data = { workspace = true }
 game-session = { workspace = true }
-world-application = { path = "../../application/world-application" }
+1{ workspace = true }
 
 [lib]
 path = "src/lib.rs"

@@ -6,18 +6,18 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-game-assets = { path = "../../presentation/game-assets" }
-game-fs-assets = { path = "../../adapter/game-fs-assets" }
-game-native-target = { path = "../../adapter/game-native-target" }
-map-assets = { path = "../../presentation/map-assets" }
-map-editor-core = { path = "../../application/map-editor-core" }
-map-editor-view = { path = "../../presentation/map-editor-view" }
+1{ workspace = true }
+1{ workspace = true }
+1{ workspace = true }
+1{ workspace = true }
+1{ workspace = true }
+1{ workspace = true }
 map-project = { workspace = true }
 map-tile-semantics = { workspace = true }
 map-project-storage = { workspace = true }
 map-render = { workspace = true }
 punctum-gpu = { workspace = true }
-punctum-ui = { path = "../../foundation/punctum-ui" }
+1{ workspace = true }
 winit = "0.30.13"
 
 [[bin]]
