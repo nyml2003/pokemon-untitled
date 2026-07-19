@@ -59,16 +59,20 @@ class WorkspaceMetricsService:
         self._process_runner = process_runner
 
     def lines(self, config: LocalConfig) -> Result[RustLineReport]:
-        production = self._count(config, "src")
+        production = self._count(config, ("src", "examples"))
         if not production.is_ok:
             return Result(value=None, error=production.error)
-        tests = self._count(config, "tests")
+        tests = self._count(config, ("tests",))
         if not tests.is_ok:
             return Result(value=None, error=tests.error)
         return Result.ok(RustLineReport(production=production.value, tests=tests.value))
 
-    def _count(self, config: LocalConfig, directory_name: str) -> Result[RustLineCounts]:
-        directories = sorted(config.source_root.path.glob(f"crates/**/{directory_name}"))
+    def _count(self, config: LocalConfig, directory_names: tuple[str, ...]) -> Result[RustLineCounts]:
+        directories = tuple(
+            directory
+            for directory_name in directory_names
+            for directory in sorted(config.source_root.path.glob(f"crates/**/{directory_name}"))
+        )
         command = (*TOKEI_COMMAND_PREFIX, *(str(directory) for directory in directories))
         output = self._process_runner.capture(command, config.source_root.path)
         if not output.is_ok:
