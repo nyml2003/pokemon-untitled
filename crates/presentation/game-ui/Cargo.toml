@@ -20,4 +20,4 @@ world-application = { path = "../../application/world-application" }
 path = "src/lib.rs"
 
 [dev-dependencies]
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }

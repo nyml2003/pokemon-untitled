@@ -363,7 +363,7 @@ mod tests {
             panic!("battle uses the pixel UI path")
         };
         assert!(frame.commands().len() > 12);
-        assert_eq!(frame.hit_regions().len(), 4);
+        assert_eq!(frame.action_hits().len(), 4);
 
         let tiny = game_viewport(PixelSize::new(1, 1));
         assert_eq!(tiny.cell_size, PixelSize::new(1, 1));

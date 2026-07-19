@@ -18,9 +18,7 @@ pub struct UiNode<Action = ()> {
     automatic_id: bool,
 }
 impl UiNode<()> {
-    #[deprecated(
-        note = "请使用 UiNode::auto()；UiTree::new 会确定性地分配结构 ID。"
-    )]
+    #[deprecated(note = "请使用 UiNode::auto()；UiTree::new 会确定性地分配结构 ID。")]
     pub fn new(id: UiId) -> Self {
         Self {
             id,
@@ -46,9 +44,7 @@ impl<Action> UiNode<Action> {
             automatic_id: true,
         }
     }
-    #[deprecated(
-        note = "请使用 UiNode::auto()；UiTree::new 会确定性地分配结构 ID。"
-    )]
+    #[deprecated(note = "请使用 UiNode::auto()；UiTree::new 会确定性地分配结构 ID。")]
     pub fn legacy(id: UiId) -> Self {
         Self {
             id,

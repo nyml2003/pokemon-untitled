@@ -1,13 +1,13 @@
 use super::*;
-fn fill(id: u32, style: UiStyle) -> UiNode {
-    UiNode::new(UiId(id))
+fn fill(_id: u32, style: UiStyle) -> UiNode {
+    UiNode::auto()
         .with_style(style)
         .with_content(UiContent::Fill(UiColor::new(1, 2, 3, 255)))
 }
 #[test]
 fn row_allocates_fill_and_aligns_children() {
     let tree = UiTree::new(
-        UiNode::new(UiId(1))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -34,17 +34,28 @@ fn row_allocates_fill_and_aligns_children() {
         _ => panic!(),
     }
 }
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TestAction {
+    Back,
+    Front,
+}
+
+fn action_fill(style: UiStyle) -> UiNode<TestAction> {
+    UiNode::auto()
+        .with_style(style)
+        .with_content(UiContent::Fill(UiColor::new(1, 2, 3, 255)))
+}
+
 #[test]
 fn clipping_and_topmost_hit_are_deterministic() {
     let interactive = UiStyle {
         width: Dimension::Px(30),
         height: Dimension::Px(30),
         position: Position::Absolute { left: 10, top: 10 },
-        interactive: true,
         ..UiStyle::default()
     };
     let tree = UiTree::new(
-        UiNode::new(UiId(1))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -53,26 +64,14 @@ fn clipping_and_topmost_hit_are_deterministic() {
                 ..UiStyle::default()
             })
             .with_children([
-                fill(2, interactive),
-                fill(
-                    3,
-                    UiStyle {
-                        interactive: true,
-                        ..interactive
-                    },
-                ),
+                action_fill(interactive).with_action(TestAction::Back),
+                action_fill(UiStyle { ..interactive }).with_action(TestAction::Front),
             ]),
     )
     .unwrap();
     let frame = tree.resolve(UiSize::new(20, 20)).unwrap();
-    assert_eq!(frame.hit_test(15, 15), Some(UiId(3)));
-    assert_eq!(frame.hit_test(25, 15), None);
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum TestAction {
-    Back,
-    Front,
+    assert_eq!(frame.action_hit_at(15, 15).map(|hit| hit.id), Some(UiId(2)));
+    assert_eq!(frame.action_hit_at(25, 15), None);
 }
 
 #[test]
@@ -100,15 +99,15 @@ fn automatic_ids_and_typed_actions_are_deterministic() {
                     .with_key(UiKey::new("front").unwrap())
                     .with_style(item_style)
                     .with_action(TestAction::Front),
-                UiNode::legacy(UiId(1)).with_style(UiStyle::fixed(1, 1)),
+                UiNode::auto().with_style(UiStyle::fixed(1, 1)),
             ]),
     )
     .unwrap();
 
     assert_eq!(tree.root().id, UiId(0));
-    assert_eq!(tree.root().children[0].id, UiId(2));
-    assert_eq!(tree.root().children[1].id, UiId(3));
-    assert_eq!(tree.root().children[2].id, UiId(1));
+    assert_eq!(tree.root().children[0].id, UiId(1));
+    assert_eq!(tree.root().children[1].id, UiId(2));
+    assert_eq!(tree.root().children[2].id, UiId(3));
 
     let frame = tree.resolve(UiSize::new(40, 40)).unwrap();
     assert_eq!(frame.hit_action(15, 15), Some(&TestAction::Front));
@@ -148,7 +147,7 @@ fn duplicate_ui_keys_are_build_errors() {
 #[test]
 fn logical_canvas_coordinates_resolve_without_grid_types() {
     let tree = UiTree::new(
-        UiNode::new(UiId(1))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -184,12 +183,9 @@ fn logical_canvas_coordinates_resolve_without_grid_types() {
 }
 #[test]
 fn duplicate_ids_and_conflicting_minimum_rows_are_errors() {
-    assert_eq!(
-        UiTree::new(UiNode::new(UiId(1)).with_children([UiNode::new(UiId(1))])),
-        Err(UiBuildError::DuplicateId(UiId(1)))
-    );
+    assert!(UiTree::<()>::new(UiNode::auto().with_children([UiNode::auto()])).is_ok());
     let tree = UiTree::new(
-        UiNode::new(UiId(1))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -236,10 +232,10 @@ fn scalar_values_and_build_failures_are_explicit() {
         7
     );
 
-    let root = UiNode::new(UiId(1));
-    assert_eq!(UiTree::new(root.clone()).unwrap().root(), &root);
+    let root = UiTree::new(UiNode::<()>::auto()).unwrap();
+    assert_eq!(root.root().id, UiId(0));
     let invalid = [
-        UiNode::new(UiId(2)).with_content(UiContent::TextScaled {
+        UiNode::<()>::auto().with_content(UiContent::TextScaled {
             content: "x".into(),
             color: UiColor::default(),
             font_size: UiTextSize::Ratio {
@@ -249,11 +245,11 @@ fn scalar_values_and_build_failures_are_explicit() {
                 maximum: 2,
             },
         }),
-        UiNode::new(UiId(3)).with_style(UiStyle {
+        UiNode::auto().with_style(UiStyle {
             width: Dimension::Ratio { units: 1, base: 0 },
             ..UiStyle::default()
         }),
-        UiNode::new(UiId(4)).with_style(UiStyle {
+        UiNode::auto().with_style(UiStyle {
             position: Position::AbsoluteRatio {
                 left: 0,
                 top: 0,
@@ -261,7 +257,7 @@ fn scalar_values_and_build_failures_are_explicit() {
             },
             ..UiStyle::default()
         }),
-        UiNode::new(UiId(5)).with_style(UiStyle {
+        UiNode::auto().with_style(UiStyle {
             logical_canvas: Some(UiSize::new(1, 0)),
             ..UiStyle::default()
         }),
@@ -287,8 +283,8 @@ fn scalar_values_and_build_failures_are_explicit() {
 
 #[test]
 fn uncommon_content_and_layout_modes_resolve_deterministically() {
-    let styled = UiTree::new(
-        UiNode::new(UiId(1))
+    let styled = UiTree::<()>::new(
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -318,15 +314,15 @@ fn uncommon_content_and_layout_modes_resolve_deterministically() {
         }
     ));
 
-    let text = |id| {
-        UiNode::new(UiId(id)).with_content(UiContent::Text {
+    let text = |_id| {
+        UiNode::<()>::auto().with_content(UiContent::Text {
             content: "wide".into(),
             color: UiColor::default(),
             font_size: 4,
         })
     };
     let horizontal = UiTree::new(
-        UiNode::new(UiId(10))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -341,7 +337,7 @@ fn uncommon_content_and_layout_modes_resolve_deterministically() {
     assert!(horizontal.resolve(UiSize::new(30, 12)).is_ok());
 
     let vertical = UiTree::new(
-        UiNode::new(UiId(20))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -363,7 +359,7 @@ fn remaining_content_and_flex_branches_stay_pure() {
 
     let image = UiContentId::new("asset").unwrap();
     let bordered_image = UiTree::new(
-        UiNode::new(UiId(1))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -371,25 +367,22 @@ fn remaining_content_and_flex_branches_stay_pure() {
                     widths: Insets::all(1),
                     color: UiColor::new(9, 8, 7, 6),
                 },
-                interactive: true,
                 ..UiStyle::default()
             })
-            .with_content(UiContent::Image(image.clone())),
+            .with_content(UiContent::Image(image.clone()))
+            .with_action(()),
     )
     .unwrap();
     let frame = bordered_image.resolve(UiSize::new(10, 8)).unwrap();
     assert_eq!(frame.viewport(), UiSize::new(10, 8));
     assert_eq!(frame.commands().len(), 2);
     assert_eq!(
-        frame.hit_regions(),
-        &[UiHitRegion {
-            id: UiId(1),
-            bounds: UiRect::new(0, 0, 10, 8)
-        }]
+        frame.action_hit_at(1, 1).map(|hit| (hit.id, hit.bounds)),
+        Some((UiId(0), UiRect::new(0, 0, 10, 8)))
     );
 
-    let tinted = UiTree::new(
-        UiNode::new(UiId(2))
+    let tinted = UiTree::<()>::new(
+        UiNode::auto()
             .with_style(UiStyle::fixed(10, 8))
             .with_content(UiContent::ImageTinted {
                 content: image.clone(),
@@ -402,8 +395,8 @@ fn remaining_content_and_flex_branches_stay_pure() {
         UiDrawCommand::Image { .. }
     ));
 
-    let scaled = UiTree::new(
-        UiNode::new(UiId(3))
+    let scaled = UiTree::<()>::new(
+        UiNode::auto()
             .with_style(UiStyle::fixed(20, 10))
             .with_content(UiContent::TextScaled {
                 content: "x".into(),
@@ -422,7 +415,7 @@ fn remaining_content_and_flex_branches_stay_pure() {
         UiDrawCommand::Text { font_size: 5, .. }
     ));
     assert!(
-        UiTree::new(UiNode::new(UiId(4)).with_style(UiStyle::fixed(0, 1)))
+        UiTree::<()>::new(UiNode::auto().with_style(UiStyle::fixed(0, 1)))
             .unwrap()
             .resolve(UiSize::new(10, 10))
             .unwrap()
@@ -431,7 +424,7 @@ fn remaining_content_and_flex_branches_stay_pure() {
     );
 
     let ratio_row = UiTree::new(
-        UiNode::new(UiId(10))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -453,7 +446,7 @@ fn remaining_content_and_flex_branches_stay_pure() {
     assert!(ratio_row.resolve(UiSize::new(20, 10)).is_ok());
 
     let ratio_column = UiTree::new(
-        UiNode::new(UiId(15))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -472,7 +465,7 @@ fn remaining_content_and_flex_branches_stay_pure() {
     assert!(ratio_column.resolve(UiSize::new(20, 10)).is_ok());
 
     let spaced_stack = UiTree::new(
-        UiNode::new(UiId(20))
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,

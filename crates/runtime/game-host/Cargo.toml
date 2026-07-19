@@ -10,7 +10,7 @@ battle-application = { path = "../../application/battle-application" }
 battle-session = { workspace = true }
 game-asset-plan = { path = "../../presentation/game-asset-plan" }
 game-assets = { path = "../../presentation/game-assets" }
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }
 game-fs-assets = { path = "../../adapter/game-fs-assets" }
 game-native-target = { path = "../../adapter/game-native-target" }
 game-scene-view = { path = "../../presentation/game-scene-view" }

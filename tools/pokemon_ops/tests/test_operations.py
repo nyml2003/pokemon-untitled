@@ -7,7 +7,7 @@ from pathlib import Path, PureWindowsPath
 from tools.pokemon_ops.application.native_service import NativeService
 from tools.pokemon_ops.application.testing_service import WslTestingService
 from tools.pokemon_ops.domain.errors import ErrorCode, Result
-from tools.pokemon_ops.domain.model import BuildProfile, LocalConfig, MirrorRoot, NativeOperation, SourceRoot, TestSuite, WindowsRunner
+from tools.pokemon_ops.domain.model import BuildProfile, GitSyncReport, LocalConfig, MirrorRoot, NativeOperation, SourceRoot, TestSuite, WindowsRunner
 
 
 def config_for(root: Path) -> LocalConfig:
@@ -33,8 +33,17 @@ class RecordingProcessRunner:
 
 
 class FailingSyncService:
-    def sync(self, config: LocalConfig, delete_removed: bool, dry_run: bool) -> Result[object]:
-        return Result.fail(ErrorCode.COPY_FAILED, "copy failed")
+    def sync(
+        self,
+        config: LocalConfig,
+        progress: object = None,
+    ) -> Result[object]:
+        return Result.fail(ErrorCode.GIT_SYNC_FAILED, "Git sync failed")
+
+
+class RecordingSyncService:
+    def sync(self, config: LocalConfig, progress: object = None) -> Result[GitSyncReport]:
+        return Result.ok(GitSyncReport("source", "remote", "before", "after", True))
 
 
 class RecordingDispatcher:
@@ -65,3 +74,21 @@ class OperationTests(unittest.TestCase):
             result = service.execute(config_for(Path(directory)), NativeOperation.RUN_GAME_HOST, BuildProfile.DEBUG)
             self.assertFalse(result.is_ok)
             self.assertFalse(dispatcher.called)
+
+    def test_native_operation_reports_windows_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = config_for(root)
+            dispatcher = RecordingDispatcher()
+            service = NativeService(RecordingSyncService(), dispatcher)  # type: ignore[arg-type]
+            progress: list[str] = []
+
+            result = service.execute(
+                config,
+                NativeOperation.RUN_GAME_HOST,
+                BuildProfile.DEBUG,
+                progress=progress.append,
+            )
+
+            self.assertTrue(result.is_ok)
+            self.assertIn("running game-host on Windows; native output follows", progress)

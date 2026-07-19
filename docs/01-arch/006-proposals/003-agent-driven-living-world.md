@@ -43,7 +43,7 @@ NPC / 脚本 / 模型提出受限意图
 | 脚本 | 尚不存在 | 可编译、可恢复、可迁移的剧情/事件 DSL |
 | 模型 | 尚未接入 | 独立的 inference adapter、结构化提案、限额与 fallback |
 
-开始扩展 Ramus 前，必须确认唯一的权威 `ramus-core` 源码树。当前存在两个同名源码树，不能在此状态下扩展通用脚本能力。
+`ramus-core` 的唯一权威源码树位于 `crates/foundation/ramus/`，作为根 workspace 的普通 foundation crate。后续扩展通用脚本能力应直接在此 crate 上进行。
 
 ## 世界的三层数据
 
@@ -225,8 +225,7 @@ pub trait InferencePort {
 ### 阶段 0：收口现有基线
 
 1. 修复格式、lint 和资源验证，使集成基线可重复通过。
-2. 确认唯一权威的 `ramus-core` 源码树。
-3. 明确单机、本地模型和未来联网的产品边界。
+2. 明确单机、本地模型和未来联网的产品边界。
 
 完成标准：当前 workspace 的质量门禁可重复运行；没有依赖未构建 Ramus 副本的改动。
 

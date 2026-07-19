@@ -33,6 +33,12 @@ class MirrorRoot:
 
 
 @dataclass(frozen=True)
+class GitMirrorConfig:
+    remote_name: str
+    branch: str
+
+
+@dataclass(frozen=True)
 class WindowsRunner:
     python_executable: Path
     module: str
@@ -44,12 +50,7 @@ class LocalConfig:
     mirror_root: MirrorRoot
     windows_runner: WindowsRunner
     unit_suites: dict[TestSuite, tuple[str, ...]]
-
-
-@dataclass(frozen=True)
-class MirrorMarker:
-    project_id: str
-    source_id: str
+    git_mirror: GitMirrorConfig = GitMirrorConfig(remote_name="origin", branch="master")
 
 
 @dataclass(frozen=True)
@@ -57,3 +58,21 @@ class NativeRunRequest:
     operation: NativeOperation
     profile: BuildProfile
     mirror_root: MirrorRoot
+
+
+@dataclass(frozen=True)
+class GitMirrorStatus:
+    source_head: str
+    remote_head: str
+    mirror_head: str
+    mirror_dirty: bool
+    mirror_matches_remote: bool
+
+
+@dataclass(frozen=True)
+class GitSyncReport:
+    source_head: str
+    remote_head: str
+    mirror_before: str
+    mirror_after: str
+    fast_forwarded: bool

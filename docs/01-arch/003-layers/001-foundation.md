@@ -72,9 +72,7 @@ Runtime --> Battle : Action
 
 ## 发现的维护项
 
-物理目录中同时存在 `crates/foundation/ramus/crates/ramus-core/` 和 `crates/foundation/ramus/ramus/crates/ramus-core/` 两个同名源码树。`cargo metadata` 只将前者对应的 package 纳入根 workspace。两个树当前都含有 Rust 源码，容易导致维护者修改了未参与构建的副本。
-
-这是仓库卫生风险，不是立即的运行时 bug。后续应确认嵌套 `ramus/` 是有意的独立副本、误提交镜像还是子项目残留；确认后保留唯一权威来源或为独立副本明确边界。不要在未确认前删除它。
+`ramus-core` 是根 workspace 的普通 foundation crate，唯一源码目录为 `crates/foundation/ramus/`。这避免了嵌套 workspace 和同名源码副本让维护者修改未参与构建的文件。
 
 ## 新能力落点
 

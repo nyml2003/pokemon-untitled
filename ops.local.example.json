@@ -1,7 +1,9 @@
 {
   "mirror": {
     "wsl_mount_root": "/mnt/c/Users/nyml/projects/pokemon-untitled",
-    "windows_root": "C:\\Users\\nyml\\projects\\pokemon-untitled"
+    "windows_root": "C:\\Users\\nyml\\projects\\pokemon-untitled",
+    "remote": "origin",
+    "branch": "master"
   },
   "windows_runner": {
     "python_executable": "/mnt/c/Users/nyml/AppData/Local/Programs/Python/Python313/python.exe",

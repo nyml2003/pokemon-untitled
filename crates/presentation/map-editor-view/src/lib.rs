@@ -8,6 +8,6 @@
 mod workbench;
 
 pub use workbench::{
-    EditorFrame, EditorViewError, centered_map_viewport, editor_viewport, intent_for_ui_hit,
-    project,
+    EditorChromeAction, EditorFrame, EditorViewError, centered_map_viewport, editor_viewport,
+    intent_for_ui_action, project,
 };

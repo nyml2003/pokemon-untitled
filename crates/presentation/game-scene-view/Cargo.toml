@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }
 game-session = { workspace = true }
 game-ui = { path = "../game-ui" }
 game-view = { path = "../game-view" }

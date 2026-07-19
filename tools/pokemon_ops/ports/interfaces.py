@@ -1,28 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path, PurePosixPath
-from typing import Protocol
+from typing import Callable, Protocol
 
 from tools.pokemon_ops.domain.errors import Result
-from tools.pokemon_ops.domain.model import MirrorMarker, NativeRunRequest
+from tools.pokemon_ops.domain.model import GitMirrorStatus, GitSyncReport, LocalConfig, NativeRunRequest
 
 
-class FileTree(Protocol):
-    def is_directory(self, path: Path) -> bool: ...
-
-    def list_files(self, root: Path) -> Result[set[PurePosixPath]]: ...
-
-    def is_empty(self, root: Path) -> Result[bool]: ...
-
-    def copy_file(self, source_root: Path, destination_root: Path, path: PurePosixPath) -> Result[None]: ...
-
-    def delete_file(self, root: Path, path: PurePosixPath) -> Result[None]: ...
-
-
-class MarkerStore(Protocol):
-    def read(self, mirror_root: Path) -> Result[MirrorMarker | None]: ...
-
-    def write(self, mirror_root: Path, marker: MirrorMarker) -> Result[None]: ...
+ProgressReporter = Callable[[str], None]
 
 
 class ProcessRunner(Protocol):
@@ -31,3 +15,11 @@ class ProcessRunner(Protocol):
 
 class NativeRunDispatcher(Protocol):
     def dispatch(self, request: NativeRunRequest) -> Result[int]: ...
+
+
+class GitMirror(Protocol):
+    def initialize(self, config: LocalConfig, progress: ProgressReporter | None = None) -> Result[GitSyncReport]: ...
+
+    def inspect(self, config: LocalConfig) -> Result[GitMirrorStatus]: ...
+
+    def sync(self, config: LocalConfig, progress: ProgressReporter | None = None) -> Result[GitSyncReport]: ...

@@ -667,10 +667,10 @@ mod tests {
 
     #[test]
     fn resolved_ui_frame_uses_pixel_instances_without_a_grid_surface() {
-        use punctum_ui::{Dimension, UiColor, UiContent, UiId, UiNode, UiSize, UiStyle, UiTree};
+        use punctum_ui::{Dimension, UiColor, UiContent, UiNode, UiSize, UiStyle, UiTree};
 
-        let tree = UiTree::new(
-            UiNode::new(UiId(1))
+        let tree = UiTree::<()>::new(
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -691,19 +691,19 @@ mod tests {
     #[test]
     fn pixel_ui_keeps_per_corner_radius_for_fills_and_images() {
         use punctum_ui::{
-            Dimension, UiBorderRadius, UiColor, UiContent, UiContentId, UiId, UiNode, UiSize,
-            UiStyle, UiTree,
+            Dimension, UiBorderRadius, UiColor, UiContent, UiContentId, UiNode, UiSize, UiStyle,
+            UiTree,
         };
 
         let tree = UiTree::new(
-            UiNode::new(UiId(1))
+            UiNode::<()>::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
                     ..UiStyle::default()
                 })
                 .with_children([
-                    UiNode::new(UiId(2))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Px(40),
                             height: Dimension::Px(20),
@@ -716,7 +716,7 @@ mod tests {
                             ..UiStyle::default()
                         })
                         .with_content(UiContent::Fill(UiColor::new(1, 2, 3, 255))),
-                    UiNode::new(UiId(3))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Px(30),
                             height: Dimension::Px(12),

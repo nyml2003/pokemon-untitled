@@ -15,7 +15,6 @@
 | 中 | 资产与地图缺少共同 bundle 版本 | `MapProject` 不引用 catalog 或 bundle 版本 | 资源重命名/删除会让旧地图失效 | 在项目/存档引入资产集版本与迁移策略 |
 | 中 | 当前 asset catalog 与源数据失配 | `data/game/current-dataset/v2` 的长度和 SHA-256 不同 | catalog 验证与依赖它的 CI 门禁不能通过 | 重建或修正 catalog 与 lock，并锁定生成顺序 |
 | 中 | 原生 host 可能变成万能容器 | host 已持有状态、资源、窗口、时间和组装 | 音频/存档/网络继续堆入 host | 用 effect + adapter 扩展，保持玩法状态在 core |
-| 中 | Ramus 有双源码树且范围未定 | 嵌套重复 `ramus-core` 目录；现仅战斗控制台使用 | 修改源不一致，通用脚本设计过早 | 先确定权威目录和脚本产品范围 |
 | 中 | 完整图集已知资源缺口 | game host 有 ignored atlas test | 发布时可能遇到未覆盖路径 | 在 CI 前关闭缺口或将资源集合缩小为显式清单 |
 | 低 | 终端后端未接入实际产品 | `punctum-crossterm` 有 adapter，无 runtime 装配 | 维护成本不明 | 决定保留为实验/调试还是建立运行入口 |
 | 低 | 层规则主要靠约定 | 未发现自动 architecture gate | 依赖会逐步回流 | 先加低误报 cargo metadata 守卫 |

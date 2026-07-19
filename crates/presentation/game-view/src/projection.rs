@@ -17,7 +17,7 @@ use punctum_gpu::{PixelOffset, Rgba8};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
-    UiContentId, UiId, UiKey, UiNode, UiStyle, UiTree,
+    UiContentId, UiKey, UiNode, UiStyle, UiTree,
 };
 use world_application::{
     CharacterAppearanceId, Direction as WorldDirection, WorldActorObservation, WorldActorRole,
@@ -542,7 +542,7 @@ pub fn project_battle_ui(
             || battle_unavailable_page(&message),
             |observation| battle_pokemon_page_ui(observation, selected, &message, sprite_frame),
         );
-        return UiTree::new(with_generated_ui_ids(root));
+        return UiTree::new(root);
     }
 
     let menu = match page {
@@ -580,10 +580,10 @@ pub fn project_battle_ui(
         BattleMenuPage::Pokemon => {
             unreachable!("the Pokemon page returns before building the battle scene")
         }
-        BattleMenuPage::Hidden => UiNode::new(UiId(9_100)),
+        BattleMenuPage::Hidden => UiNode::auto(),
     };
 
-    UiTree::new(with_generated_ui_ids(panel(
+    UiTree::new(panel(
         8_000,
         UiStyle {
             width: Dimension::Fill,
@@ -593,7 +593,7 @@ pub fn project_battle_ui(
         },
         SKY.into_ui(),
         [
-            UiNode::new(UiId(8_010))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -604,7 +604,7 @@ pub fn project_battle_ui(
                 })
                 .with_content(UiContent::Fill(DISTANT_GRASS.into_ui()))
                 .with_children([
-                    UiNode::new(UiId(8_011))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Fill,
@@ -640,7 +640,7 @@ pub fn project_battle_ui(
                                 tint: creature_tint(animation, Participant::Opponent).into_ui(),
                             }),
                         ]),
-                    UiNode::new(UiId(8_012))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Fill,
@@ -691,7 +691,7 @@ pub fn project_battle_ui(
                 },
                 ACTION_PANEL.into_ui(),
                 [
-                    UiNode::new(UiId(8_201))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Fill,
@@ -706,7 +706,7 @@ pub fn project_battle_ui(
                             19,
                             Dimension::Fill,
                         )]),
-                    UiNode::new(UiId(8_210))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Px(430),
                             height: Dimension::Fill,
@@ -716,7 +716,7 @@ pub fn project_battle_ui(
                 ],
             ),
         ],
-    )))
+    ))
 }
 
 /// 将命令控制台投影为独立的响应式像素 UI 树。
@@ -755,8 +755,8 @@ pub fn project_console_ui(console: &CommandConsoleView) -> Result<UiTree, UiBuil
             Dimension::Fill,
         ));
     }
-    UiTree::new(with_generated_ui_ids(
-        UiNode::new(UiId(8_400))
+    UiTree::new(
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -790,7 +790,7 @@ pub fn project_console_ui(console: &CommandConsoleView) -> Result<UiTree, UiBuil
                         21,
                         Dimension::Fill,
                     ),
-                    UiNode::new(UiId(8_403))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Fill,
@@ -802,39 +802,7 @@ pub fn project_console_ui(console: &CommandConsoleView) -> Result<UiTree, UiBuil
                         .with_children(rows),
                 ],
             )]),
-    ))
-}
-
-/// ID 的作用域仅限于单棵树。
-/// 重建相同的树会产生相同 ID，页面作者无需协调手写数字范围。
-#[derive(Default)]
-struct UiNodeIds {
-    next: u32,
-}
-
-impl UiNodeIds {
-    fn next(&mut self) -> UiId {
-        let id = UiId(self.next);
-        self.next = self
-            .next
-            .checked_add(1)
-            .expect("a UI tree cannot contain more than u32::MAX nodes");
-        id
-    }
-}
-
-fn with_generated_ui_ids(root: UiNode) -> UiNode {
-    fn visit(mut node: UiNode, ids: &mut UiNodeIds) -> UiNode {
-        node.id = ids.next();
-        node.children = node
-            .children
-            .into_iter()
-            .map(|child| visit(child, ids))
-            .collect();
-        node
-    }
-
-    visit(root, &mut UiNodeIds::default())
+    )
 }
 
 trait UiColorExt {
@@ -875,9 +843,8 @@ fn battle_main_actions_flex(selected: usize) -> UiNode {
     )
 }
 
-#[allow(deprecated)]
-fn battle_main_action_button(id: u32, content: &str, selected: bool) -> UiNode {
-    let mut button = ui_button(
+fn battle_main_action_button(_id: u32, content: &str, selected: bool) -> UiNode {
+    ui_button(
         &BATTLE_THEME,
         UiStyle {
             width: Dimension::Fill,
@@ -897,11 +864,8 @@ fn battle_main_action_button(id: u32, content: &str, selected: bool) -> UiNode {
             BATTLE_THEME.body_text_size,
             Dimension::Fill,
         )],
-    );
-    // 动作尚未进入这个页面前，保留旧命中区域以维持输入兼容性。
-    button.id = UiId(id);
-    button.style.interactive = true;
-    button
+    )
+    .with_action(())
 }
 
 fn battle_move_menu(
@@ -947,12 +911,12 @@ fn battle_move_menu(
 }
 
 fn move_detail_panel(
-    id: u32,
+    _id: u32,
     move_type: PokemonType,
     category: MoveCategory,
     detail: &str,
 ) -> UiNode {
-    let mut modal = ui_modal(
+    ui_modal(
         &BATTLE_THEME,
         UiStyle {
             width: Dimension::Fill,
@@ -993,9 +957,7 @@ fn move_detail_panel(
             ),
             ui_text(&BATTLE_THEME, TextTone::Ink, detail, 17, Dimension::Fill),
         ],
-    );
-    modal.id = UiId(id);
-    modal
+    )
 }
 
 fn battle_unavailable_page(message: &str) -> UiNode {
@@ -1056,7 +1018,7 @@ fn battle_pokemon_page_ui(
                     text(9_503, message, MUTED_TEXT.into_ui(), 16, Dimension::Fill),
                 ],
             ),
-            UiNode::new(UiId(9_510))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -1072,7 +1034,7 @@ fn battle_pokemon_page_ui(
                         active_slot,
                         sprite_frame,
                     ),
-                    UiNode::new(UiId(9_600))
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Ratio { units: 3, base: 5 },
                             height: Dimension::Fill,
@@ -1162,7 +1124,7 @@ fn selected_team_member_panel(
                 17,
                 Dimension::Fill,
             ),
-            UiNode::new(UiId(id + 4))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(28),
@@ -1199,7 +1161,7 @@ fn team_member_card(
     active: bool,
     sprite_frame: usize,
 ) -> UiNode {
-    UiNode::new(UiId(id))
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -1212,9 +1174,9 @@ fn team_member_card(
                 color: if selected { SELECTED } else { PARTY_EDGE }.into_ui(),
             },
             border_radius: punctum_ui::UiBorderRadius::all(10),
-            interactive: true,
             ..UiStyle::default()
         })
+        .with_action(())
         .with_content(UiContent::Fill(
             if selected {
                 PARTY_PANEL_ALT
@@ -1238,7 +1200,7 @@ fn team_member_card(
                     UiColor::new(255, 255, 255, 255)
                 },
             }),
-            UiNode::new(UiId(id + 2))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -1283,8 +1245,8 @@ fn team_member_card(
         ])
 }
 
-fn hp_bar(id: u32, hp: u32, max_hp: u32) -> UiNode {
-    UiNode::new(UiId(id))
+fn hp_bar(_id: u32, hp: u32, max_hp: u32) -> UiNode {
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Px(12),
@@ -1292,7 +1254,7 @@ fn hp_bar(id: u32, hp: u32, max_hp: u32) -> UiNode {
             ..UiStyle::default()
         })
         .with_content(UiContent::Fill(HP_TRACK_EDGE.into_ui()))
-        .with_children([UiNode::new(UiId(id + 1))
+        .with_children([UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Ratio {
                     units: hp,
@@ -1341,7 +1303,7 @@ fn battle_status_panel(
         },
         BATTLE_CARD.into_ui(),
         [
-            UiNode::new(UiId(id + 1))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(30),
@@ -1359,7 +1321,7 @@ fn battle_status_panel(
                         Dimension::Px(64),
                     ),
                 ]),
-            UiNode::new(UiId(id + 4))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(28),
@@ -1368,7 +1330,7 @@ fn battle_status_panel(
                     ..UiStyle::default()
                 })
                 .with_children(types),
-            UiNode::new(UiId(id + 5))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(14),
@@ -1376,7 +1338,7 @@ fn battle_status_panel(
                     ..UiStyle::default()
                 })
                 .with_content(UiContent::Fill(HP_TRACK_EDGE.into_ui()))
-                .with_children([UiNode::new(UiId(id + 6))
+                .with_children([UiNode::auto()
                     .with_style(UiStyle {
                         width: Dimension::Ratio {
                             units: hp,
@@ -1394,7 +1356,7 @@ fn battle_status_panel(
                 15,
                 Dimension::Fill,
             ),
-            UiNode::new(UiId(id + 8))
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Px(12),
                     height: Dimension::Px(12),
@@ -1407,15 +1369,15 @@ fn battle_status_panel(
 }
 
 fn console_item(id: u32, content: &str, selected: bool) -> UiNode {
-    UiNode::new(UiId(id))
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Px(36),
             padding: Insets::symmetric(10, 6),
             border_radius: punctum_ui::UiBorderRadius::all(6),
-            interactive: true,
             ..UiStyle::default()
         })
+        .with_action(())
         .with_content(UiContent::Fill(
             if selected {
                 SELECTED_DARK
@@ -1442,24 +1404,24 @@ fn hp_color(hp: u32, max_hp: u32) -> Rgba8 {
 }
 
 fn panel(
-    id: u32,
+    _id: u32,
     style: UiStyle,
     color: UiColor,
     children: impl IntoIterator<Item = UiNode>,
 ) -> UiNode {
-    UiNode::new(UiId(id))
+    UiNode::auto()
         .with_style(style)
         .with_content(UiContent::Fill(color))
         .with_children(children)
 }
 fn text(
-    id: u32,
+    _id: u32,
     content: impl Into<String>,
     color: UiColor,
     font_size: u32,
     width: Dimension,
 ) -> UiNode {
-    UiNode::new(UiId(id))
+    UiNode::auto()
         .with_style(UiStyle {
             width,
             height: Dimension::Px(font_size.saturating_add(6)),
@@ -1471,8 +1433,8 @@ fn text(
             font_size,
         })
 }
-fn image(id: u32, content: impl Into<String>, style: UiStyle) -> UiNode {
-    UiNode::new(UiId(id))
+fn image(_id: u32, content: impl Into<String>, style: UiStyle) -> UiNode {
+    UiNode::auto()
         .with_style(style)
         .with_content(UiContent::Image(
             UiContentId::new(content).expect("static UI asset keys are non-empty"),
@@ -2986,7 +2948,7 @@ mod tests {
             frame.commands().iter().any(|command| matches!(command,
                 punctum_ui::UiDrawCommand::Image { content, .. } if content.as_str() == type_icon_asset(PokemonType::Grass).as_str()))
         );
-        assert!(frame.hit_regions().len() == 5);
+        assert_eq!(frame.action_hits().len(), 5);
         assert_eq!(tree.root().id, punctum_ui::UiId(0));
         assert_eq!(frame.action_hits().len(), 5);
         assert_eq!(
@@ -3010,9 +2972,9 @@ mod tests {
             .unwrap()
             .resolve(punctum_ui::UiSize::new(1000, 720))
             .unwrap();
-        assert_eq!(main.hit_regions().len(), 4);
+        assert_eq!(main.action_hits().len(), 4);
         assert!(
-            main.hit_regions()
+            main.action_hits()
                 .iter()
                 .all(|region| region.bounds.width > 0 && region.bounds.height > 0)
         );
@@ -3058,7 +3020,7 @@ mod tests {
             command,
             punctum_ui::UiDrawCommand::Text { content, .. } if content == "选择宝可梦"
         )));
-        assert_eq!(frame.hit_regions().len(), TEAM_SIZE);
+        assert_eq!(frame.action_hits().len(), TEAM_SIZE);
         let images = frame
             .commands()
             .iter()

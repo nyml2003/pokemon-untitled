@@ -39,3 +39,14 @@ class LocalConfigTests(unittest.TestCase):
             self.assertFalse(parsed.is_ok)
             assert parsed.error is not None
             self.assertEqual(parsed.error.code, ErrorCode.INVALID_CONFIGURATION)
+
+    def test_uses_master_origin_as_the_git_mirror_defaults(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            parsed = parse_local_config(valid_data(root / "mirror"), source)
+            self.assertTrue(parsed.is_ok)
+            assert parsed.value is not None
+            self.assertEqual(parsed.value.git_mirror.remote_name, "origin")
+            self.assertEqual(parsed.value.git_mirror.branch, "master")

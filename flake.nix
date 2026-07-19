@@ -31,6 +31,7 @@
           rust-analyzer
           rustc
           rustfmt
+          uv
           (writeShellApplication {
             name = "ops";
             runtimeInputs = [ python3 ];

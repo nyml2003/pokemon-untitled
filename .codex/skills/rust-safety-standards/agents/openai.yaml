@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust 安全开发规范"
+  short_description: "用显式错误处理、无压制 lint 和干净绑定编写 Rust"
+  default_prompt: "使用 $rust-safety-standards 实现并审查这次 Rust 修改。"

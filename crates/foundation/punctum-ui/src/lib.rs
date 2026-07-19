@@ -20,5 +20,4 @@ pub use model::{
 pub use tree::{UiNode, UiTree};
 
 #[cfg(test)]
-#[allow(deprecated)]
 mod tests;

@@ -11,7 +11,7 @@ use map_editor_core::{
     EditorController, EditorEffect, EditorIntent, EditorModel, PointerButton, key_intent,
     wheel_intent,
 };
-use map_editor_view::{centered_map_viewport, editor_viewport, intent_for_ui_hit, project};
+use map_editor_view::{centered_map_viewport, editor_viewport, intent_for_ui_action, project};
 use map_render::AtomicTileCatalog;
 use map_tile_semantics::TileSemanticsCatalog;
 use punctum_gpu::{PixelSize, Rgba8, Viewport};
@@ -40,7 +40,7 @@ struct MapEditorApp {
     modifiers: ModifiersState,
     map_tile_span: u32,
     viewport: Viewport,
-    chrome: Option<UiFrame>,
+    chrome: Option<UiFrame<map_editor_view::EditorChromeAction>>,
     cursor: Option<winit::dpi::PhysicalPosition<f64>>,
     window: Option<Arc<Window>>,
     runtime: Option<NativeTarget<'static>>,
@@ -253,10 +253,12 @@ impl MapEditorApp {
                 if button == PointerButton::Primary {
                     if let (Some(position), Some(chrome)) = (self.cursor, &self.chrome) {
                         if position.x >= 0.0 && position.y >= 0.0 {
-                            if let Some(id) = chrome.hit_test(position.x as u32, position.y as u32)
+                            if let Some(hit) =
+                                chrome.action_hit_at(position.x as u32, position.y as u32)
                             {
                                 self.controller = mem::take(&mut self.controller).release(button);
-                                if let Some(intent) = intent_for_ui_hit(&self.model, id) {
+                                if let Some(intent) = intent_for_ui_action(&self.model, hit.action)
+                                {
                                     self.dispatch(intent);
                                 }
                                 return;

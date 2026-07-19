@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 csv = "1.4.0"
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }
 serde = { version = "1.0.228", features = ["derive"] }
 
 [lib]

@@ -24,7 +24,7 @@
 
 ## 数据模型
 
-新增纯领域 crate `crates/domain/map-tile-semantics`。它依赖 `map-project`，不读取文件、不依赖窗口、GPU 或 CLI。
+新增纯领域 crate `crates/domain/map/map-tile-semantics`。它依赖 `map-project`，不读取文件、不依赖窗口、GPU 或 CLI。
 
 核心类型如下：
 

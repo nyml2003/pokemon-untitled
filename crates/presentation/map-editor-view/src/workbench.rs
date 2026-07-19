@@ -11,7 +11,7 @@ use punctum_gpu::{PixelOffset, PixelSize, Rgba8, Viewport};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface, SurfaceError};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
-    UiContentId, UiId, UiNode, UiStyle, UiTree,
+    UiContentId, UiId, UiNode as RawUiNode, UiStyle, UiTree,
 };
 
 const UI_BG: Rgba8 = Rgba8::new(22, 25, 29, 255);
@@ -47,9 +47,16 @@ const HELP_CLOSE_ID: u32 = 1_234;
 /// `map` 包含地图和语义覆盖层，`chrome` 包含编辑工具的 Flex UI。
 pub struct EditorFrame {
     pub map: GameView,
-    pub chrome: UiTree,
+    pub chrome: UiTree<EditorChromeAction>,
     pub viewport: Viewport,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EditorChromeAction {
+    Command(u32),
+}
+
+type UiNode = RawUiNode<EditorChromeAction>;
 
 /// 将编辑器模型、资源目录和当前悬停位置投影为一帧工作台视图。
 /// 地图渲染输入不合法时返回 `EditorViewError::Map`，UI 树无效时返回 `EditorViewError::Ui`。
@@ -136,8 +143,12 @@ pub fn editor_viewport(target_size: PixelSize) -> Viewport {
 
 /// 将 Flex UI 命中映射回现有编辑器 reducer 的意图。
 /// 地图绘制刻意留在 `EditorController`，不会经过这里。
-pub fn intent_for_ui_hit(model: &EditorModel, id: UiId) -> Option<EditorIntent> {
-    match id.0 {
+pub fn intent_for_ui_action(
+    model: &EditorModel,
+    action: EditorChromeAction,
+) -> Option<EditorIntent> {
+    let EditorChromeAction::Command(id) = action;
+    match id {
         value
             if (ASSET_SLOT_ID..ASSET_SLOT_ID + layout::ASSET_PAGE_SIZE as u32).contains(&value) =>
         {
@@ -211,11 +222,11 @@ fn project_chrome_ui(
     model: &EditorModel,
     catalog: &AtomicTileCatalog,
     hover: Option<TilePosition>,
-) -> Result<UiTree, UiBuildError> {
+) -> Result<UiTree<EditorChromeAction>, UiBuildError> {
     let mut ids = UiIds::default();
     let sidebar = editor_sidebar(&mut ids, model, catalog, hover);
     let materials = editor_materials(&mut ids, model, catalog);
-    let top = UiNode::new(ids.next())
+    let top = UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Ratio {
@@ -226,14 +237,14 @@ fn project_chrome_ui(
             ..UiStyle::default()
         })
         .with_children([
-            UiNode::new(ids.next()).with_style(UiStyle {
+            UiNode::auto().with_style(UiStyle {
                 width: Dimension::Ratio { units: 3, base: 4 },
                 height: Dimension::Fill,
                 ..UiStyle::default()
             }),
             sidebar,
         ]);
-    let bottom = UiNode::new(ids.next())
+    let bottom = UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Ratio { units: 3, base: 19 },
@@ -242,14 +253,14 @@ fn project_chrome_ui(
         })
         .with_children([
             materials,
-            UiNode::new(ids.next()).with_style(UiStyle {
+            UiNode::auto().with_style(UiStyle {
                 width: Dimension::Ratio { units: 1, base: 4 },
                 height: Dimension::Fill,
                 ..UiStyle::default()
             }),
         ]);
     let mut children = vec![
-        UiNode::new(ids.next())
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -262,7 +273,7 @@ fn project_chrome_ui(
         children.push(editor_help_dialog(&mut ids));
     }
     UiTree::new(
-        UiNode::new(ids.next())
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -301,7 +312,7 @@ fn editor_sidebar(
             ));
         }
         asset_rows.push(
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -366,7 +377,7 @@ fn editor_sidebar(
                 14,
                 Dimension::Fill,
             ),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(220),
@@ -375,7 +386,7 @@ fn editor_sidebar(
                     ..UiStyle::default()
                 })
                 .with_children(asset_rows),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(32),
@@ -388,7 +399,7 @@ fn editor_sidebar(
                     editor_button(ids, NEXT_ASSETS_ID, "下一页", false),
                 ]),
             ui_text(ids, "工具", TEXT, 18, Dimension::Fill),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -409,7 +420,7 @@ fn editor_sidebar(
                 14,
                 Dimension::Fill,
             ),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(32),
@@ -467,7 +478,7 @@ fn editor_materials(ids: &mut UiIds, model: &EditorModel, catalog: &AtomicTileCa
         },
         UI_BG,
         [
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Ratio { units: 3, base: 5 },
                     height: Dimension::Fill,
@@ -483,7 +494,7 @@ fn editor_materials(ids: &mut UiIds, model: &EditorModel, catalog: &AtomicTileCa
                         18,
                         Dimension::Fill,
                     ),
-                    UiNode::new(ids.next())
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Fill,
@@ -493,7 +504,7 @@ fn editor_materials(ids: &mut UiIds, model: &EditorModel, catalog: &AtomicTileCa
                             ..UiStyle::default()
                         })
                         .with_children(cards),
-                    UiNode::new(ids.next())
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Px(30),
@@ -547,7 +558,7 @@ fn editor_materials(ids: &mut UiIds, model: &EditorModel, catalog: &AtomicTileCa
 }
 
 fn editor_asset_card(
-    ids: &mut UiIds,
+    _ids: &mut UiIds,
     action_id: u32,
     atomic: Option<&map_project::AtomicTileId>,
     catalog: &AtomicTileCatalog,
@@ -557,7 +568,7 @@ fn editor_asset_card(
     if let Some(atomic) = atomic {
         if let Some(asset) = catalog.asset(atomic) {
             children.push(
-                UiNode::new(ids.next())
+                UiNode::auto()
                     .with_style(UiStyle {
                         width: Dimension::Fill,
                         height: Dimension::Fill,
@@ -570,7 +581,7 @@ fn editor_asset_card(
             );
         }
     }
-    UiNode::new(UiId(action_id))
+    let node = UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -580,15 +591,19 @@ fn editor_asset_card(
                 color: ui_color(if selected { SELECTED } else { BORDER }),
             },
             border_radius: punctum_ui::UiBorderRadius::all(6),
-            interactive: atomic.is_some(),
             ..UiStyle::default()
         })
         .with_content(UiContent::Fill(ui_color(BUTTON)))
-        .with_children(children)
+        .with_children(children);
+    if atomic.is_some() {
+        node.with_action(EditorChromeAction::Command(action_id))
+    } else {
+        node
+    }
 }
 
 fn editor_material_card(
-    ids: &mut UiIds,
+    _ids: &mut UiIds,
     action_id: u32,
     material: Option<&map_project::CompositeTile>,
     catalog: &AtomicTileCatalog,
@@ -599,7 +614,7 @@ fn editor_material_card(
         for layer in &material.layers {
             if let Some(asset) = catalog.asset(layer) {
                 children.push(
-                    UiNode::new(ids.next())
+                    UiNode::auto()
                         .with_style(UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Fill,
@@ -613,7 +628,7 @@ fn editor_material_card(
             }
         }
     }
-    UiNode::new(UiId(action_id))
+    let node = UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -622,15 +637,19 @@ fn editor_material_card(
                 color: ui_color(if selected { SELECTED } else { BORDER }),
             },
             border_radius: punctum_ui::UiBorderRadius::all(7),
-            interactive: material.is_some(),
             ..UiStyle::default()
         })
         .with_content(UiContent::Fill(ui_color(BUTTON)))
-        .with_children(children)
+        .with_children(children);
+    if material.is_some() {
+        node.with_action(EditorChromeAction::Command(action_id))
+    } else {
+        node
+    }
 }
 
 fn editor_button(ids: &mut UiIds, action_id: u32, label: &str, selected: bool) -> UiNode {
-    UiNode::new(UiId(action_id))
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -638,9 +657,9 @@ fn editor_button(ids: &mut UiIds, action_id: u32, label: &str, selected: bool) -
             cross_align: CrossAlign::Center,
             padding: Insets::symmetric(8, 4),
             border_radius: punctum_ui::UiBorderRadius::all(6),
-            interactive: true,
             ..UiStyle::default()
         })
+        .with_action(EditorChromeAction::Command(action_id))
         .with_content(UiContent::Fill(ui_color(if selected {
             SELECTED
         } else {
@@ -658,16 +677,16 @@ fn editor_help_dialog(ids: &mut UiIds) -> UiNode {
         "Ctrl+S 保存，Ctrl+Z 撤销；Ctrl+滚轮缩放地图。",
         "点击此面板或“帮助”关闭。",
     ];
-    UiNode::new(UiId(HELP_CLOSE_ID))
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
             direction: FlexDirection::Column,
             main_align: MainAlign::Center,
             cross_align: CrossAlign::Center,
-            interactive: true,
             ..UiStyle::default()
         })
+        .with_action(EditorChromeAction::Command(HELP_CLOSE_ID))
         .with_content(UiContent::Fill(UiColor::new(17, 19, 22, 210)))
         .with_children([panel(
             ids.next(),
@@ -698,25 +717,25 @@ fn editor_help_dialog(ids: &mut UiIds) -> UiNode {
 }
 
 fn panel(
-    id: UiId,
+    _id: UiId,
     style: UiStyle,
     color: Rgba8,
     children: impl IntoIterator<Item = UiNode>,
 ) -> UiNode {
-    UiNode::new(id)
+    UiNode::auto()
         .with_style(style)
         .with_content(UiContent::Fill(ui_color(color)))
         .with_children(children)
 }
 
 fn ui_text(
-    ids: &mut UiIds,
+    _ids: &mut UiIds,
     content: impl Into<String>,
     color: Rgba8,
     font_size: u32,
     width: Dimension,
 ) -> UiNode {
-    UiNode::new(ids.next())
+    UiNode::auto()
         .with_style(UiStyle {
             width,
             height: Dimension::Px(font_size.saturating_add(5)),
@@ -1197,7 +1216,7 @@ mod tests {
         assert!(chrome.commands().iter().any(|command| matches!(
             command, punctum_ui::UiDrawCommand::Text { content, .. } if content.starts_with("组合素材")
         )));
-        assert!(chrome.hit_regions().len() >= 10);
+        assert!(chrome.action_hits().len() >= 10);
     }
 
     #[test]
@@ -1264,7 +1283,7 @@ mod tests {
         assert!(chrome.commands().iter().any(|command| matches!(
             command, punctum_ui::UiDrawCommand::Text { content, .. } if content == "地图编辑器使用说明"
         )));
-        assert!(chrome.hit_regions().len() >= 11);
+        assert!(chrome.action_hits().len() >= 11);
     }
 
     #[test]

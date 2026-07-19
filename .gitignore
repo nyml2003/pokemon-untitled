@@ -19,6 +19,7 @@ target/
 .env
 .env.local
 .direnv/
+.venv/
 ops.local.json
 
 # OS

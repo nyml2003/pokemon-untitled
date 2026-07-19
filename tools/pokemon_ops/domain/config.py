@@ -4,7 +4,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any
 
 from tools.pokemon_ops.domain.errors import ErrorCode, Result
-from tools.pokemon_ops.domain.model import LocalConfig, MirrorRoot, SourceRoot, TestSuite, WindowsRunner
+from tools.pokemon_ops.domain.model import GitMirrorConfig, LocalConfig, MirrorRoot, SourceRoot, TestSuite, WindowsRunner
 
 
 def parse_local_config(data: Any, source_root: Path) -> Result[LocalConfig]:
@@ -22,10 +22,16 @@ def parse_local_config(data: Any, source_root: Path) -> Result[LocalConfig]:
 
     mount_root = mirror.get("wsl_mount_root")
     windows_root = mirror.get("windows_root")
+    remote_name = mirror.get("remote", "origin")
+    branch = mirror.get("branch", "master")
     python_executable = runner.get("python_executable")
     module = runner.get("module")
     if not all(isinstance(value, str) and value for value in (mount_root, windows_root, python_executable, module)):
         return Result.fail(ErrorCode.INVALID_CONFIGURATION, "mirror and runner paths must be non-empty strings")
+    if not isinstance(remote_name, str) or not remote_name or any(character.isspace() for character in remote_name):
+        return Result.fail(ErrorCode.INVALID_CONFIGURATION, "mirror remote must be a non-empty name")
+    if not isinstance(branch, str) or not branch or any(character.isspace() for character in branch) or ".." in branch:
+        return Result.fail(ErrorCode.INVALID_CONFIGURATION, "mirror branch must be a valid ref name")
 
     parsed_suites: dict[TestSuite, tuple[str, ...]] = {}
     for suite in TestSuite:
@@ -54,5 +60,6 @@ def parse_local_config(data: Any, source_root: Path) -> Result[LocalConfig]:
             mirror_root=MirrorRoot(wsl_mount_path=mount, windows_path=PureWindowsPath(windows_root)),
             windows_runner=WindowsRunner(python_executable=Path(python_executable), module=module),
             unit_suites=parsed_suites,
+            git_mirror=GitMirrorConfig(remote_name=remote_name, branch=branch),
         )
     )

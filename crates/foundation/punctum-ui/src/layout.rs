@@ -35,6 +35,7 @@ pub struct UiHitRegion {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UiActionHit<Action> {
+    pub id: UiId,
     pub key: Option<UiKey>,
     pub action: Action,
     pub bounds: UiRect,
@@ -56,7 +57,7 @@ impl<Action> UiFrame<Action> {
     pub fn hit_regions(&self) -> &[UiHitRegion] {
         &self.hits
     }
-    #[deprecated(note = "页面交互请使用 UiFrame::hit_action。")]
+    #[deprecated(note = "页面交互请使用 UiFrame::action_hit_at。")]
     pub fn hit_test(&self, x: u32, y: u32) -> Option<UiId> {
         self.hits
             .iter()
@@ -67,14 +68,17 @@ impl<Action> UiFrame<Action> {
     pub fn action_hits(&self) -> &[UiActionHit<Action>] {
         &self.action_hits
     }
-    /// 返回坐标命中的最上层动作。
-    /// 多个可交互节点重叠时，后绘制的节点优先。
-    pub fn hit_action(&self, x: u32, y: u32) -> Option<&Action> {
+    /// 返回坐标命中的最上层动作及其自动分配的结构 ID。
+    pub fn action_hit_at(&self, x: u32, y: u32) -> Option<&UiActionHit<Action>> {
         self.action_hits
             .iter()
             .rev()
             .find(|region| region.bounds.contains(x, y))
-            .map(|region| &region.action)
+    }
+    /// 返回坐标命中的最上层动作。
+    /// 多个可交互节点重叠时，后绘制的节点优先。
+    pub fn hit_action(&self, x: u32, y: u32) -> Option<&Action> {
+        self.action_hit_at(x, y).map(|region| &region.action)
     }
 }
 
@@ -200,6 +204,7 @@ fn resolve_node<Action: Clone>(
     }
     if let Some(action) = &node.action {
         action_hits.push(UiActionHit {
+            id: node.id,
             key: node.key.clone(),
             action: action.clone(),
             bounds: hit_bounds,

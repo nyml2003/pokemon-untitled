@@ -12,7 +12,7 @@ use map_tile_semantics::{Direction8, TileSemanticsCatalog};
 use punctum_gpu::{PixelSize, Rgba8};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBorder, UiBorderRadius, UiColor,
-    UiContent, UiContentId, UiFrame, UiId, UiNode, UiSize, UiStyle, UiTree,
+    UiContent, UiContentId, UiFrame, UiId, UiNode as RawUiNode, UiSize, UiStyle, UiTree,
 };
 use tile_editor_core::{
     NeighbourPreview, NeighbourRuleKind, StackControl, TileEditorAction, TileEditorSnapshot,
@@ -66,11 +66,18 @@ struct TileEditorApp {
     semantics_path: PathBuf,
     page: usize,
     status: String,
-    frame: Option<UiFrame>,
+    frame: Option<UiFrame<TileEditorUiAction>>,
     cursor: Option<PhysicalPosition<f64>>,
     window: Option<Arc<Window>>,
     runtime: Option<NativeTarget<'static>>,
 }
+
+#[derive(Clone)]
+enum TileEditorUiAction {
+    Command(u32),
+}
+
+type UiNode = RawUiNode<TileEditorUiAction>;
 
 impl TileEditorApp {
     fn new() -> Result<Self, Box<dyn Error>> {
@@ -164,11 +171,15 @@ impl TileEditorApp {
         let Some(hit) = self
             .frame
             .as_ref()
-            .and_then(|frame| frame.hit_test(cursor.x.max(0.0) as u32, cursor.y.max(0.0) as u32))
+            .and_then(|frame| {
+                frame.action_hit_at(cursor.x.max(0.0) as u32, cursor.y.max(0.0) as u32)
+            })
+            .map(|hit| hit.action.clone())
         else {
             return;
         };
-        match hit.0 {
+        let TileEditorUiAction::Command(hit) = hit;
+        match hit {
             id if (PALETTE_ID..PALETTE_ID + PAGE_SIZE as u32).contains(&id) => {
                 let index = self.page * PAGE_SIZE + (id - PALETTE_ID) as usize;
                 if let Some(tile) = self.editor.ids().get(index).cloned() {
@@ -329,13 +340,13 @@ fn project_ui(
     catalog: &AtomicTileCatalog,
     page: usize,
     status: &str,
-) -> Result<UiTree, punctum_ui::UiBuildError> {
+) -> Result<UiTree<TileEditorUiAction>, punctum_ui::UiBuildError> {
     let snapshot = editor.snapshot();
     let mut ids = UiIds::default();
     let palette = palette_panel(&mut ids, editor, catalog, page);
     let inspector = inspector_panel(&mut ids, &snapshot, catalog, status);
     UiTree::new(
-        UiNode::new(ids.next())
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Fill,
@@ -373,7 +384,7 @@ fn palette_panel(
             })
             .collect::<Vec<_>>();
         rows.push(
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(58),
@@ -396,7 +407,7 @@ fn palette_panel(
         },
         [
             text(ids, "瓦片", TEXT, 20),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(410),
@@ -405,7 +416,7 @@ fn palette_panel(
                     ..UiStyle::default()
                 })
                 .with_children(rows),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(38),
@@ -462,7 +473,7 @@ fn inspector_panel(
         },
         [
             text(ids, snapshot.id.as_str(), TEXT, 22),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(40),
@@ -473,7 +484,7 @@ fn inspector_panel(
                 .with_children(controls),
             text(ids, "邻域可放置瓦片", TEXT, 18),
             neighbour_grid(ids, snapshot, catalog),
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(42),
@@ -517,7 +528,7 @@ fn neighbour_grid(
             })
             .collect::<Vec<_>>();
         rows.push(
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Px(516),
                     height: Dimension::Px(164),
@@ -528,7 +539,7 @@ fn neighbour_grid(
                 .with_children(cells),
         );
     }
-    UiNode::new(ids.next())
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Px(516),
             height: Dimension::Px(516),
@@ -566,7 +577,7 @@ fn neighbour_cell(
             preview.accepted_tiles.len()
         )
     };
-    UiNode::new(UiId(action_id))
+    let node = UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -578,14 +589,18 @@ fn neighbour_cell(
                 color: if selected { SELECTED } else { color },
             },
             border_radius: UiBorderRadius::all(4),
-            interactive: !selected && !preview.locked_by_pattern,
             ..UiStyle::default()
         })
         .with_content(UiContent::Fill(BUTTON))
         .with_children([
             text(ids, label, TEXT, 12),
             candidate_tiles(ids, &preview.accepted_tiles, catalog),
-        ])
+        ]);
+    if !selected && !preview.locked_by_pattern {
+        node.with_action(TileEditorUiAction::Command(action_id))
+    } else {
+        node
+    }
 }
 
 fn candidate_tiles(ids: &mut UiIds, tiles: &[AtomicTileId], catalog: &AtomicTileCatalog) -> UiNode {
@@ -598,7 +613,7 @@ fn candidate_tiles(ids: &mut UiIds, tiles: &[AtomicTileId], catalog: &AtomicTile
         .collect::<Vec<_>>()
         .chunks(2)
         .map(|row| {
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -609,7 +624,7 @@ fn candidate_tiles(ids: &mut UiIds, tiles: &[AtomicTileId], catalog: &AtomicTile
                 .with_children(row.iter().map(|tile| tile_thumbnail(ids, tile, catalog)))
         })
         .collect::<Vec<_>>();
-    UiNode::new(ids.next())
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -620,11 +635,11 @@ fn candidate_tiles(ids: &mut UiIds, tiles: &[AtomicTileId], catalog: &AtomicTile
         .with_children(rows)
 }
 
-fn tile_thumbnail(ids: &mut UiIds, tile: &AtomicTileId, catalog: &AtomicTileCatalog) -> UiNode {
+fn tile_thumbnail(_ids: &mut UiIds, tile: &AtomicTileId, catalog: &AtomicTileCatalog) -> UiNode {
     let mut children = Vec::new();
     if let Some(asset) = catalog.asset(tile) {
         children.push(
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -635,7 +650,7 @@ fn tile_thumbnail(ids: &mut UiIds, tile: &AtomicTileId, catalog: &AtomicTileCata
                 )),
         );
     }
-    UiNode::new(ids.next())
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -667,7 +682,7 @@ fn direction_name(direction: Direction8) -> &'static str {
 }
 
 fn tile_card(
-    ids: &mut UiIds,
+    _ids: &mut UiIds,
     action_id: u32,
     tile: Option<&AtomicTileId>,
     catalog: &AtomicTileCatalog,
@@ -679,7 +694,7 @@ fn tile_card(
         && let Some(asset) = catalog.asset(tile)
     {
         children.push(
-            UiNode::new(ids.next())
+            UiNode::auto()
                 .with_style(UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -690,7 +705,7 @@ fn tile_card(
                 )),
         );
     }
-    UiNode::new(UiId(action_id))
+    let node = UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -700,15 +715,19 @@ fn tile_card(
                 color: if selected { SELECTED } else { border_color },
             },
             border_radius: UiBorderRadius::all(4),
-            interactive: action_id != 0 && tile.is_some(),
             ..UiStyle::default()
         })
         .with_content(UiContent::Fill(BUTTON))
-        .with_children(children)
+        .with_children(children);
+    if action_id != 0 && tile.is_some() {
+        node.with_action(TileEditorUiAction::Command(action_id))
+    } else {
+        node
+    }
 }
 
-fn panel(id: UiId, style: UiStyle, children: impl IntoIterator<Item = UiNode>) -> UiNode {
-    UiNode::new(id)
+fn panel(_id: UiId, style: UiStyle, children: impl IntoIterator<Item = UiNode>) -> UiNode {
+    UiNode::auto()
         .with_style(UiStyle {
             border: UiBorder {
                 widths: Insets::all(1),
@@ -722,7 +741,7 @@ fn panel(id: UiId, style: UiStyle, children: impl IntoIterator<Item = UiNode>) -
 }
 
 fn button(ids: &mut UiIds, id: u32, label: &str, selected: bool) -> UiNode {
-    UiNode::new(UiId(id))
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
@@ -731,15 +750,15 @@ fn button(ids: &mut UiIds, id: u32, label: &str, selected: bool) -> UiNode {
             cross_align: CrossAlign::Center,
             padding: Insets::symmetric(8, 4),
             border_radius: UiBorderRadius::all(4),
-            interactive: true,
             ..UiStyle::default()
         })
+        .with_action(TileEditorUiAction::Command(id))
         .with_content(UiContent::Fill(if selected { SELECTED } else { BUTTON }))
         .with_children([text(ids, label, TEXT, 14)])
 }
 
-fn text(ids: &mut UiIds, content: impl Into<String>, color: UiColor, font_size: u32) -> UiNode {
-    UiNode::new(ids.next())
+fn text(_ids: &mut UiIds, content: impl Into<String>, color: UiColor, font_size: u32) -> UiNode {
+    UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Px(font_size.saturating_add(8)),

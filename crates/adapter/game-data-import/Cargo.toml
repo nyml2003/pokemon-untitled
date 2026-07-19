@@ -6,7 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }
 game-data-import-core = { path = "../game-data-import-core" }
 serde_json = "1.0.149"
 

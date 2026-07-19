@@ -8,7 +8,7 @@ rust-version.workspace = true
 [dependencies]
 battle-application = { path = "../../application/battle-application" }
 game-assets = { path = "../game-assets" }
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }
 game-native-plan = { path = "../game-native-plan" }
 game-session = { workspace = true }
 game-ui = { path = "../game-ui" }
@@ -17,7 +17,7 @@ punctum-gpu = { workspace = true }
 world-application = { path = "../../application/world-application" }
 
 [dev-dependencies]
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }
 image = "0.25.8"
 map-project = { workspace = true }
 

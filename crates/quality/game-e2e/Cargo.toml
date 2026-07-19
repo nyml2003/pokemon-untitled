@@ -7,7 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 battle-application = { path = "../../application/battle-application" }
-game-data = { path = "../../domain/game-data" }
+game-data = { workspace = true }
 game-session = { workspace = true }
 world-application = { path = "../../application/world-application" }
 
