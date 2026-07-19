@@ -204,9 +204,9 @@ impl TileEditorApp {
                 StackControl::RequiresMeadowBelow,
             )),
             id if (NEIGHBOUR_ID..NEIGHBOUR_ID + 8).contains(&id) => {
-                self.apply(TileEditorAction::CycleNeighbour(direction_at(
-                    id - NEIGHBOUR_ID,
-                )));
+                if let Some(direction) = direction_at(id - NEIGHBOUR_ID) {
+                    self.apply(TileEditorAction::CycleNeighbour(direction));
+                }
             }
             SAVE_ID => self.save(),
             _ => {}
@@ -560,19 +560,18 @@ fn neighbour_cell(
         NeighbourRuleKind::Requires => REQUIRED,
         NeighbourRuleKind::Forbids => FORBIDDEN,
     };
-    let label = if selected {
-        "当前瓦片".to_owned()
-    } else {
-        format!(
+    let label = match direction {
+        None => "当前瓦片".to_owned(),
+        Some(direction) => format!(
             "{} · {} · {} 个",
-            direction_name(direction.expect("non-center cell has a direction")),
+            direction_name(direction),
             if preview.locked_by_pattern {
                 "图样必须"
             } else {
                 rule_kind_name(preview.kind)
             },
             preview.accepted_tiles.len()
-        )
+        ),
     };
     let node = UiNode::auto()
         .with_style(UiStyle {
@@ -642,9 +641,9 @@ fn tile_thumbnail(_ids: &mut UiIds, tile: &AtomicTileId, catalog: &AtomicTileCat
                     height: Dimension::Fill,
                     ..UiStyle::default()
                 })
-                .with_content(UiContent::Image(
-                    UiContentId::new(asset.as_str()).expect("tile asset key is valid"),
-                )),
+                .with_content(UiContent::Image(UiContentId::from_resource_key(
+                    asset.as_str(),
+                ))),
         );
     }
     UiNode::auto()
@@ -697,9 +696,9 @@ fn tile_card(
                     height: Dimension::Fill,
                     ..UiStyle::default()
                 })
-                .with_content(UiContent::Image(
-                    UiContentId::new(asset.as_str()).expect("tile asset key is valid"),
-                )),
+                .with_content(UiContent::Image(UiContentId::from_resource_key(
+                    asset.as_str(),
+                ))),
         );
     }
     let node = UiNode::auto()
@@ -783,17 +782,17 @@ fn direction_index(direction: Direction8) -> u32 {
     }
 }
 
-fn direction_at(index: u32) -> Direction8 {
+fn direction_at(index: u32) -> Option<Direction8> {
     match index {
-        0 => Direction8::North,
-        1 => Direction8::NorthEast,
-        2 => Direction8::East,
-        3 => Direction8::SouthEast,
-        4 => Direction8::South,
-        5 => Direction8::SouthWest,
-        6 => Direction8::West,
-        7 => Direction8::NorthWest,
-        _ => unreachable!("neighbour click ids are range checked"),
+        0 => Some(Direction8::North),
+        1 => Some(Direction8::NorthEast),
+        2 => Some(Direction8::East),
+        3 => Some(Direction8::SouthEast),
+        4 => Some(Direction8::South),
+        5 => Some(Direction8::SouthWest),
+        6 => Some(Direction8::West),
+        7 => Some(Direction8::NorthWest),
+        _ => None,
     }
 }
 

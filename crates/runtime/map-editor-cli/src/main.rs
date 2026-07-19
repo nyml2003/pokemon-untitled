@@ -85,7 +85,7 @@ fn run_subcommand(command: &str, arguments: &[std::ffi::OsString]) -> Result<(),
         "pack" => pack_map(arguments),
         "unpack" => unpack_map(arguments),
         "lint" => lint_map(arguments),
-        _ => unreachable!("caller filters CLI commands"),
+        _ => Err(usage("inspect|verify|pack|unpack|lint <arguments>")),
     }
 }
 

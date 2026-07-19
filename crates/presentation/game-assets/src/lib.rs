@@ -25,6 +25,14 @@ impl AssetKey {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Builds a key from a fixed resource template that guarantees a non-empty path.
+    ///
+    /// This is intentionally separate from [`Self::new`]: external asset
+    /// catalog input must still be validated by the fallible constructor.
+    pub fn from_resource_template(value: String) -> Self {
+        Self(value)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -68,13 +68,16 @@ impl BattleUiState {
                 self.page = BattleMenuPage::Pokemon;
                 self.replacement_mode = true;
                 self.notice = None;
-                self.selected_index = (0..battle_session::TEAM_SIZE)
-                    .find(|index| {
-                        prompt.legal_actions().contains(&Action::Switch(
-                            TeamSlot::new(*index).expect("team indexes stay within the team limit"),
-                        ))
-                    })
-                    .expect("a replacement prompt offers at least one team switch");
+                let selected = (0..battle_session::TEAM_SIZE).find(|index| {
+                    TeamSlot::new(*index)
+                        .is_ok_and(|slot| prompt.legal_actions().contains(&Action::Switch(slot)))
+                });
+                let Some(selected) = selected else {
+                    self.page = BattleMenuPage::Hidden;
+                    self.notice = Some("没有可替换的宝可梦。");
+                    return;
+                };
+                self.selected_index = selected;
             }
             BattleInteraction::PlaybackLocked | BattleInteraction::Finished(_) => {
                 self.page = BattleMenuPage::Hidden;
@@ -172,10 +175,11 @@ impl BattleUiState {
                 let action = if actions.contains(&Action::Struggle) {
                     Action::Struggle
                 } else {
-                    Action::UseMove(
-                        MoveSlot::new(self.selected_index)
-                            .expect("visible move indexes stay within the move limit"),
-                    )
+                    let Ok(slot) = MoveSlot::new(self.selected_index) else {
+                        self.notice = Some("招式选择无效。");
+                        return BattleUiOutcome::Updated;
+                    };
+                    Action::UseMove(slot)
                 };
                 if actions.contains(&action) {
                     BattleUiOutcome::Submit(action)
@@ -185,10 +189,11 @@ impl BattleUiState {
                 }
             }
             BattleMenuPage::Pokemon => {
-                let action = Action::Switch(
-                    TeamSlot::new(self.selected_index)
-                        .expect("team page indexes stay within the team limit"),
-                );
+                let Ok(slot) = TeamSlot::new(self.selected_index) else {
+                    self.notice = Some("宝可梦选择无效。");
+                    return BattleUiOutcome::Updated;
+                };
+                let action = Action::Switch(slot);
                 if actions.contains(&action) {
                     BattleUiOutcome::Submit(action)
                 } else if observation.own().active_slot().index() == self.selected_index {

@@ -142,26 +142,17 @@ fn compose_world_map(
         .maps()
         .map(|(coordinate, _)| coordinate)
         .collect::<Vec<_>>();
-    let min_x = coordinates
-        .iter()
-        .map(|coordinate| coordinate.x())
-        .min()
-        .expect("world project rejects empty maps");
-    let max_x = coordinates
-        .iter()
-        .map(|coordinate| coordinate.x())
-        .max()
-        .expect("world project rejects empty maps");
-    let min_y = coordinates
-        .iter()
-        .map(|coordinate| coordinate.y())
-        .min()
-        .expect("world project rejects empty maps");
-    let max_y = coordinates
-        .iter()
-        .map(|coordinate| coordinate.y())
-        .max()
-        .expect("world project rejects empty maps");
+    let first = coordinates
+        .first()
+        .ok_or_else(|| invalid_data("world project has no maps"))?;
+    let (mut min_x, mut max_x) = (first.x(), first.x());
+    let (mut min_y, mut max_y) = (first.y(), first.y());
+    for coordinate in &coordinates[1..] {
+        min_x = min_x.min(coordinate.x());
+        max_x = max_x.max(coordinate.x());
+        min_y = min_y.min(coordinate.y());
+        max_y = max_y.max(coordinate.y());
+    }
     let width = checked_extent(min_x, max_x, STANDARD_MAP_WIDTH)?;
     let height = checked_extent(min_y, max_y, STANDARD_MAP_HEIGHT)?;
     let cell_count = usize::from(width) * usize::from(height);
@@ -211,7 +202,7 @@ fn compose_world_map(
     let initial = world.initial();
     let initial_map = world
         .map_at(initial)
-        .expect("world project validates its initial map");
+        .ok_or_else(|| invalid_data("world project initial map is missing"))?;
     let player_spawn = TilePosition::new(
         checked_origin(initial.x(), min_x, STANDARD_MAP_WIDTH)? + initial_map.player_spawn.x(),
         checked_origin(initial.y(), min_y, STANDARD_MAP_HEIGHT)? + initial_map.player_spawn.y(),

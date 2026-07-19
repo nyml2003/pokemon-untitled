@@ -99,10 +99,11 @@ pub fn asset_requests(
     requests.extend(move_category_requests());
     for entry in pokedex.entries() {
         requests.push(AssetRequest {
-            resource_key: AssetKey::new(format!("pokedex/{}", entry.national_dex))
-                .expect("fixed Pokedex resource key is valid"),
-            asset_key: AssetKey::new(entry.front_asset.clone())
-                .expect("generated Pokedex asset key is valid"),
+            resource_key: AssetKey::from_resource_template(format!(
+                "pokedex/{}",
+                entry.national_dex
+            )),
+            asset_key: AssetKey::from_resource_template(entry.front_asset.clone()),
             expected_size: None,
         });
     }
@@ -143,7 +144,7 @@ fn player_character_requests(appearance: &CharacterAppearanceId) -> Vec<AssetReq
                     frame_animation(frame),
                     frame_index(frame),
                 ),
-                asset_key: AssetKey::new(*asset).expect("fixed character key is valid"),
+                asset_key: AssetKey::from_resource_template((*asset).into()),
                 expected_size: None,
             });
         }
@@ -167,12 +168,11 @@ fn basic_character_requests(appearance: &CharacterAppearanceId) -> Vec<AssetRequ
         ] {
             requests.push(AssetRequest {
                 resource_key: world_character_asset(appearance, direction, animation, sprite_frame),
-                asset_key: AssetKey::new(format!(
+                asset_key: AssetKey::from_resource_template(format!(
                     "character/{}/{}/{action}/{action_frame:02}",
                     appearance.as_str(),
                     direction_name(direction),
-                ))
-                .expect("generated character asset key is valid"),
+                )),
                 expected_size: None,
             });
         }
@@ -260,11 +260,10 @@ fn move_category_requests() -> Vec<AssetRequest> {
 }
 
 fn pokemon_asset_key(form: u32, palette: &str, pose: &str, frame: usize) -> AssetKey {
-    AssetKey::new(format!(
+    AssetKey::from_resource_template(format!(
         "pokemon/{form:04}/form/00/{palette}/{pose}/{:02}",
         frame % 2
     ))
-    .expect("fixed pokemon key is valid")
 }
 
 pub fn assemble_assets(
@@ -272,24 +271,22 @@ pub fn assemble_assets(
     map_images: Vec<(AssetKey, DecodedImage)>,
 ) -> Result<NativeAssets, GameAssetError> {
     let mut images = vec![(
-        AssetKey::new("solid/white").expect("the white asset key is valid"),
+        AssetKey::from_resource_template("solid/white".into()),
         DecodedImage::solid(Rgba8::new(255, 255, 255, 255)),
     )];
-    images.push((rounded_ui_asset(), rounded_mask(64, 64, 6)));
-    images.push((pill_ui_asset(), rounded_mask(128, 64, 32)));
+    images.push((rounded_ui_asset(), rounded_mask(64, 64, 6)?));
+    images.push((pill_ui_asset(), rounded_mask(128, 64, 32)?));
     for source in sources {
         let image = decode_png(&source.bytes).map_err(|error| GameAssetError::Decode {
             path: source.request.asset_key.as_str().into(),
             message: error.to_string(),
         })?;
-        if source
-            .request
-            .expected_size
-            .is_some_and(|expected| image.size() != expected)
+        if let Some(expected) = source.request.expected_size
+            && image.size() != expected
         {
             return Err(GameAssetError::WrongSize {
                 path: source.request.asset_key.as_str().into(),
-                expected: source.request.expected_size.expect("the size was checked"),
+                expected,
                 actual: image.size(),
             });
         }
@@ -299,7 +296,7 @@ pub fn assemble_assets(
     NativeAssets::new(images).map_err(|error| GameAssetError::Assets(error.to_string()))
 }
 
-fn rounded_mask(width: u32, height: u32, radius: u32) -> DecodedImage {
+fn rounded_mask(width: u32, height: u32, radius: u32) -> Result<DecodedImage, GameAssetError> {
     let mut rgba8 = Vec::with_capacity((width * height * 4) as usize);
     let radius = radius as f32;
     let half_width = width as f32 / 2.0;
@@ -318,7 +315,7 @@ fn rounded_mask(width: u32, height: u32, radius: u32) -> DecodedImage {
         }
     }
     DecodedImage::from_rgba8(PixelSize::new(width, height), rgba8)
-        .expect("generated UI masks have a complete RGBA8 payload")
+        .map_err(|error| GameAssetError::GeneratedMask(error.to_string()))
 }
 
 #[derive(Debug)]
@@ -332,6 +329,7 @@ pub enum GameAssetError {
         expected: PixelSize,
         actual: PixelSize,
     },
+    GeneratedMask(String),
     Assets(String),
 }
 
@@ -350,6 +348,7 @@ impl fmt::Display for GameAssetError {
                 "sprite {path} must be {}x{} pixels, received {}x{}",
                 expected.width, expected.height, actual.width, actual.height
             ),
+            Self::GeneratedMask(message) => write!(formatter, "cannot generate UI mask: {message}"),
             Self::Assets(message) => write!(formatter, "failed to build game assets: {message}"),
         }
     }
@@ -542,7 +541,10 @@ mod tests {
 
     #[test]
     fn generated_ui_masks_have_transparent_corners_and_opaque_centers() {
-        for mask in [rounded_mask(64, 64, 6), rounded_mask(128, 64, 32)] {
+        for mask in [
+            rounded_mask(64, 64, 6).unwrap(),
+            rounded_mask(128, 64, 32).unwrap(),
+        ] {
             let center = ((mask.size().height / 2 * mask.size().width + mask.size().width / 2) * 4
                 + 3) as usize;
             assert_eq!(mask.rgba8()[3], 0);

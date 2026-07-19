@@ -98,12 +98,12 @@ impl CreatureGameApp {
         })
     }
 
-    fn game(&self) -> &GameSession {
-        self.game.as_ref().expect("the host owns one game session")
+    fn game(&self) -> Option<&GameSession> {
+        self.game.as_ref()
     }
 
     fn submit_game(&mut self, command: GameCommand) -> Result<GameEvents, GameError> {
-        let game = self.game.take().expect("the host owns one game session");
+        let game = self.game.take().ok_or(GameError::BattleStateMissing)?;
         let (game, result) = game.transition(command);
         self.game = Some(game);
         result
@@ -132,7 +132,11 @@ impl CreatureGameApp {
             return;
         };
         let viewport = game_viewport(surface_size);
-        let game_snapshot = self.game().snapshot();
+        let Some(game) = self.game() else {
+            event_loop.exit();
+            return;
+        };
+        let game_snapshot = game.snapshot();
         let state = mem::take(&mut self.presentation);
         let (state, presentation) = state.snapshot(&game_snapshot, viewport.cell_size);
         self.presentation = state;
@@ -260,8 +264,11 @@ impl CreatureGameApp {
             event.state,
             event.repeat,
         ));
-        let snapshot = self.game().snapshot();
-        let entries = self.console.entries(&self.game().legal_player_actions());
+        let Some(game) = self.game() else {
+            return;
+        };
+        let snapshot = game.snapshot();
+        let entries = self.console.entries(&game.legal_player_actions());
         let presentation = mem::take(&mut self.presentation);
         let (presentation, update) = presentation.handle_key(
             &key,
@@ -345,7 +352,10 @@ impl CreatureGameApp {
     fn advance_presentation(&mut self, now: Instant) {
         let elapsed = now.saturating_duration_since(self.last_real_instant);
         self.last_real_instant = now;
-        let snapshot = self.game().snapshot();
+        let Some(game) = self.game() else {
+            return;
+        };
+        let snapshot = game.snapshot();
         let presentation = mem::take(&mut self.presentation);
         let (presentation, update) = presentation.advance(elapsed, &snapshot);
         self.presentation = presentation;
@@ -353,7 +363,10 @@ impl CreatureGameApp {
     }
 
     fn world_clock_is_active(&self) -> bool {
-        !self.presentation.is_console_open() && self.game().snapshot().scene() == GameScene::World
+        !self.presentation.is_console_open()
+            && self
+                .game()
+                .is_some_and(|game| game.snapshot().scene() == GameScene::World)
     }
 
     fn advance_world_clock(&mut self, now: Instant) {
@@ -365,7 +378,9 @@ impl CreatureGameApp {
             return;
         }
 
-        let game = self.game.take().expect("the host owns one game session");
+        let Some(game) = self.game.take() else {
+            return;
+        };
         let (game, result) = game.advance_world_tick();
         self.game = Some(game);
         match result {
@@ -458,7 +473,11 @@ impl ApplicationHandler for CreatureGameApp {
         let now = Instant::now();
         self.advance_presentation(now);
         self.advance_world_clock(now);
-        let snapshot = self.game().snapshot();
+        let Some(game) = self.game() else {
+            event_loop.exit();
+            return;
+        };
+        let snapshot = game.snapshot();
         let presentation_wakeup = self
             .presentation
             .next_delay(&snapshot)

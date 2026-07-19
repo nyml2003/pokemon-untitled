@@ -6,8 +6,8 @@ use game_data::PokedexData;
 use game_session::{GameScene, GameSnapshot};
 use game_ui::{CommandConsoleView, PokedexAction, PresentationSnapshot};
 use game_view::{
-    BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, GameView, compose_world, project_battle_ui,
-    project_console_ui, project_pokedex,
+    BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, GameView, ProjectionError, compose_world,
+    project_battle_ui, project_console_ui, project_pokedex,
 };
 use map_project::MapProject;
 use map_render::{
@@ -54,6 +54,8 @@ pub enum SceneFrame {
 #[derive(Debug)]
 pub enum SceneViewError {
     Map(MapRenderError),
+    Projection(ProjectionError),
+    InconsistentBattleScene,
     UiBuild(UiBuildError),
     UiLayout(UiLayoutError),
 }
@@ -62,12 +64,26 @@ impl fmt::Display for SceneViewError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Map(error) => write!(formatter, "map projection failed: {error}"),
+            Self::Projection(error) => write!(formatter, "game view projection failed: {error}"),
+            Self::InconsistentBattleScene => {
+                formatter.write_str("battle scene is missing its battle session")
+            }
             Self::UiBuild(error) => write!(formatter, "Pokedex UI construction failed: {error}"),
             Self::UiLayout(error) => write!(formatter, "Pokedex UI layout failed: {error}"),
         }
     }
 }
-impl Error for SceneViewError {}
+impl Error for SceneViewError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Map(error) => Some(error),
+            Self::Projection(error) => Some(error),
+            Self::UiBuild(error) => Some(error),
+            Self::UiLayout(error) => Some(error),
+            Self::InconsistentBattleScene => None,
+        }
+    }
+}
 
 pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, SceneViewError> {
     let viewport = input.viewport;
@@ -116,9 +132,13 @@ pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, SceneV
                     map_pixel_offset,
                     None,
                 )
+                .map_err(SceneViewError::Projection)?
             }
             GameScene::Battle => {
-                let battle = input.game.battle().expect("battle scene owns a battle");
+                let battle = input
+                    .game
+                    .battle()
+                    .ok_or(SceneViewError::InconsistentBattleScene)?;
                 let base = project_battle_ui(
                     battle.session(),
                     input.presentation.battle_ui,
@@ -154,15 +174,14 @@ pub fn game_viewport(target_size: PixelSize) -> Viewport {
         .max(1);
     let width = i64::from(CANVAS_WIDTH) * i64::from(cell_size);
     let height = i64::from(CANVAS_HEIGHT) * i64::from(cell_size);
-    Viewport::new(
+    Viewport {
         target_size,
-        PixelOffset::new(
+        origin: PixelOffset::new(
             ((i64::from(target_size.width) - width) / 2) as i32,
             ((i64::from(target_size.height) - height) / 2) as i32,
         ),
-        PixelSize::new(cell_size, cell_size),
-    )
-    .expect("the game viewport always has a positive integer cell size")
+        cell_size: PixelSize::new(cell_size, cell_size),
+    }
 }
 
 fn world_camera(player: world_application::Position) -> MapCamera {

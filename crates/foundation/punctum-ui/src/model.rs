@@ -101,6 +101,11 @@ impl UiContentId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Builds a content ID from an already-validated resource key.
+    pub fn from_resource_key(value: impl Into<String>) -> Self {
+        Self(value.into())
+    }
 }
 
 /// 在纯树重建过程中保持稳定的动态节点语义标识。

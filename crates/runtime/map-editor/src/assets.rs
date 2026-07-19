@@ -23,13 +23,12 @@ pub fn load_assets() -> Result<EditorAssets, Box<dyn Error>> {
     let catalog = load_catalog(&root)?;
     let assets = build_tile_assets(read_tile_sources(&root, &catalog)?)?;
     let mut images = vec![(
-        AssetKey::new("solid/white").expect("the white asset key is valid"),
+        AssetKey::from_resource_template("solid/white".into()),
         DecodedImage::solid(Rgba8::new(255, 255, 255, 255)),
     )];
     images.extend(assets.images);
     let native = NativeAssets::new(images)?;
-    let hidden_palette_tile =
-        AtomicTileId::new("tile-0030").expect("the configured hidden palette tile id is valid");
+    let hidden_palette_tile = AtomicTileId::new("tile-0030")?;
     let project_ids = assets.ids;
     let known = project_ids.iter().cloned().collect::<BTreeSet<_>>();
     let semantics_path = root.join("source/map/tile/tile-semantics-v1.json");

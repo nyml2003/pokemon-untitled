@@ -1,5 +1,7 @@
 //! 纯 Gen3 产品视图投影。
 
+use std::{error::Error, fmt};
+
 use battle_session::{
     Ability, Action, BattleCue, BattleInteraction, BattleObservation, BattleSessionSnapshot,
     MoveCategory, ObservedBattleOutcome, Participant, Pokemon, PokemonType, TypeEffectiveness,
@@ -14,7 +16,7 @@ use game_ui_kit::{
     selectable_list_item as ui_selectable_list_item, sprite as ui_sprite, text as ui_text,
 };
 use punctum_gpu::{PixelOffset, Rgba8};
-use punctum_grid::{GridPos, GridRect, GridSize, Surface};
+use punctum_grid::{GridPos, GridRect, GridSize, Surface, SurfaceError};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
     UiContentId, UiKey, UiNode, UiStyle, UiTree,
@@ -229,6 +231,41 @@ pub enum LayerKind {
     Character,
     Hud,
     Console,
+}
+
+/// 固定画布和世界图层组合期间产生的投影错误。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ProjectionError {
+    Surface(SurfaceError),
+    ExpectedMapLayer { actual: LayerKind },
+    MapLayerMissingSurface,
+}
+
+impl fmt::Display for ProjectionError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Surface(error) => write!(formatter, "fixed view surface failed: {error}"),
+            Self::ExpectedMapLayer { actual } => {
+                write!(formatter, "expected a map layer, received {actual:?}")
+            }
+            Self::MapLayerMissingSurface => write!(formatter, "map layer is missing its surface"),
+        }
+    }
+}
+
+impl Error for ProjectionError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Surface(error) => Some(error),
+            Self::ExpectedMapLayer { .. } | Self::MapLayerMissingSurface => None,
+        }
+    }
+}
+
+impl From<SurfaceError> for ProjectionError {
+    fn from(error: SurfaceError) -> Self {
+        Self::Surface(error)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -578,9 +615,7 @@ pub fn project_battle_ui(
                     )
                 }),
         ),
-        BattleMenuPage::Pokemon => {
-            unreachable!("the Pokemon page returns before building the battle scene")
-        }
+        BattleMenuPage::Pokemon => UiNode::auto(),
         BattleMenuPage::Hidden => UiNode::auto(),
     };
 
@@ -945,13 +980,11 @@ fn move_detail_panel(
                 },
                 [
                     ui_image(
-                        UiContentId::new(type_icon_asset(move_type).as_str())
-                            .expect("static UI asset keys are non-empty"),
+                        UiContentId::from_resource_key(type_icon_asset(move_type).as_str()),
                         UiStyle::fixed(72, 28),
                     ),
                     ui_image(
-                        UiContentId::new(move_category_icon_asset(category).as_str())
-                            .expect("static UI asset keys are non-empty"),
+                        UiContentId::from_resource_key(move_category_icon_asset(category).as_str()),
                         UiStyle::fixed(72, 28),
                     ),
                 ],
@@ -1101,8 +1134,9 @@ fn selected_team_member_panel(
                 UiStyle::fixed(190, 190),
             )
             .with_content(UiContent::ImageTinted {
-                content: UiContentId::new(pokemon_icon_asset(slot, sprite_frame).as_str())
-                    .expect("team icon asset keys are non-empty"),
+                content: UiContentId::from_resource_key(
+                    pokemon_icon_asset(slot, sprite_frame).as_str(),
+                ),
                 tint: if pokemon.is_fainted() {
                     UiColor::new(112, 112, 112, 255)
                 } else {
@@ -1193,8 +1227,9 @@ fn team_member_card(
                 UiStyle::fixed(54, 54),
             )
             .with_content(UiContent::ImageTinted {
-                content: UiContentId::new(pokemon_icon_asset(slot, sprite_frame).as_str())
-                    .expect("team icon asset keys are non-empty"),
+                content: UiContentId::from_resource_key(
+                    pokemon_icon_asset(slot, sprite_frame).as_str(),
+                ),
                 tint: if pokemon.is_fainted() {
                     UiColor::new(112, 112, 112, 255)
                 } else {
@@ -1437,13 +1472,11 @@ fn text(
 fn image(_id: u32, content: impl Into<String>, style: UiStyle) -> UiNode {
     UiNode::auto()
         .with_style(style)
-        .with_content(UiContent::Image(
-            UiContentId::new(content).expect("static UI asset keys are non-empty"),
-        ))
+        .with_content(UiContent::Image(UiContentId::from_resource_key(content)))
 }
 
 /// 将命令控制台投影为固定游戏画布上的 `Console` 图层。
-pub fn project_console(console: &CommandConsoleView) -> ViewLayer {
+pub fn project_console(console: &CommandConsoleView) -> Result<ViewLayer, ProjectionError> {
     const PANEL_COL: u32 = 1;
     const PANEL_ROW: u32 = 4;
     const PANEL_WIDTH: u32 = 30;
@@ -1455,20 +1488,15 @@ pub fn project_console(console: &CommandConsoleView) -> ViewLayer {
         GridPos::new(PANEL_COL as i32, PANEL_ROW as i32),
         GridSize::new(PANEL_WIDTH, PANEL_HEIGHT),
     );
-    let mut surface = Surface::filled(GridSize::new(CANVAS_WIDTH, CANVAS_HEIGHT), ViewCell::Empty)
-        .expect("the fixed console surface is valid");
-    surface
-        .fill_rect(panel, sprite(PANEL_EDGE))
-        .expect("the fixed console panel fits the game canvas");
-    surface
-        .fill_rect(
-            GridRect::new(
-                GridPos::new((PANEL_COL + 1) as i32, (PANEL_ROW + 1) as i32),
-                GridSize::new(PANEL_WIDTH - 2, PANEL_HEIGHT - 2),
-            ),
-            sprite(PANEL),
-        )
-        .expect("the fixed console body fits the game canvas");
+    let mut surface = Surface::filled(GridSize::new(CANVAS_WIDTH, CANVAS_HEIGHT), ViewCell::Empty)?;
+    surface.fill_rect(panel, sprite(PANEL_EDGE))?;
+    surface.fill_rect(
+        GridRect::new(
+            GridPos::new((PANEL_COL + 1) as i32, (PANEL_ROW + 1) as i32),
+            GridSize::new(PANEL_WIDTH - 2, PANEL_HEIGHT - 2),
+        ),
+        sprite(PANEL),
+    )?;
 
     let mut labels = vec![label(
         TextRole::ConsoleQuery,
@@ -1491,12 +1519,10 @@ pub fn project_console(console: &CommandConsoleView) -> ViewLayer {
     {
         let row = FIRST_ITEM_ROW + visible_index as u32;
         if console.selected_index == Some(item_index) {
-            surface
-                .fill_rect(
-                    GridRect::new(GridPos::new(2, row as i32), GridSize::new(28, 1)),
-                    sprite(SELECTED),
-                )
-                .expect("the fixed console selection fits the game canvas");
+            surface.fill_rect(
+                GridRect::new(GridPos::new(2, row as i32), GridSize::new(28, 1)),
+                sprite(SELECTED),
+            )?;
         }
         labels.push(label(
             TextRole::ConsoleItem(item_index),
@@ -1531,9 +1557,9 @@ pub fn project_console(console: &CommandConsoleView) -> ViewLayer {
             CONSOLE_ERROR,
         ));
     }
-    ViewLayer::new(LayerKind::Console)
+    Ok(ViewLayer::new(LayerKind::Console)
         .with_surface(surface)
-        .with_labels(labels)
+        .with_labels(labels))
 }
 
 fn visible_console_start(item_count: usize, selected_index: Option<usize>) -> usize {
@@ -1561,7 +1587,7 @@ pub fn project_battle(
     ui: BattleUiState,
     sprites: BattleSpriteResources,
     sprite_frame: usize,
-) -> GameView {
+) -> Result<GameView, ProjectionError> {
     let prompt = prompt_data(snapshot.interaction());
     let (page, selected_index, notice) = ui.view();
     let message = notice
@@ -1756,15 +1782,15 @@ pub fn project_battle(
         BattleMenuPage::Pokemon => {}
     }
 
-    GameView::new([
+    Ok(GameView::new([
         ViewLayer::new(LayerKind::Map)
-            .with_surface(canvas.finish())
+            .with_surface(canvas.finish()?)
             .with_images(battlefield_images),
         ViewLayer::new(LayerKind::Character).with_images(character_images),
         ViewLayer::new(LayerKind::Hud)
             .with_images(images)
             .with_labels(labels),
-    ])
+    ]))
 }
 
 fn battle_animation(cue: Option<&BattleCue>) -> BattleAnimation {
@@ -2072,7 +2098,7 @@ fn project_pokemon_page(
     ui: BattleUiState,
     message: &str,
     sprite_frame: usize,
-) -> GameView {
+) -> Result<GameView, ProjectionError> {
     let selected_index = ui.view().1;
     let selected_pokemon = &observation.own().members()[selected_index];
     let canvas = Canvas::new(PARTY_BG);
@@ -2211,18 +2237,18 @@ fn project_pokemon_page(
         ));
     }
     labels.push(label(TextRole::Message, 3, 22, 27, 1, message, MUTED_TEXT));
-    GameView::new([
+    Ok(GameView::new([
         ViewLayer::new(LayerKind::Map),
         ViewLayer::new(LayerKind::Character),
         ViewLayer::new(LayerKind::Hud)
-            .with_surface(canvas.finish())
+            .with_surface(canvas.finish()?)
             .with_images(images)
             .with_labels(labels),
-    ])
+    ]))
 }
 
 /// 以静止动画和零偏移投影世界观察结果。
-pub fn project_world(observation: &WorldObservation) -> GameView {
+pub fn project_world(observation: &WorldObservation) -> Result<GameView, ProjectionError> {
     project_world_animated(observation, WorldAnimation::Stand, 0)
 }
 
@@ -2232,7 +2258,7 @@ pub fn project_world_animated(
     observation: &WorldObservation,
     animation: WorldAnimation,
     sprite_frame: usize,
-) -> GameView {
+) -> Result<GameView, ProjectionError> {
     project_world_presented(observation, animation, sprite_frame, PixelOffset::new(0, 0))
 }
 
@@ -2243,7 +2269,7 @@ pub fn project_world_presented(
     animation: WorldAnimation,
     sprite_frame: usize,
     pixel_offset: PixelOffset,
-) -> GameView {
+) -> Result<GameView, ProjectionError> {
     let mut actors = world_actor_images(
         observation,
         animation,
@@ -2253,21 +2279,18 @@ pub fn project_world_presented(
     );
     let speech = world_speech_overlay(observation, GridPos::new(0, 0), PixelOffset::new(0, 0));
     actors.extend(speech.images);
-    GameView::new([
-        ViewLayer::new(LayerKind::Map).with_surface(Canvas::new(MAP_GROUND).finish()),
+    Ok(GameView::new([
+        ViewLayer::new(LayerKind::Map).with_surface(Canvas::new(MAP_GROUND).finish()?),
         ViewLayer::new(LayerKind::Character)
             .with_images(actors)
             .with_labels(speech.labels),
         ViewLayer::new(LayerKind::Hud),
-    ])
+    ]))
 }
 
 /// 将已渲染地图图层与世界角色、对话和可选控制台组合成游戏视图。
 /// 相机会平移并裁剪角色和对话覆盖层。
 ///
-/// # Panics
-///
-/// `map` 不是 `Map` 图层，或其没有网格表面时 panic。
 pub fn compose_world(
     map: ViewLayer,
     camera: GridPos,
@@ -2276,12 +2299,14 @@ pub fn compose_world(
     sprite_frame: usize,
     npc_pixel_offset: PixelOffset,
     console: Option<&CommandConsoleView>,
-) -> GameView {
-    assert_eq!(map.kind, LayerKind::Map);
+) -> Result<GameView, ProjectionError> {
+    if map.kind != LayerKind::Map {
+        return Err(ProjectionError::ExpectedMapLayer { actual: map.kind });
+    }
     let viewport_size = map
         .surface
         .as_ref()
-        .expect("a composed map layer has a grid surface")
+        .ok_or(ProjectionError::MapLayerMissingSurface)?
         .size();
     let mut actors = world_actor_images(
         observation,
@@ -2305,9 +2330,9 @@ pub fn compose_world(
         ViewLayer::new(LayerKind::Hud),
     ];
     if let Some(console) = console {
-        layers.push(project_console(console));
+        layers.push(project_console(console)?);
     }
-    GameView::new(layers)
+    Ok(GameView::new(layers))
 }
 
 struct WorldSpeechOverlay {
@@ -2366,11 +2391,14 @@ fn speech_text(text: &str) -> &str {
 
 /// 在已有图层后附加可选控制台，并构建游戏视图。
 /// `layers` 必须已按 `LayerKind` 非递减顺序排列，且不能包含晚于 `Console` 的图层。
-pub fn with_console(mut layers: Vec<ViewLayer>, console: Option<&CommandConsoleView>) -> GameView {
+pub fn with_console(
+    mut layers: Vec<ViewLayer>,
+    console: Option<&CommandConsoleView>,
+) -> Result<GameView, ProjectionError> {
     if let Some(console) = console {
-        layers.push(project_console(console));
+        layers.push(project_console(console)?);
     }
-    GameView::new(layers)
+    Ok(GameView::new(layers))
 }
 
 fn world_actor_images(
@@ -2449,11 +2477,10 @@ pub fn world_character_asset(
         },
         WorldAnimation::RunStopping => 3,
     };
-    AssetKey::new(format!(
+    AssetKey::from_resource_template(format!(
         "character/{}/{direction_index}/{frame_offset}",
         appearance.as_str()
     ))
-    .expect("character asset keys are non-empty")
 }
 
 fn active_pokemon(observation: &BattleObservation) -> &Pokemon {
@@ -2715,7 +2742,7 @@ pub fn type_icon_asset(pokemon_type: PokemonType) -> AssetKey {
         PokemonType::Dragon => "dragon",
         PokemonType::Dark => "dark",
     };
-    AssetKey::new(format!("ui/battle/type/{name}")).expect("type icon asset keys are non-empty")
+    AssetKey::from_resource_template(format!("ui/battle/type/{name}"))
 }
 
 fn move_category_icon_image(col: u32, row: u32, category: MoveCategory) -> ViewImage {
@@ -2734,8 +2761,7 @@ pub fn move_category_icon_asset(category: MoveCategory) -> AssetKey {
         MoveCategory::Special => "special",
         MoveCategory::Status => "status",
     };
-    AssetKey::new(format!("ui/battle/move-category/{name}"))
-        .expect("move category asset keys are non-empty")
+    AssetKey::from_resource_template(format!("ui/battle/move-category/{name}"))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -2764,32 +2790,29 @@ impl BattleSpriteResources {
 /// 返回玩家后视精灵的资源键。
 /// `frame` 按两个动画帧循环取模。
 pub fn player_back_asset(slot: usize, frame: usize) -> AssetKey {
-    AssetKey::new(format!("battle/player/{slot}/back/{}", frame % 2))
-        .expect("player sprite asset keys are non-empty")
+    AssetKey::from_resource_template(format!("battle/player/{slot}/back/{}", frame % 2))
 }
 
 /// 返回对手正视精灵的资源键。
 /// `frame` 按两个动画帧循环取模。
 pub fn opponent_front_asset(slot: usize, frame: usize) -> AssetKey {
-    AssetKey::new(format!("battle/opponent/{slot}/front/{}", frame % 2))
-        .expect("opponent sprite asset keys are non-empty")
+    AssetKey::from_resource_template(format!("battle/opponent/{slot}/front/{}", frame % 2))
 }
 
 /// 返回队伍宝可梦图标的资源键。
 /// `frame` 按两个动画帧循环取模。
 pub fn pokemon_icon_asset(slot: usize, frame: usize) -> AssetKey {
-    AssetKey::new(format!("battle/team/{slot}/icon/{}", frame % 2))
-        .expect("team icon asset keys are non-empty")
+    AssetKey::from_resource_template(format!("battle/team/{slot}/icon/{}", frame % 2))
 }
 
 /// 返回圆角矩形 UI 资源键。
 pub fn rounded_ui_asset() -> AssetKey {
-    AssetKey::new("ui/rounded-rect").expect("the rounded UI asset key is non-empty")
+    AssetKey::from_resource_template("ui/rounded-rect".into())
 }
 
 /// 返回胶囊形 UI 资源键。
 pub fn pill_ui_asset() -> AssetKey {
-    AssetKey::new("ui/pill").expect("the pill UI asset key is non-empty")
+    AssetKey::from_resource_template("ui/pill".into())
 }
 
 fn battle_images(
@@ -2877,9 +2900,8 @@ impl Canvas {
         }
     }
 
-    fn finish(self) -> Surface<ViewCell> {
+    fn finish(self) -> Result<Surface<ViewCell>, SurfaceError> {
         Surface::from_cells(GridSize::new(CANVAS_WIDTH, CANVAS_HEIGHT), self.cells)
-            .expect("the fixed battle canvas dimensions are valid")
     }
 }
 
@@ -3251,7 +3273,8 @@ mod tests {
     fn battle_projection_shows_status_and_move_details() {
         let snapshot = battle_fixture();
         let mut ui = BattleUiState::default();
-        let main = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0);
+        let main =
+            project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
         let commands = main
             .labels()
             .filter(|label| matches!(label.role, TextRole::Action(_)))
@@ -3276,7 +3299,8 @@ mod tests {
         );
 
         handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
-        let fight = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0);
+        let fight =
+            project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
         assert!(fight.labels().any(|label| {
             label.role == TextRole::ActionDetail(0) && label.content == "威40 PP35/35"
         }));
@@ -3302,7 +3326,8 @@ mod tests {
         handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
         handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
 
-        let view = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0);
+        let view =
+            project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
 
         assert!(view.labels().any(|label| {
             label.role == TextRole::PageTitle && label.content == "选择宝可梦"
@@ -3343,7 +3368,8 @@ mod tests {
                 && image.bounds.origin == GridPos::new(5, 16)
         }));
 
-        let animated = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 1);
+        let animated =
+            project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 1).unwrap();
         assert!(
             animated
                 .images()
@@ -3369,7 +3395,8 @@ mod tests {
         handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
         handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
 
-        let view = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0);
+        let view =
+            project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
         assert!(view.labels().any(|label| {
             label.role == TextRole::SelectedMemberHp
                 && label.content == "无法战斗"
@@ -3504,7 +3531,8 @@ mod tests {
                 ui,
                 BattleSpriteResources::for_slots(0, 0),
                 projected,
-            );
+            )
+            .unwrap();
             assert_eq!(view.layers()[0].kind, LayerKind::Map);
             projected += 1;
             if battle.is_finished() {
@@ -3530,7 +3558,8 @@ mod tests {
         let struggle = battle_session_with_move(0, Accuracy::AlwaysHit).snapshot();
         let mut ui = BattleUiState::default();
         handle_battle_key(&mut ui, &key(NamedKey::Enter), struggle.interaction());
-        let view = project_battle(&struggle, ui, BattleSpriteResources::for_slots(0, 0), 0);
+        let view =
+            project_battle(&struggle, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
         assert!(view.labels().any(|label| label.content == "挣扎"));
 
         let mut battle = battle_session_with_move(35, Accuracy::percent(1).unwrap());
@@ -3551,7 +3580,8 @@ mod tests {
                     BattleUiState::default(),
                     BattleSpriteResources::for_slots(0, 0),
                     0,
-                );
+                )
+                .unwrap();
                 assert!(view.labels().any(|label| label.content == "攻击没有命中。"));
                 saw_miss = true;
             }
@@ -3564,7 +3594,7 @@ mod tests {
         let world = WorldApplication::demo().unwrap();
         let observation = world.observe().unwrap();
         let appearance = observation.actors()[0].appearance();
-        let view = project_world(&observation);
+        let view = project_world(&observation).unwrap();
 
         assert_eq!(world.observe().unwrap().player(), Position::new(3, 6));
         assert_eq!(
@@ -3608,7 +3638,8 @@ mod tests {
             1,
             punctum_gpu::PixelOffset::new(0, 0),
             None,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             view.layers()[1].images[0].pixel_offset,
@@ -3625,7 +3656,8 @@ mod tests {
             0,
             punctum_gpu::PixelOffset::new(0, 0),
             Some(&CommandConsoleView::default()),
-        );
+        )
+        .unwrap();
         assert_eq!(with_console.layers().len(), 4);
     }
 
@@ -3669,7 +3701,7 @@ mod tests {
             .unwrap()
             .observe()
             .unwrap();
-        let view = project_world(&observation);
+        let view = project_world(&observation).unwrap();
         assert!(
             view.labels()
                 .any(|label| label.role == TextRole::Message && label.content == "你好。")
@@ -3729,7 +3761,7 @@ mod tests {
             .observe()
             .map_err(|error| format!("{error:?}"))?;
 
-        let view = project_world(&observation);
+        let view = project_world(&observation).map_err(|error| error.to_string())?;
 
         assert!(
             view.layers()[1]
@@ -3749,7 +3781,8 @@ mod tests {
             items: vec!["/battle/move/one use".into(), "/battle/move/two use".into()],
             selected_index: Some(1),
             diagnostic: Some("action rejected".into()),
-        });
+        })
+        .unwrap();
 
         assert_eq!(layer.kind, LayerKind::Console);
         assert!(
@@ -3768,7 +3801,7 @@ mod tests {
         );
         assert!(layer.surface.unwrap().get(GridPos::new(2, 9)).is_ok());
 
-        let empty = project_console(&CommandConsoleView::default());
+        let empty = project_console(&CommandConsoleView::default()).unwrap();
         assert!(
             empty
                 .labels
@@ -3780,7 +3813,8 @@ mod tests {
             items,
             selected_index: Some(11),
             ..CommandConsoleView::default()
-        });
+        })
+        .unwrap();
         assert_eq!(
             scrolled
                 .labels
@@ -3793,9 +3827,10 @@ mod tests {
         assert_eq!(super::visible_console_start(3, None), 0);
 
         let observation = WorldApplication::demo().unwrap().observe().unwrap();
-        let world = project_world(&observation);
+        let world = project_world(&observation).unwrap();
         assert_eq!(
             super::with_console(world.layers().to_vec(), None)
+                .unwrap()
                 .layers()
                 .len(),
             3
@@ -3805,6 +3840,7 @@ mod tests {
                 world.layers().to_vec(),
                 Some(&CommandConsoleView::default())
             )
+            .unwrap()
             .layers()
             .last()
             .unwrap()

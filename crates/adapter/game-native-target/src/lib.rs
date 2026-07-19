@@ -115,21 +115,22 @@ impl NativeTextRenderer {
         if self.gpu.as_ref().is_none_or(|gpu| gpu.format != format) {
             self.gpu = Some(TextGpu::new(device, queue, format));
         }
-        self.gpu
+        let gpu = self
+            .gpu
             .as_mut()
-            .expect("text GPU resources were initialized")
-            .encode(
-                labels,
-                viewport,
-                text_scale,
-                device,
-                queue,
-                target,
-                encoder,
-                surface_size,
-                &mut self.font_system,
-                &mut self.swash_cache,
-            )
+            .ok_or(TextRenderError::MissingGpuResources)?;
+        gpu.encode(
+            labels,
+            viewport,
+            text_scale,
+            device,
+            queue,
+            target,
+            encoder,
+            surface_size,
+            &mut self.font_system,
+            &mut self.swash_cache,
+        )
     }
 }
 
@@ -300,6 +301,7 @@ impl From<TextRenderError> for NativeTargetError {
 
 #[derive(Debug)]
 pub enum TextRenderError {
+    MissingGpuResources,
     CoordinateOverflow,
     Prepare(PrepareError),
     Render(RenderError),
@@ -308,6 +310,9 @@ pub enum TextRenderError {
 impl fmt::Display for TextRenderError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::MissingGpuResources => {
+                formatter.write_str("native text GPU resources are missing")
+            }
             Self::CoordinateOverflow => formatter.write_str("native text coordinates overflowed"),
             Self::Prepare(error) => write!(formatter, "failed to prepare native text: {error}"),
             Self::Render(error) => write!(formatter, "failed to render native text: {error}"),

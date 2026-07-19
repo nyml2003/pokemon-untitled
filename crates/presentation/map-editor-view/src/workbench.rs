@@ -130,15 +130,14 @@ pub fn editor_viewport(target_size: PixelSize) -> Viewport {
         .max(1);
     let width = i64::from(layout::COLS) * i64::from(cell_size);
     let height = i64::from(layout::ROWS) * i64::from(cell_size);
-    Viewport::new(
+    Viewport {
         target_size,
-        PixelOffset::new(
+        origin: PixelOffset::new(
             ((i64::from(target_size.width) - width) / 2) as i32,
             ((i64::from(target_size.height) - height) / 2) as i32,
         ),
-        PixelSize::new(cell_size, cell_size),
-    )
-    .expect("editor viewport cell size is positive")
+        cell_size: PixelSize::new(cell_size, cell_size),
+    }
 }
 
 /// 将 Flex UI 命中映射回现有编辑器 reducer 的意图。
@@ -210,10 +209,7 @@ struct UiIds {
 impl UiIds {
     fn next(&mut self) -> UiId {
         let id = UiId(self.next);
-        self.next = self
-            .next
-            .checked_add(1)
-            .expect("editor UI node id overflow");
+        self.next = self.next.saturating_add(1);
         id
     }
 }
@@ -620,9 +616,9 @@ fn editor_material_card(
                             border_radius: punctum_ui::UiBorderRadius::all(6),
                             ..UiStyle::default()
                         })
-                        .with_content(UiContent::Image(
-                            UiContentId::new(asset.as_str()).expect("tile asset key is non-empty"),
-                        )),
+                        .with_content(UiContent::Image(UiContentId::from_resource_key(
+                            asset.as_str(),
+                        ))),
                 );
             }
         }
@@ -795,7 +791,7 @@ fn image(
 }
 
 fn white_asset() -> AssetKey {
-    AssetKey::new("solid/white").expect("the white asset key is valid")
+    AssetKey::from_resource_template("solid/white".into())
 }
 
 #[derive(Debug)]

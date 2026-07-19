@@ -221,11 +221,10 @@ impl PresentationState {
             if key.phase == KeyPhase::Release {
                 return PresentationUpdate::default();
             }
-            let selected_index = self
-                .pokedex
-                .as_ref()
-                .expect("the Pokedex remains open while handling its key")
-                .selected_index;
+            let Some(pokedex) = self.pokedex.as_ref() else {
+                return PresentationUpdate::default();
+            };
+            let selected_index = pokedex.selected_index;
             let action = match key.logical {
                 LogicalKey::Named(NamedKey::Escape) => {
                     self.pokedex = None;

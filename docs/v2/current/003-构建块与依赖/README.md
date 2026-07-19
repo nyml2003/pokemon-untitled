@@ -11,5 +11,6 @@
 | 003 | [Application 与 Presentation](003-Application与Presentation.md) | 会话、编辑器状态、视图、UI 与帧计划。 |
 | 004 | [Adapter、Runtime 与 Quality](004-AdapterRuntime与Quality.md) | 外部能力、可执行程序和质量工具。 |
 | 005 | [依赖规则与数据合同](005-依赖规则与数据合同.md) | 允许的依赖、命令、事件、快照与帧计划。 |
+| 006 | [纯核心边界与可测试性](006-纯核心边界与可测试性.md) | 状态转换、外部能力和测试替身的具体分界。 |
 
 阅读本模块后，按任务进入 [004 游戏运行时](../004-游戏运行时/README.md) 或 [005 地图创作](../005-地图创作/README.md)。

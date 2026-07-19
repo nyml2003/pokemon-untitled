@@ -11,7 +11,7 @@ use punctum_gpu::{
     PixelSize, ResourceId, Rgba8, SubmissionPlan, Viewport as GridViewport, plan_composite,
     plan_pixels,
 };
-use punctum_grid::{GridSize, Surface};
+use punctum_grid::{GridSize, Surface, SurfaceError};
 use punctum_ui::{UiDrawCommand, UiFrame};
 
 pub struct NativeAssets {
@@ -185,7 +185,7 @@ impl FramePlan {
         assets: &NativeAssets,
         text_scale: TextScale,
     ) -> Result<Self, FramePlanError> {
-        let white_key = AssetKey::new("solid/white").expect("the white asset key is valid");
+        let white_key = AssetKey::from_resource_template("solid/white".into());
         let white = assets
             .resource(&white_key)
             .ok_or(FramePlanError::UnknownAsset(white_key))?;
@@ -286,7 +286,7 @@ impl FramePlan {
             .find_map(|layer| layer.surface.as_ref().map(Surface::size))
             .ok_or(FramePlanError::MissingSurface)?;
         let mut cells = vec![GpuCell::Empty; (size.cols * size.rows) as usize];
-        let white_key = AssetKey::new("solid/white").expect("the white asset key is valid");
+        let white_key = AssetKey::from_resource_template("solid/white".into());
         let white = assets
             .resource(&white_key)
             .ok_or(FramePlanError::UnknownAsset(white_key))?;
@@ -339,8 +339,7 @@ impl FramePlan {
                 font_size: None,
             }));
         }
-        let surface = Surface::from_cells(size, cells)
-            .expect("the product surface has exactly one cell per grid position");
+        let surface = Surface::from_cells(size, cells).map_err(FramePlanError::Surface)?;
         Self::new(
             &surface,
             &images,
@@ -434,6 +433,7 @@ pub enum FramePlanError {
     },
     UnknownAsset(AssetKey),
     InvalidUiContent(String),
+    Surface(SurfaceError),
     Gpu(GpuPlanError),
 }
 
@@ -449,12 +449,24 @@ impl fmt::Display for FramePlanError {
             Self::InvalidUiContent(content) => {
                 write!(formatter, "invalid UI content key {content}")
             }
+            Self::Surface(error) => write!(formatter, "cannot build product surface: {error}"),
             Self::Gpu(error) => write!(formatter, "cannot plan product frame: {error}"),
         }
     }
 }
 
-impl Error for FramePlanError {}
+impl Error for FramePlanError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Surface(error) => Some(error),
+            Self::Gpu(error) => Some(error),
+            Self::MissingSurface
+            | Self::SurfaceSizeMismatch { .. }
+            | Self::UnknownAsset(_)
+            | Self::InvalidUiContent(_) => None,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

@@ -38,8 +38,7 @@ pub fn build_tile_assets(mut sources: Vec<TileSource>) -> Result<TileAssets, Til
             message: error.to_string(),
         })?;
         let canonical_name = id.as_str().strip_prefix("tile-").unwrap_or(id.as_str());
-        let asset = AssetKey::new(format!("map/tile/{canonical_name}"))
-            .expect("a non-empty tile id always produces a valid asset key");
+        let asset = AssetKey::from_resource_template(format!("map/tile/{canonical_name}"));
         let image = decode_png(&source.bytes).map_err(|error| TileAssetsError::Decode {
             name: source.name.clone(),
             message: error.to_string(),
@@ -78,24 +77,25 @@ pub fn project_from_json_or_default(
         return MapProject::from_json(json, &known)
             .map_err(|error| TileAssetsError::Project(error.to_string()));
     }
-    default_project(ids).map_err(|error| TileAssetsError::Project(error.to_string()))
+    default_project(ids)
 }
 
-fn default_project(ids: &[AtomicTileId]) -> Result<MapProject, map_project::MapError> {
+fn default_project(ids: &[AtomicTileId]) -> Result<MapProject, TileAssetsError> {
+    let fallback = ids.first().ok_or(TileAssetsError::Empty)?;
     let tile = |name: &str| {
         ids.iter()
             .find(|id| id.as_str() == name)
-            .or_else(|| ids.first())
             .cloned()
-            .expect("the caller rejects an empty tile set")
+            .unwrap_or_else(|| fallback.clone())
     };
-    let ground_id = CompositeTileId::new("material-0000")?;
-    let flower_id = CompositeTileId::new("material-0001")?;
-    let grass_id = CompositeTileId::new("material-0002")?;
-    let rock_id = CompositeTileId::new("material-0003")?;
-    let border_id = CompositeTileId::new("material-0004")?;
+    let project_error = |error: map_project::MapError| TileAssetsError::Project(error.to_string());
+    let ground_id = CompositeTileId::new("material-0000").map_err(project_error)?;
+    let flower_id = CompositeTileId::new("material-0001").map_err(project_error)?;
+    let grass_id = CompositeTileId::new("material-0002").map_err(project_error)?;
+    let rock_id = CompositeTileId::new("material-0003").map_err(project_error)?;
+    let border_id = CompositeTileId::new("material-0004").map_err(project_error)?;
     let mut project = MapProject::blank(
-        MapProjectId::new("demo-map")?,
+        MapProjectId::new("demo-map").map_err(project_error)?,
         24,
         16,
         Some(CompositeTile::new(

@@ -1,0 +1,16 @@
+stateDiagram-v2
+    [*] --> World
+    World --> World: World command / tick
+    World --> Battle: Encounter
+    Battle --> Battle: Action / playback
+    Battle --> World: Finished
+
+    note right of World
+      Owns WorldApplication
+      Refreshes WorldObservation
+    end note
+
+    note right of Battle
+      Owns GameBattleSession
+      Rejects unavailable actions
+    end note
