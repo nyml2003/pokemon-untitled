@@ -1,6 +1,6 @@
 # Git 驱动的 Windows 运行镜像方案
 
-> 状态：待评审
+> 状态：已实施，待 Windows 原生验收
 
 ## 结论
 
@@ -10,9 +10,9 @@ Windows 运行目录改为独立 Git 工作区，不再由 `ops` 逐文件复制
 
 这会消除每次运行都复制 `assets/` 的问题。首次克隆仍需要下载完整仓库；后续只传输 Git 中新增或变更的对象。
 
-## 现状与问题
+## 历史问题
 
-当前 `ops sync` 枚举源工作区中的全部受管文件，并把每个文件加入复制计划。它不比较镜像版本，也不比较文件内容。
+Git 镜像改造前，`ops sync` 枚举源工作区中的全部受管文件，并把每个文件加入复制计划。它不比较镜像版本，也不比较文件内容。
 
 `ops run game-host` 每次都会先执行这个同步。项目包含大量图片和数据文件，因此首次同步和后续运行都会长时间占用 WSL 到 NTFS 的文件复制链路。
 
@@ -48,7 +48,7 @@ Windows 原生验收的是已推送提交，不是 WSL 当前工作树。
 
 ## 镜像初始化
 
-当前 `C:\Users\nyml\projects\pokemon-untitled` 是 ops 复制产生的非 Git 目录。Git 不能安全地直接克隆到这个非空目录。
+旧的 `C:\Users\nyml\projects\pokemon-untitled` 是 ops 复制产生的非 Git 目录。Git 不能安全地直接克隆到这个非空目录。
 
 迁移必须创建新的空镜像目录，例如 `C:\Users\nyml\projects\pokemon-untitled-native`：
 
@@ -91,7 +91,7 @@ Windows 原生验收的是已推送提交，不是 WSL 当前工作树。
 | `ops init-mirror` | 只在配置的镜像目录为空时克隆固定远端和分支，并初始化 Git LFS。 |
 | `ops doctor` | 校验镜像是 Git 工作区、远端 URL、上游分支、Git LFS 可用性和 Windows Python。 |
 | `ops check` | 只报告 WSL `HEAD`、远端目标提交、镜像 `HEAD`、脏工作区状态和是否可 fast-forward。 |
-| `ops sync` | 获取远端并把镜像 fast-forward 到配置分支。输出变更前后的提交 ID；不复制单个工作区文件。 |
+| `ops sync` | 获取远端并把镜像 fast-forward 到配置分支。它实时输出阶段和子进程日志；只在 LFS 指针或 `.gitattributes` 变化时更新 LFS 对象。 |
 | `ops build game-host` | 先执行 Git 同步，再在 Windows 镜像中构建固定目标。 |
 | `ops run game-host` | 先执行 Git 同步，再在 Windows 镜像中构建和运行固定目标。 |
 
@@ -120,9 +120,9 @@ Windows 原生验收的是已推送提交，不是 WSL 当前工作树。
 
 ## 进度输出
 
-正常输出应按阶段显示：读取版本、获取远端、快进提交、检查 LFS、开始原生构建、开始运行。Git 与 Windows 原生构建的标准输出和错误持续转发。
+正常输出按阶段显示：读取镜像状态、获取远端、快进提交、按需检查 LFS、校验完成、开始原生构建或开始运行。Git 与 Windows 原生构建的标准输出和错误持续转发；静默超过 15 秒时会输出心跳。
 
-使用 `--json` 时，进度写入标准错误；最终结果写入标准输出。最终结果至少包含：
+使用 `--json` 时，进度以 JSON Lines 写入标准错误；最终结果写入标准输出。最终结果至少包含：
 
 ```json
 {
@@ -133,6 +133,10 @@ Windows 原生验收的是已推送提交，不是 WSL 当前工作树。
   "fast_forwarded": true
 }
 ```
+
+## 实施状态
+
+Git 镜像、显式初始化、受限 fast-forward、按需 LFS、结构化日志和 Python 单元测试均已实施。Windows 原生构建与游戏窗口验收尚未执行。
 
 ## 实施阶段
 
@@ -147,8 +151,8 @@ Windows 原生验收的是已推送提交，不是 WSL 当前工作树。
 
 ## 验收标准
 
-- 未修改代码时，连续两次 `ops sync` 不复制资源文件，只报告镜像已处于目标提交。
-- 修改一个源码文件并推送后，Windows 镜像只接收对应 Git 对象，随后可原生构建。
+- 未修改代码时，连续两次 `ops sync` 不复制资源文件或扫描全部 LFS 指针，只报告镜像已处于目标提交。
+- 修改一个未受 LFS 管理的源码文件并推送后，Windows 镜像只接收对应 Git 对象，跳过 LFS，随后可原生构建。
 - 修改一个受 Git LFS 管理的资源并推送后，镜像取得对应 LFS 对象，资源加载通过。
 - WSL 有未提交改动时，Windows 运行的提交 ID 仍等于远端已推送提交。
 - 镜像有已跟踪修改或无法 fast-forward 时，`ops sync` 拒绝继续且不破坏镜像。

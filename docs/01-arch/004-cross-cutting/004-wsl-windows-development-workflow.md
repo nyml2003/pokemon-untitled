@@ -27,7 +27,7 @@ GameSession -> project_scene -> FramePlan -> NativeTarget::present
 | 位置 | 路径示例 | 负责内容 | 不负责内容 |
 | --- | --- | --- | --- |
 | WSL 源工作区 | `/home/nyml/projects/pokemon-untitled` | 代码、Codex、文档、资产编辑、所有单元测试、同步和运行调度 | 图形窗口、Windows 原生构建产物 |
-| Windows 镜像 | `C:\\Users\\nyml\\projects\\pokemon-untitled` | 接收 WSL ops 的受控请求，重新构建、运行和 GPU 验收 | 编辑源代码、反向同步、手工测试或运行、保存长期源码状态 |
+| Windows 镜像 | `C:\\Users\\nyml\\projects\\pokemon-untitled-native` | 接收 WSL ops 的受控请求，重新构建、运行和 GPU 验收 | 编辑源代码、反向同步、手工测试或运行、保存长期源码状态 |
 
 Windows 镜像是独立 Git 工作区。它只能 fast-forward 到配置远端分支。Windows 侧的 `target/`、日志和崩溃产物不能回写到 WSL 源工作区。
 
@@ -41,7 +41,7 @@ rectangle "WSL" {
   component "WSL 单元测试" as UnitTest
 }
 rectangle "Windows" {
-  folder "本地镜像\nC:\\Users\\nyml\\projects\\pokemon-untitled" as Mirror
+  folder "本地镜像\nC:\\Users\\nyml\\projects\\pokemon-untitled-native" as Mirror
   component "私有原生运行端" as WinOps
   component "Windows 原生构建工具" as BuildTool
   component "game-host\nWinit + WGPU" as Host
@@ -87,7 +87,7 @@ ops test --suite world
 ops init-mirror
 ```
 
-该命令从配置的 `origin/master` 克隆 Git 镜像，并下载 Git LFS 对象。它不会覆盖非空目录。
+该命令从配置的远端和分支克隆 Git 镜像，并下载所需 Git LFS 对象。它不会覆盖非空目录。
 
 日常开发先在 WSL 完成测试并推送提交。随后执行：
 
@@ -105,7 +105,7 @@ ops sync
 ops run game-host
 ```
 
-该命令按固定顺序执行：校验 Git 镜像，获取配置远端分支，fast-forward 到目标提交，更新 Git LFS 对象，再向 Windows 私有运行端发送 `run_game_host` 请求。Windows 运行端在镜像目录重新构建并启动 `game-host`。每次 `run` 都重新同步和构建，不提供跳过同步的参数。
+该命令按固定顺序执行：校验 Git 镜像，获取配置远端分支，fast-forward 到目标提交；只有 `.gitattributes` 或 LFS 指针变化时才更新 Git LFS 对象；随后向 Windows 私有运行端发送 `run_game_host` 请求。Windows 运行端在镜像目录重新构建并启动 `game-host`。每次 `run` 都重新同步和构建，不提供跳过同步的参数。
 
 WSL ops 通过本机配置的 Windows `python.exe` 直接调用镜像中的私有运行模块。它不经由 PowerShell、`cmd.exe` 或字符串形式的 shell 命令。适配器只传递结构化请求和明确的镜像工作目录。
 
@@ -152,12 +152,25 @@ Python ops 不改变现有 Rust crate 依赖方向。
 | `ops doctor` | 无 | 报告 Python、Flake 开发环境、挂载镜像和 Windows 运行端可用性 | 不提供公开入口 | 不写入，不启动进程 |
 | `ops format` | `--check` | 默认格式化 WSL 源树；`--check` 只报告差异 | 不提供公开入口 | 默认会修改源文件 |
 | `ops test` | `--suite core|world|all` | 运行已定义的 WSL 单元测试；省略参数时运行 `all` | 不提供公开入口 | 启动受控测试进程，但不调度 Windows |
-| `ops init-mirror` | 无 | 只在配置的空目录中克隆 `origin/master` 并初始化 Git LFS | 不提供公开入口 | 创建 Git 镜像 |
-| `ops sync` | 无 | 获取配置远端分支并 fast-forward Git 镜像 | 不提供公开入口 | 更新 Git 工作区和 LFS 对象 |
+| `ops init-mirror` | 无 | 只在配置的空目录中克隆固定远端与分支，并初始化 Git LFS | 不提供公开入口 | 创建 Git 镜像 |
+| `ops sync` | 无 | 获取配置远端分支并 fast-forward Git 镜像；按需更新 LFS | 不提供公开入口 | 更新 Git 工作区，必要时更新 LFS 对象 |
 | `ops build game-host` | `--profile debug|release` | Git 同步后调度 Windows 重新构建固定目标 | 只处理 WSL 发送的构建请求 | 启动受控 Windows 构建进程 |
 | `ops run game-host` | `--profile debug|release` | Git 同步后调度 Windows 重新构建并启动固定目标 | 只处理 WSL 发送的运行请求 | 前台启动游戏，转发输出并返回退出码 |
 
 `ops test --suite all` 运行所有已定义的 WSL 单元测试。它不访问 Windows 镜像，也不创建图形窗口。`ops build game-host` 和 `ops run game-host` 的目标固定为 `game-host`，`--profile` 省略时使用 `debug`。这保证用户不需要也不能通过 ops 传入底层构建器的包名、子命令或参数。
+
+### 进度、JSON 与恢复
+
+`init-mirror`、`sync`、`build` 和 `run` 会将阶段进度、Git、Git LFS 和 Windows 运行端输出持续写到标准错误。文本模式使用时间和阶段前缀。`--json` 模式将每条进度写成一行 JSON；标准输出只写最终的一个结果对象。
+
+Git LFS 只在初始化、`.gitattributes` 变化或快进中新增、修改 LFS 指针时运行。没有远端变更或仅有普通源码变更时，`sync.lfs` 会明确报告跳过，不扫描全部 LFS 指针。
+
+| 错误码 | 动作 |
+| --- | --- |
+| `MirrorMissing` | 配置新的空目录后运行 `ops init-mirror`。 |
+| `MirrorDirty`、`MirrorDiverged` | 停止运行；人工处理镜像状态。ops 不自动 stash、clean、merge、rebase 或 reset。 |
+| `GitLfsUnavailable`、`GitSyncFailed` | 保留阶段日志和最终错误，修复 Git、LFS、网络或远端状态后重新运行。 |
+| `Cancelled` | 先运行 `ops check` 确认镜像提交，再决定是否重新同步。 |
 
 ### 本机配置契约
 
@@ -166,8 +179,8 @@ WSL 在仓库根目录读取 Git 忽略的 `ops.local.json`。该文件保存本
 ```json
 {
   "mirror": {
-    "wsl_mount_root": "/mnt/c/Users/nyml/projects/pokemon-untitled",
-    "windows_root": "C:\\Users\\nyml\\projects\\pokemon-untitled",
+    "wsl_mount_root": "/mnt/c/Users/nyml/projects/pokemon-untitled-native",
+    "windows_root": "C:\\Users\\nyml\\projects\\pokemon-untitled-native",
     "remote": "origin",
     "branch": "master"
   },
@@ -195,7 +208,6 @@ tools/pokemon_ops/
   domain/
     config.py
     model.py
-    policy.py
     errors.py
   application/
     sync_service.py
@@ -207,6 +219,8 @@ tools/pokemon_ops/
     local_config.py
     local_git_mirror.py
     local_process_runner.py
+    progress_reporters.py
+    streaming_process.py
     windows_native_run_dispatcher.py
   tests/
 ```
@@ -274,7 +288,7 @@ ops 是 WSL 的唯一公开命令。它在需要渲染时通过 `NativeRunDispat
 5. WSL 工作树是否干净不影响 Windows 运行。Windows 只运行配置远端分支的当前提交。
 6. `RunRequest` 只表达已定义的操作，例如 `build_game_host` 和 `run_game_host`。它不能携带任意 shell 文本、目标名或构建参数。
 7. `test` 只能使用 WSL `ProcessRunner`。它不能访问 Windows 镜像或 `NativeRunDispatcher`。
-8. `run game-host` 和 `build game-host` 必须先完成 Git 同步和 LFS 更新。同步失败时不能调度 Windows 运行端；它们在 WSL 不创建 Winit 窗口或 WGPU surface。
+8. `run game-host` 和 `build game-host` 必须先完成 Git 同步；LFS 只在初始化、`.gitattributes` 或 LFS 指针变化时更新。同步失败时不能调度 Windows 运行端；它们在 WSL 不创建 Winit 窗口或 WGPU surface。
 9. `NativeRunDispatcher` 只能使用 `ops.local.json` 中配置的 Windows Python 和镜像工作目录启动私有运行模块。它不接受来自 CLI 的可执行路径、模块名或工作目录。
 10. `run game-host` 必须在前台等待 Windows 运行端和游戏退出，转发标准输出与标准错误，并返回运行端返回的退出码。
 11. Windows 私有运行端只接受来自 `NativeRunDispatcher` 的结构化请求，并且始终以 Windows 镜像目录为工作目录。
@@ -282,7 +296,7 @@ ops 是 WSL 的唯一公开命令。它在需要渲染时通过 `NativeRunDispat
 
 ### 测试边界
 
-`domain` 和 `application` 用 `unittest` 加临时 Git 仓库测试。测试必须覆盖：空镜像初始化、已同步提交、fast-forward、镜像脏、镜像分叉、远端或分支不匹配、suite 映射、所有 unit suite 都使用 WSL runner，以及同步失败时不调度 Windows。
+`domain` 和 `application` 用 `unittest` 加临时 Git 仓库测试。测试必须覆盖：空镜像初始化、已同步提交、fast-forward、镜像脏、镜像分叉、远端或分支不匹配、普通源码快进跳过 LFS、LFS 指针变更检测、suite 映射、所有 unit suite 都使用 WSL runner，以及同步失败时不调度 Windows。
 
 `adapters` 再用临时 bare 仓库测试真实 Git 初始化和 fast-forward。`LocalProcessRunner` 用 fake process runner 测试 WSL 单元测试的受控请求、参数列表与工作目录。`WindowsNativeRunDispatcher` 用 fake Windows 运行端测试配置的 Python 路径、请求内容、镜像工作目录、前台输出转发和退出码转换，不要求测试机安装原生构建工具或显卡驱动。
 
@@ -291,7 +305,7 @@ ops 是 WSL 的唯一公开命令。它在需要渲染时通过 `NativeRunDispat
 | 阶段 | 交付物 | 完成标准 |
 | --- | --- | --- |
 | 1 | ops 目录、领域类型、本机配置解析和 Git 镜像状态 | 无效配置会被拒绝；可在临时仓库证明不会把源与镜像混淆 |
-| 2 | 显式 `init-mirror`、Git fast-forward 和 Git LFS | 非空目录、脏镜像和分叉都会被拒绝；不覆盖目录 |
+| 2 | 显式 `init-mirror`、Git fast-forward、按需 Git LFS 与进度事件 | 非空目录、脏镜像和分叉都会被拒绝；普通源码同步不扫描全部 LFS 指针；不覆盖目录 |
 | 3 | WSL `format`、`test` 与 Windows 构建、运行调度 adapter | 所有单元测试在 WSL 完成；`ops run game-host` 先安全同步，再让 Windows 重新构建、前台启动并返回退出码 |
 | 4 | 结构化 JSON 结果与失败日志位置 | CI 或人工能从错误码定位 Git、构建或运行失败 |
 

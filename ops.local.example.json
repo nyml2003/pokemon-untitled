@@ -1,7 +1,7 @@
 {
   "mirror": {
-    "wsl_mount_root": "/mnt/c/Users/nyml/projects/pokemon-untitled",
-    "windows_root": "C:\\Users\\nyml\\projects\\pokemon-untitled",
+    "wsl_mount_root": "/mnt/c/Users/nyml/projects/pokemon-untitled-native",
+    "windows_root": "C:\\Users\\nyml\\projects\\pokemon-untitled-native",
     "remote": "origin",
     "branch": "master"
   },

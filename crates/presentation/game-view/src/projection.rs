@@ -3682,30 +3682,30 @@ mod tests {
     }
 
     #[test]
-    fn world_projection_omits_speech_that_cannot_fit_within_the_canvas(
-    ) -> Result<(), Box<dyn Error>> {
+    fn world_projection_omits_speech_that_cannot_fit_within_the_canvas() -> Result<(), String> {
         let material = CompositeTile::new(
-            CompositeTileId::new("ground")?,
-            vec![AtomicTileId::new("tile-0001")?],
+            CompositeTileId::new("ground").map_err(|error| error.to_string())?,
+            vec![AtomicTileId::new("tile-0001").map_err(|error| error.to_string())?],
         );
         let mut project = MapProject::blank(
-            MapProjectId::new("speech-bottom-edge")?,
+            MapProjectId::new("speech-bottom-edge").map_err(|error| error.to_string())?,
             16,
             14,
             Some(material),
         );
         project.player_spawn = TilePosition::new(0, 0);
         project.actors.push(MapActor::new(
-            MapActorId::new("guide")?,
+            MapActorId::new("guide").map_err(|error| error.to_string())?,
             TilePosition::new(7, 13),
             MapDirection::Left,
-            CharacterAppearanceId::new("dppt/000")?,
+            CharacterAppearanceId::new("dppt/000").map_err(|error| error.to_string())?,
         ));
         let mut continuations = std::collections::BTreeMap::new();
         continuations.insert(
             narrative_cps::ContinuationId::new(0),
             narrative_cps::CpsNode::Say {
-                text: narrative_cps::TextId::new("text:hello_there")?,
+                text: narrative_cps::TextId::new("text:hello_there")
+                    .map_err(|error| error.to_string())?,
                 next: narrative_cps::ContinuationId::new(1),
             },
         );
@@ -3714,26 +3714,26 @@ mod tests {
             narrative_cps::CpsNode::End,
         );
         let script = narrative_cps::ScriptProgram::with_actor(
-            narrative_cps::ScriptId::new("script:guide")?,
-            Some(narrative_cps::ActorId::new("actor:guide")?),
+            narrative_cps::ScriptId::new("script:guide").map_err(|error| error.to_string())?,
+            Some(narrative_cps::ActorId::new("actor:guide").map_err(|error| error.to_string())?),
             narrative_cps::ContinuationId::new(0),
             continuations,
-        )?;
+        )
+        .map_err(|error| error.to_string())?;
         let observation = WorldApplication::from_map_project_with_scripts(&project, [script])
-            ?
+            .map_err(|error| format!("{error:?}"))?
             .advance_npcs()
             .observe();
 
         let view = project_world(&observation);
 
-        assert!(view
-            .layers()[1]
-            .images
-            .iter()
-            .all(|image| image.asset != rounded_ui_asset()));
-        assert!(!view
-            .labels()
-            .any(|label| label.role == TextRole::Message));
+        assert!(
+            view.layers()[1]
+                .images
+                .iter()
+                .all(|image| image.asset != rounded_ui_asset())
+        );
+        assert!(!view.labels().any(|label| label.role == TextRole::Message));
         Ok(())
     }
 
