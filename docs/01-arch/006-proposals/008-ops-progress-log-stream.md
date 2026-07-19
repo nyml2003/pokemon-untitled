@@ -115,7 +115,7 @@ Git 克隆、LFS 下载和 fast-forward 的失败分别保留为 `GitSyncFailed`
 - `ProgressEvent`、`ProgressReporter`、文本 reporter 与 JSON Lines reporter 已加入 `ops`。
 - `init-mirror`、`sync`、Windows 私有运行端均通过管道实时转发标准输出和标准错误。
 - 无输出超过 15 秒时，当前阶段会输出心跳事件。
-- 远端提交未变化时，`sync` 跳过 Git LFS，避免每次同步扫描全部 LFS 指针。
+- `sync` 仅在快进包含 LFS 指针或 `.gitattributes` 变化时调用 Git LFS；普通源码提交和无变更同步都会跳过全量 LFS 指针扫描。
 - 进程失败会保留末尾 40 条脱敏输出；`Ctrl+C` 会终止当前受控进程，排空已到达的输出后返回 `Cancelled`。
 - Python 单元测试已覆盖双流转发、心跳、JSON Lines、末尾输出和认证 URL 脱敏。
 

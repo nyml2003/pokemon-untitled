@@ -132,3 +132,41 @@ class GitSyncServiceTests(unittest.TestCase):
             self.assertTrue(result.is_ok)
             self.assertTrue(any(event.stage == "sync.lfs" and event.message.startswith("skipping Git LFS") for event in progress.events))
             self.assertTrue(any(event.stage == "sync.done" for event in progress.events))
+
+    def test_source_only_fast_forward_skips_lfs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = config_for(Path(directory))
+            self.assertTrue(self.service.initialize(config).is_ok)
+            (config.source_root.path / "source.rs").write_text("fn main() {}\n", encoding="utf-8")
+            git(config.source_root.path, "add", "source.rs")
+            git(config.source_root.path, "commit", "-m", "source only")
+            git(config.source_root.path, "push")
+            progress = RecordingProgress()
+
+            result = self.service.sync(config, progress)
+
+            self.assertTrue(result.is_ok)
+            self.assertTrue(any(event.stage == "sync.lfs" and "no changed LFS pointers" in event.message for event in progress.events))
+
+    def test_detects_a_changed_lfs_pointer_before_fast_forward(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = config_for(Path(directory))
+            attributes = config.source_root.path / ".gitattributes"
+            attributes.write_text("*.bin filter=lfs diff=lfs merge=lfs -text\n", encoding="utf-8")
+            git(config.source_root.path, "add", ".gitattributes")
+            git(config.source_root.path, "commit", "-m", "track binary assets")
+            git(config.source_root.path, "push")
+            self.assertTrue(self.service.initialize(config).is_ok)
+            pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:0123456789abcdef\nsize 1\n"
+            (config.source_root.path / "asset.bin").write_text(pointer, encoding="utf-8")
+            git(config.source_root.path, "add", "asset.bin")
+            git(config.source_root.path, "commit", "-m", "add lfs pointer")
+            git(config.source_root.path, "push")
+            mirror = config.mirror_root.wsl_mount_path
+            mirror_before = git(mirror, "rev-parse", "HEAD")
+            git(mirror, "fetch", "origin", "master")
+
+            needs_lfs = self.service._mirror._requires_lfs_update(mirror, mirror_before)  # type: ignore[attr-defined]
+
+            self.assertTrue(needs_lfs.is_ok)
+            self.assertTrue(needs_lfs.value)

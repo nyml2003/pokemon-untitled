@@ -26,6 +26,7 @@ use world_application::{
 
 pub const CANVAS_WIDTH: u32 = 32;
 pub const CANVAS_HEIGHT: u32 = 24;
+const SPEECH_BUBBLE_HEIGHT: u32 = 2;
 
 const SKY: Rgba8 = Rgba8::new(146, 211, 218, 255);
 const SKY_DEEP: Rgba8 = Rgba8::new(102, 177, 184, 255);
@@ -2327,7 +2328,8 @@ fn world_speech_overlay(
         };
         let center = i32::from(actor.position().x()) * 2 - camera.col * 2 + 1;
         let row = i32::from(actor.position().y()) * 2 - camera.row * 2 - 2;
-        if row < 0 || center < 0 || center >= CANVAS_WIDTH as i32 {
+        let max_row = CANVAS_HEIGHT.saturating_sub(SPEECH_BUBBLE_HEIGHT) as i32;
+        if row < 0 || row > max_row || center < 0 || center >= CANVAS_WIDTH as i32 {
             continue;
         }
         let content = speech_text(speech.as_str());
@@ -2336,14 +2338,15 @@ fn world_speech_overlay(
         let col = (center - width as i32 / 2).clamp(0, max_col) as u32;
         let row = row as u32;
         images.push(
-            rounded_image(col, row, width, 2, SPEECH_BUBBLE, 100).with_pixel_offset(pixel_offset),
+            rounded_image(col, row, width, SPEECH_BUBBLE_HEIGHT, SPEECH_BUBBLE, 100)
+                .with_pixel_offset(pixel_offset),
         );
         labels.push(label(
             TextRole::Message,
             col + 1,
             row,
             width.saturating_sub(2),
-            2,
+            SPEECH_BUBBLE_HEIGHT,
             content,
             TEXT,
         ));
@@ -3676,6 +3679,62 @@ mod tests {
             .unwrap();
         assert_eq!(speech_background.tint, super::SPEECH_BUBBLE);
         assert_eq!(speech_background.bounds.size, GridSize::new(10, 2));
+    }
+
+    #[test]
+    fn world_projection_omits_speech_that_cannot_fit_within_the_canvas(
+    ) -> Result<(), Box<dyn Error>> {
+        let material = CompositeTile::new(
+            CompositeTileId::new("ground")?,
+            vec![AtomicTileId::new("tile-0001")?],
+        );
+        let mut project = MapProject::blank(
+            MapProjectId::new("speech-bottom-edge")?,
+            16,
+            14,
+            Some(material),
+        );
+        project.player_spawn = TilePosition::new(0, 0);
+        project.actors.push(MapActor::new(
+            MapActorId::new("guide")?,
+            TilePosition::new(7, 13),
+            MapDirection::Left,
+            CharacterAppearanceId::new("dppt/000")?,
+        ));
+        let mut continuations = std::collections::BTreeMap::new();
+        continuations.insert(
+            narrative_cps::ContinuationId::new(0),
+            narrative_cps::CpsNode::Say {
+                text: narrative_cps::TextId::new("text:hello_there")?,
+                next: narrative_cps::ContinuationId::new(1),
+            },
+        );
+        continuations.insert(
+            narrative_cps::ContinuationId::new(1),
+            narrative_cps::CpsNode::End,
+        );
+        let script = narrative_cps::ScriptProgram::with_actor(
+            narrative_cps::ScriptId::new("script:guide")?,
+            Some(narrative_cps::ActorId::new("actor:guide")?),
+            narrative_cps::ContinuationId::new(0),
+            continuations,
+        )?;
+        let observation = WorldApplication::from_map_project_with_scripts(&project, [script])
+            ?
+            .advance_npcs()
+            .observe();
+
+        let view = project_world(&observation);
+
+        assert!(view
+            .layers()[1]
+            .images
+            .iter()
+            .all(|image| image.asset != rounded_ui_asset()));
+        assert!(!view
+            .labels()
+            .any(|label| label.role == TextRole::Message));
+        Ok(())
     }
 
     #[test]

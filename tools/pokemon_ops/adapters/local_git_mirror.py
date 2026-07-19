@@ -139,6 +139,9 @@ class LocalGitMirror:
                 remote_head=remote_head.value or "",
             )
         if mirror_before != remote_head.value:
+            needs_lfs = self._requires_lfs_update(mirror, mirror_before)
+            if not needs_lfs.is_ok:
+                return Result(error=needs_lfs.error)
             self._report_progress(progress, "sync.fast_forward", f"fast-forwarding mirror to {remote_head.value}")
             merged = self._run_streamed(
                 ("git", "merge", "--ff-only", "FETCH_HEAD"),
@@ -150,9 +153,12 @@ class LocalGitMirror:
             )
             if not merged.is_ok:
                 return Result(error=merged.error)
-            lfs = self._pull_lfs(mirror, config, progress, "sync.lfs")
-            if not lfs.is_ok:
-                return Result(error=lfs.error)
+            if needs_lfs.value:
+                lfs = self._pull_lfs(mirror, config, progress, "sync.lfs")
+                if not lfs.is_ok:
+                    return Result(error=lfs.error)
+            else:
+                self._report_progress(progress, "sync.lfs", "skipping Git LFS: fast-forward contains no changed LFS pointers")
         else:
             self._report_progress(progress, "sync.lfs", "skipping Git LFS: mirror already matches the remote commit")
         self._report_progress(progress, "sync.verify", "verifying synchronized mirror")
@@ -238,6 +244,45 @@ class LocalGitMirror:
         if not pulled.is_ok:
             return Result(error=pulled.error)
         return Result.ok(None)
+
+    def _requires_lfs_update(self, mirror: Path, mirror_before: str) -> Result[bool]:
+        changed = self._output(
+            ("git", "diff", "--name-only", "-z", "--diff-filter=ACMR", mirror_before, "FETCH_HEAD"),
+            mirror,
+            ErrorCode.GIT_SYNC_FAILED,
+            "cannot inspect changed files for Git LFS",
+        )
+        if not changed.is_ok:
+            return Result(error=changed.error)
+        paths = [path for path in (changed.value or "").split("\0") if path]
+        if ".gitattributes" in paths:
+            return Result.ok(True)
+        for path in paths:
+            size = self._output(
+                ("git", "cat-file", "-s", f"FETCH_HEAD:{path}"),
+                mirror,
+                ErrorCode.GIT_SYNC_FAILED,
+                "cannot inspect changed file size for Git LFS",
+            )
+            if not size.is_ok:
+                return Result(error=size.error)
+            try:
+                is_small_file = int(size.value or "0") <= 1024
+            except ValueError:
+                return Result.fail(ErrorCode.GIT_SYNC_FAILED, "cannot parse changed file size for Git LFS", path=path)
+            if not is_small_file:
+                continue
+            content = self._output(
+                ("git", "cat-file", "-p", f"FETCH_HEAD:{path}"),
+                mirror,
+                ErrorCode.GIT_SYNC_FAILED,
+                "cannot inspect changed file content for Git LFS",
+            )
+            if not content.is_ok:
+                return Result(error=content.error)
+            if (content.value or "").startswith("version https://git-lfs.github.com/spec/v1\n"):
+                return Result.ok(True)
+        return Result.ok(False)
 
     def _report(
         self,
