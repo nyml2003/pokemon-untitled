@@ -565,21 +565,20 @@ fn editor_asset_card(
     selected: bool,
 ) -> UiNode {
     let mut children = Vec::new();
-    if let Some(atomic) = atomic {
-        if let Some(asset) = catalog.asset(atomic) {
-            children.push(
-                UiNode::auto()
-                    .with_style(UiStyle {
-                        width: Dimension::Fill,
-                        height: Dimension::Fill,
-                        border_radius: punctum_ui::UiBorderRadius::all(5),
-                        ..UiStyle::default()
-                    })
-                    .with_content(UiContent::Image(
-                        UiContentId::new(asset.as_str()).expect("tile asset key is non-empty"),
-                    )),
-            );
-        }
+    if let Some(atomic) = atomic
+        && let Some(asset) = catalog.asset(atomic)
+        && let Ok(content_id) = UiContentId::new(asset.as_str())
+    {
+        children.push(
+            UiNode::auto()
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    border_radius: punctum_ui::UiBorderRadius::all(5),
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Image(content_id)),
+        );
     }
     let node = UiNode::auto()
         .with_style(UiStyle {

@@ -8,7 +8,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from tools.pokemon_ops.cli import run
+from tools.pokemon_ops.cli import build_parser, run
 
 
 def git(cwd: Path, *arguments: str) -> None:
@@ -52,6 +52,12 @@ def initialize_source(root: Path) -> Path:
 
 
 class CliTests(unittest.TestCase):
+    def test_lint_command_is_available_with_json_output(self) -> None:
+        arguments = build_parser().parse_args(["lint", "--json"])
+
+        self.assertEqual(arguments.command, "lint")
+        self.assertTrue(arguments.json_output)
+
     def test_init_mirror_creates_git_clone_and_preserves_json_stdout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

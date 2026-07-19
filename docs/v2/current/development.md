@@ -1,0 +1,25 @@
+# 当前开发与原生验收
+
+> 分类：现状；最后核对：2026-07-20
+> 依据：`AGENT.md`、`tools/pokemon_ops/` 与当前 workspace 配置
+
+## 工作方式
+
+在仓库根目录进入 `nix develop` 后，`ops` 是唯一的开发与验证入口。不要在文档、CI 或日常操作中直接调用底层构建器、PowerShell、cmd 或 Windows 原生命令。
+
+| 目的 | 命令 |
+| --- | --- |
+| 环境与镜像诊断 | `ops check`、`ops doctor` |
+| 格式检查 | `ops format --check` |
+| Rust 静态检查 | `ops lint` |
+| WSL 全量测试 | `ops test` |
+| 局部测试 | `ops test --suite core` 或 `ops test --suite world` |
+| 同步 Windows Git 镜像 | `ops sync` |
+| Windows 原生构建 | `ops build game-host` |
+| Windows 原生运行 | `ops run game-host` |
+
+## 平台边界
+
+WSL 是编辑、格式化、静态检查和无窗口测试环境。Windows Git 镜像只接收已提交并推送到配置远端分支的内容；它不读取 WSL 未提交修改，也不自动 stash、clean、merge 或 reset。
+
+需要原生渲染验收时，使用 `ops build game-host` 或 `ops run game-host`。当镜像缺失、脏或分叉时，先按 `ops` 返回的结构化错误处理，不手工覆盖镜像目录。

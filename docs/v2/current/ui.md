@@ -1,0 +1,24 @@
+# 当前 UI 与渲染边界
+
+> 分类：现状；最后核对：2026-07-20
+> 依据：`punctum-ui`、`game-ui-kit`、`game-view`、`game-scene-view` 与 `game-native-plan` 源码和测试
+
+## 两条并行路径
+
+地图场景和编辑器继续使用 Grid 表达。游戏页面、图鉴、战斗菜单和命令控制台使用 Pixel UI。两条路径在 `game-native-plan` 汇合为原生 GPU 提交计划，互不要求对方改写数据模型。
+
+```text
+地图/编辑器：领域快照 -> Grid 视图 -> FramePlan
+游戏页面：页面状态 -> UiTree<Action> -> UiFrame<Action> -> FramePlan
+```
+
+## 已实现的 UI 基础
+
+- `punctum-ui` 是纯 Rust 的树、布局、裁剪、绘制与命中模型。`UiNode::auto()` 与 `UiTree::new` 会确定性分配结构 ID；可交互节点携带类型化 action。
+- `UiKey` 用于动态节点的稳定身份。遗留的手写 `UiId` 和低层 `hit_test` API 已标记为 deprecated，新页面不应继续使用。
+- `game-ui-kit` 提供主题、布局、面板、文字、图片、精灵、可选列表项、按钮、弹窗和标签栏组件。
+- `game-scene-view` 会把图鉴、战斗与控制台投影为 Pixel UI 帧；世界地图仍保留 Grid 场景及其像素偏移。
+
+## 仍然存在的限制
+
+通用焦点导航、滚动容器、文本测量/换行和可访问性语义树尚未成为已验收的通用能力。未迁移的页面和编辑器仍可能使用 legacy UI API。它们属于[未来工作](../future/README.md)，不能描述成既有功能。

@@ -64,6 +64,51 @@ class RecordingProgress:
 
 
 class OperationTests(unittest.TestCase):
+    def test_lint_uses_clippy_for_all_workspace_targets_and_denies_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner = RecordingProcessRunner()
+            service = WslTestingService(runner)
+
+            result = service.lint(config_for(Path(directory)))
+
+            self.assertTrue(result.is_ok)
+            self.assertEqual(
+                runner.calls,
+                [
+                    (
+                        "cargo",
+                        "clippy",
+                        "--workspace",
+                        "--all-targets",
+                        "--",
+                        "-D",
+                        "warnings",
+                    ),
+                    (
+                        "cargo",
+                        "clippy",
+                        "--workspace",
+                        "--lib",
+                        "--bins",
+                        "--",
+                        "-D",
+                        "warnings",
+                        "-D",
+                        "clippy::unwrap_used",
+                        "-D",
+                        "clippy::expect_used",
+                        "-D",
+                        "clippy::panic",
+                        "-D",
+                        "clippy::todo",
+                        "-D",
+                        "clippy::unimplemented",
+                        "-D",
+                        "clippy::unreachable",
+                    )
+                ],
+            )
+
     def test_all_unit_suite_uses_only_wsl_process_runner(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner = RecordingProcessRunner()

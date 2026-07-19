@@ -32,6 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     command_parsers.append(format_parser)
     format_parser.add_argument("--check", action="store_true")
 
+    command_parsers.append(commands.add_parser("lint"))
+
     test_parser = commands.add_parser("test")
     command_parsers.append(test_parser)
     test_parser.add_argument("--suite", choices=[suite.value for suite in TestSuite], default=TestSuite.ALL.value)
@@ -143,6 +145,8 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
     testing = WslTestingService(LocalProcessRunner())
     if args.command == "format":
         return _emit(testing.format(config, args.check), args.json_output)
+    if args.command == "lint":
+        return _emit(testing.lint(config), args.json_output)
     if args.command == "test":
         return _emit(testing.test(config, TestSuite(args.suite)), args.json_output)
     if args.command == "sync":

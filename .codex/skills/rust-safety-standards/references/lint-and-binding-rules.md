@@ -28,6 +28,7 @@
 
 ```text
 ops format --check
+ops lint
 ops test
 ```
 

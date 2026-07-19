@@ -11,6 +11,24 @@ TEST_COMMANDS: dict[str, tuple[str, ...]] = {
     "workspace": ("cargo", "test", "--workspace"),
 }
 
+PANIC_PREVENTION_LINTS = (
+    "-D",
+    "clippy::unwrap_used",
+    "-D",
+    "clippy::expect_used",
+    "-D",
+    "clippy::panic",
+    "-D",
+    "clippy::todo",
+    "-D",
+    "clippy::unimplemented",
+    "-D",
+    "clippy::unreachable",
+)
+
+DEFAULT_LINT_COMMAND = ("cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings")
+PRODUCTION_LINT_COMMAND = ("cargo", "clippy", "--workspace", "--lib", "--bins", "--", "-D", "warnings", *PANIC_PREVENTION_LINTS)
+
 
 class WslTestingService:
     def __init__(self, process_runner: ProcessRunner) -> None:
@@ -19,6 +37,12 @@ class WslTestingService:
     def format(self, config: LocalConfig, check: bool) -> Result[int]:
         command = ("cargo", "fmt", "--all") + (("--", "--check") if check else ())
         return self._process_runner.run(command, config.source_root.path, forward_output=True)
+
+    def lint(self, config: LocalConfig) -> Result[int]:
+        default_lint = self._process_runner.run(DEFAULT_LINT_COMMAND, config.source_root.path, forward_output=True)
+        if not default_lint.is_ok:
+            return default_lint
+        return self._process_runner.run(PRODUCTION_LINT_COMMAND, config.source_root.path, forward_output=True)
 
     def test(self, config: LocalConfig, suite: TestSuite) -> Result[int]:
         request_ids = config.unit_suites[suite]

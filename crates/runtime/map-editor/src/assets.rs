@@ -66,10 +66,11 @@ pub fn load_project(
 pub fn default_project_path() -> PathBuf {
     let maps = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../maps");
     let compressed = maps.join("demo-map.g3mp");
-    compressed
-        .exists()
-        .then_some(compressed)
-        .unwrap_or_else(|| maps.join("demo-map.json"))
+    if compressed.exists() {
+        compressed
+    } else {
+        maps.join("demo-map.json")
+    }
 }
 
 fn asset_root() -> PathBuf {

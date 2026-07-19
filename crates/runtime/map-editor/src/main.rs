@@ -250,21 +250,17 @@ impl MapEditorApp {
         };
         match state {
             ElementState::Pressed => {
-                if button == PointerButton::Primary {
-                    if let (Some(position), Some(chrome)) = (self.cursor, &self.chrome) {
-                        if position.x >= 0.0 && position.y >= 0.0 {
-                            if let Some(hit) =
-                                chrome.action_hit_at(position.x as u32, position.y as u32)
-                            {
-                                self.controller = mem::take(&mut self.controller).release(button);
-                                if let Some(intent) = intent_for_ui_action(&self.model, hit.action)
-                                {
-                                    self.dispatch(intent);
-                                }
-                                return;
-                            }
-                        }
+                if button == PointerButton::Primary
+                    && let (Some(position), Some(chrome)) = (self.cursor, &self.chrome)
+                    && position.x >= 0.0
+                    && position.y >= 0.0
+                    && let Some(hit) = chrome.action_hit_at(position.x as u32, position.y as u32)
+                {
+                    self.controller = mem::take(&mut self.controller).release(button);
+                    if let Some(intent) = intent_for_ui_action(&self.model, hit.action) {
+                        self.dispatch(intent);
                     }
+                    return;
                 }
                 let controller = mem::take(&mut self.controller);
                 let (controller, intent) =
@@ -349,11 +345,11 @@ impl MapEditorApp {
 
 impl ApplicationHandler for MapEditorApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_none() {
-            if let Err(error) = self.initialize(event_loop) {
-                eprintln!("map editor initialization failed: {error}");
-                event_loop.exit();
-            }
+        if self.window.is_none()
+            && let Err(error) = self.initialize(event_loop)
+        {
+            eprintln!("map editor initialization failed: {error}");
+            event_loop.exit();
         }
     }
 
