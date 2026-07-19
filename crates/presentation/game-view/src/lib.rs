@@ -9,12 +9,17 @@ use battle_session::{
 };
 use game_assets::AssetKey;
 use game_data::PokedexData;
-use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, WorldAnimation};
+use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction, WorldAnimation};
+use game_ui_kit::{
+    GameUiTheme, PanelTone, SpriteAppearance, TextTone, column as ui_column, image as ui_image,
+    panel as ui_panel, row as ui_row, screen as ui_screen,
+    selectable_list_item as ui_selectable_list_item, sprite as ui_sprite, text as ui_text,
+};
 use punctum_gpu::{PixelOffset, Rgba8};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
-    UiContentId, UiId, UiNode, UiStyle, UiTextSize, UiTree,
+    UiContentId, UiId, UiKey, UiNode, UiStyle, UiTextSize, UiTree,
 };
 use world_application::{
     CharacterAppearanceId, Direction as WorldDirection, WorldActorObservation, WorldActorRole,
@@ -60,6 +65,28 @@ const MUTED_TEXT: Rgba8 = Rgba8::new(182, 194, 194, 255);
 const CONSOLE_ERROR: Rgba8 = Rgba8::new(255, 142, 126, 255);
 const MAP_GROUND: Rgba8 = Rgba8::new(138, 187, 116, 255);
 const SPEECH_BUBBLE: Rgba8 = Rgba8::new(83, 89, 96, 236);
+
+const POKEDEX_THEME: GameUiTheme = GameUiTheme {
+    screen: UiColor::new(13, 21, 29, 255),
+    header: UiColor::new(21, 47, 60, 255),
+    panel: UiColor::new(31, 52, 64, 255),
+    selected: UiColor::new(29, 70, 67, 255),
+    selected_text: UiColor::new(73, 211, 168, 255),
+    card: UiColor::new(237, 242, 233, 255),
+    image_backdrop: UiColor::new(201, 220, 208, 255),
+    text: UiColor::new(244, 246, 239, 255),
+    muted_text: UiColor::new(182, 194, 194, 255),
+    ink: UiColor::new(26, 39, 45, 255),
+    muted_ink: UiColor::new(82, 96, 98, 255),
+    small_spacing: 8,
+    medium_spacing: 16,
+    large_spacing: 28,
+    small_radius: punctum_ui::UiBorderRadius::all(8),
+    medium_radius: punctum_ui::UiBorderRadius::all(12),
+    large_radius: punctum_ui::UiBorderRadius::all(16),
+    body_text_size: 18,
+    title_text_size: 28,
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum BattleAnimation {
@@ -213,7 +240,7 @@ impl GameView {
 pub fn project_pokedex(
     pokedex: &PokedexData,
     selected_index: usize,
-) -> Result<UiTree, UiBuildError> {
+) -> Result<UiTree<PokedexAction>, UiBuildError> {
     let entries = pokedex.entries();
     let selected_index = selected_index.min(entries.len().saturating_sub(1));
     let entry = &entries[selected_index];
@@ -223,67 +250,57 @@ pub fn project_pokedex(
     let mut list_children = Vec::new();
     for (row, candidate) in entries.iter().skip(first).take(5).enumerate() {
         let selected = first + row == selected_index;
-        list_children.push(panel(
-            10 + row as u32,
+        list_children.push(ui_selectable_list_item(
+            &POKEDEX_THEME,
             UiStyle {
                 width: Dimension::Fill,
                 height: Dimension::Px(52),
                 padding: Insets::symmetric(14, 10),
-                border_radius: punctum_ui::UiBorderRadius::all(8),
-                interactive: true,
+                border_radius: POKEDEX_THEME.small_radius,
                 ..UiStyle::default()
             },
-            if selected {
-                UiColor::new(29, 70, 67, 255)
-            } else {
-                UiColor::new(31, 52, 64, 255)
-            },
-            [text(
-                100 + row as u32,
+            selected,
+            UiKey::new(format!("pokedex-entry-{}", candidate.national_dex))?,
+            PokedexAction::SelectEntry { index: first + row },
+            [ui_text(
+                &POKEDEX_THEME,
+                if selected {
+                    TextTone::Selected
+                } else {
+                    TextTone::Default
+                },
                 format!(
                     "{:03}  {}",
                     candidate.national_dex, candidate.localized_name
                 ),
-                if selected {
-                    UiColor::new(73, 211, 168, 255)
-                } else {
-                    TEXT.into_ui()
-                },
                 19,
                 Dimension::Fill,
             )],
         ));
     }
     let mut type_children = Vec::new();
-    for (index, kind) in entry.types.iter().enumerate() {
+    for kind in &entry.types {
         if let Some(pokemon_type) = pokedex_type(kind.id.0) {
-            type_children.push(image(
-                400 + index as u32,
-                type_icon_asset(pokemon_type).as_str(),
+            type_children.push(ui_image(
+                UiContentId::new(type_icon_asset(pokemon_type).as_str())?,
                 UiStyle::fixed(88, 30),
             ));
         } else {
-            type_children.push(text(
-                400 + index as u32,
+            type_children.push(ui_text(
+                &POKEDEX_THEME,
+                TextTone::Ink,
                 kind.name.clone(),
-                BATTLE_INK.into_ui(),
                 16,
                 Dimension::Px(90),
             ));
         }
     }
-    UiTree::new(with_generated_ui_ids(panel(
-        1,
-        UiStyle {
-            width: Dimension::Fill,
-            height: Dimension::Fill,
-            direction: FlexDirection::Column,
-            ..UiStyle::default()
-        },
-        UiColor::new(13, 21, 29, 255),
+    UiTree::new(ui_screen(
+        &POKEDEX_THEME,
         [
-            panel(
-                2,
+            ui_panel(
+                &POKEDEX_THEME,
+                PanelTone::Header,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Px(76),
@@ -299,171 +316,177 @@ pub fn project_pokedex(
                     },
                     ..UiStyle::default()
                 },
-                UiColor::new(21, 47, 60, 255),
                 [
-                    text(3, "宝可梦图鉴", TEXT.into_ui(), 28, Dimension::Px(300)),
-                    text(
-                        4,
+                    ui_text(
+                        &POKEDEX_THEME,
+                        TextTone::Default,
+                        "宝可梦图鉴",
+                        POKEDEX_THEME.title_text_size,
+                        Dimension::Px(300),
+                    ),
+                    ui_text(
+                        &POKEDEX_THEME,
+                        TextTone::Muted,
                         format!("{}/{}", selected_index + 1, entries.len()),
-                        MUTED_TEXT.into_ui(),
                         18,
                         Dimension::Px(120),
                     ),
                 ],
             ),
-            UiNode::new(UiId(5))
-                .with_style(UiStyle {
+            ui_row(
+                UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
-                    direction: FlexDirection::Row,
                     gap: 20,
                     padding: Insets::all(24),
                     ..UiStyle::default()
-                })
-                .with_children([
-                    panel(
-                        6,
+                },
+                [
+                    ui_panel(
+                        &POKEDEX_THEME,
+                        PanelTone::Panel,
                         UiStyle {
                             width: Dimension::Px(300),
                             height: Dimension::Fill,
-                            direction: FlexDirection::Column,
                             gap: 10,
                             padding: Insets::all(12),
-                            border_radius: punctum_ui::UiBorderRadius::all(14),
+                            border_radius: POKEDEX_THEME.medium_radius,
                             clip: true,
                             ..UiStyle::default()
                         },
-                        UiColor::new(31, 52, 64, 255),
                         list_children,
                     ),
-                    panel(
-                        7,
+                    ui_panel(
+                        &POKEDEX_THEME,
+                        PanelTone::Card,
                         UiStyle {
                             width: Dimension::Fill,
                             height: Dimension::Fill,
-                            direction: FlexDirection::Column,
-                            gap: 16,
+                            gap: POKEDEX_THEME.medium_spacing,
                             padding: Insets::all(28),
-                            border_radius: punctum_ui::UiBorderRadius::all(16),
+                            border_radius: POKEDEX_THEME.large_radius,
                             ..UiStyle::default()
                         },
-                        UiColor::new(237, 242, 233, 255),
                         [
-                            UiNode::new(UiId(8))
-                                .with_style(UiStyle {
+                            ui_row(
+                                UiStyle {
                                     width: Dimension::Fill,
                                     height: Dimension::Fill,
-                                    direction: FlexDirection::Row,
                                     gap: 28,
                                     ..UiStyle::default()
-                                })
-                                .with_children([
-                                    panel(
-                                        9,
+                                },
+                                [
+                                    ui_panel(
+                                        &POKEDEX_THEME,
+                                        PanelTone::ImageBackdrop,
                                         UiStyle {
                                             width: Dimension::Px(280),
                                             height: Dimension::Px(280),
-                                            border_radius: punctum_ui::UiBorderRadius::all(12),
+                                            border_radius: POKEDEX_THEME.medium_radius,
                                             clip: true,
                                             ..UiStyle::default()
                                         },
-                                        UiColor::new(201, 220, 208, 255),
-                                        [image(
-                                            201,
-                                            format!("pokedex/{}", entry.national_dex),
+                                        [ui_sprite(
+                                            UiContentId::new(format!(
+                                                "pokedex/{}",
+                                                entry.national_dex
+                                            ))?,
                                             UiStyle {
                                                 width: Dimension::Fill,
                                                 height: Dimension::Fill,
-                                                border_radius: punctum_ui::UiBorderRadius::all(12),
+                                                border_radius: POKEDEX_THEME.medium_radius,
                                                 ..UiStyle::default()
                                             },
+                                            SpriteAppearance::Plain,
                                         )],
                                     ),
-                                    UiNode::new(UiId(202))
-                                        .with_style(UiStyle {
+                                    ui_column(
+                                        UiStyle {
                                             width: Dimension::Fill,
                                             height: Dimension::Fill,
                                             direction: FlexDirection::Column,
                                             gap: 12,
                                             ..UiStyle::default()
-                                        })
-                                        .with_children([
-                                            text(
-                                                203,
+                                        },
+                                        [
+                                            ui_text(
+                                                &POKEDEX_THEME,
+                                                TextTone::Ink,
                                                 format!("No.{:03}", entry.national_dex),
-                                                BATTLE_INK.into_ui(),
                                                 22,
                                                 Dimension::Fill,
                                             ),
-                                            text(
-                                                204,
+                                            ui_text(
+                                                &POKEDEX_THEME,
+                                                TextTone::Ink,
                                                 entry.localized_name.clone(),
-                                                BATTLE_INK.into_ui(),
                                                 34,
                                                 Dimension::Fill,
                                             ),
-                                            text(
-                                                205,
+                                            ui_text(
+                                                &POKEDEX_THEME,
+                                                TextTone::MutedInk,
                                                 entry.english_name.clone(),
-                                                BATTLE_MUTED.into_ui(),
                                                 19,
                                                 Dimension::Fill,
                                             ),
-                                            UiNode::new(UiId(206))
-                                                .with_style(UiStyle {
+                                            ui_row(
+                                                UiStyle {
                                                     width: Dimension::Fill,
                                                     height: Dimension::Px(36),
-                                                    direction: FlexDirection::Row,
-                                                    gap: 8,
+                                                    gap: POKEDEX_THEME.small_spacing,
                                                     ..UiStyle::default()
-                                                })
-                                                .with_children(type_children),
-                                        ]),
-                                ]),
-                            panel(
-                                207,
+                                                },
+                                                type_children,
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                            ui_panel(
+                                &POKEDEX_THEME,
+                                PanelTone::Panel,
                                 UiStyle {
                                     width: Dimension::Fill,
                                     height: Dimension::Px(96),
-                                    direction: FlexDirection::Column,
                                     gap: 10,
                                     padding: Insets::all(16),
-                                    border_radius: punctum_ui::UiBorderRadius::all(10),
+                                    border_radius: POKEDEX_THEME.small_radius,
                                     ..UiStyle::default()
                                 },
-                                UiColor::new(31, 52, 64, 255),
                                 [
-                                    text(
-                                        208,
+                                    ui_text(
+                                        &POKEDEX_THEME,
+                                        TextTone::Default,
                                         format!(
                                             "HP {:>3}    ATK {:>3}    DEF {:>3}",
                                             entry.base_stats.hp,
                                             entry.base_stats.attack,
                                             entry.base_stats.defense
                                         ),
-                                        TEXT.into_ui(),
-                                        18,
+                                        POKEDEX_THEME.body_text_size,
                                         Dimension::Fill,
                                     ),
-                                    text(
-                                        209,
+                                    ui_text(
+                                        &POKEDEX_THEME,
+                                        TextTone::Default,
                                         format!(
                                             "SPA {:>3}    SPD {:>3}    SPE {:>3}",
                                             entry.base_stats.special_attack,
                                             entry.base_stats.special_defense,
                                             entry.base_stats.speed
                                         ),
-                                        TEXT.into_ui(),
-                                        18,
+                                        POKEDEX_THEME.body_text_size,
                                         Dimension::Fill,
                                     ),
                                 ],
                             ),
                         ],
                     ),
-                ]),
+                ],
+            ),
         ],
-    )))
+    ))
 }
 
 /// Builds the battle scene as a responsive pixel UI page.
@@ -2857,7 +2880,8 @@ mod tests {
     use world_application::{CharacterAppearanceId, Direction, Position, WorldApplication};
 
     use game_ui::{
-        BattleMenuPage, BattleUiOutcome, BattleUiState, CommandConsoleView, WorldAnimation,
+        BattleMenuPage, BattleUiOutcome, BattleUiState, CommandConsoleView, PokedexAction,
+        WorldAnimation,
     };
 
     use super::{
@@ -2901,6 +2925,19 @@ mod tests {
                 punctum_ui::UiDrawCommand::Image { content, .. } if content.as_str() == type_icon_asset(PokemonType::Grass).as_str()))
         );
         assert!(frame.hit_regions().len() == 5);
+        assert_eq!(tree.root().id, punctum_ui::UiId(0));
+        assert_eq!(frame.action_hits().len(), 5);
+        assert_eq!(
+            frame.action_hits()[0].action,
+            PokedexAction::SelectEntry { index: 0 }
+        );
+        assert_eq!(
+            frame.action_hits()[0]
+                .key
+                .as_ref()
+                .map(punctum_ui::UiKey::as_str),
+            Some("pokedex-entry-1")
+        );
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::{error::Error, fmt};
 use map_project::{
     AtomicTileId, Collision, CompositeTile, CompositeTileId, MapError, MapEventKind, TilePosition,
 };
+use map_tile_semantics::MapSemanticDiagnostic;
 use serde::{Deserialize, Serialize};
 
 use crate::{EditorEffect, EditorIntent, EditorModel, EditorTool};
@@ -12,6 +13,7 @@ use crate::{EditorEffect, EditorIntent, EditorModel, EditorTool};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EditorVirtualCommand {
     Inspect,
+    ValidateSemantics,
     SelectAtomic {
         tile: AtomicTileId,
     },
@@ -63,7 +65,8 @@ pub struct EditorVirtualState {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub enum EditorVirtualCommandResult {
-    State(EditorVirtualState),
+    State(Box<EditorVirtualState>),
+    Diagnostics(Vec<MapSemanticDiagnostic>),
     Effect(EditorEffect),
 }
 
@@ -73,6 +76,7 @@ pub enum EditorVirtualCommandError {
     CellOutOfBounds(TilePosition),
     UnknownAtomicTile(AtomicTileId),
     UnknownMaterial(CompositeTileId),
+    SemanticCatalogUnavailable,
     Map(MapError),
 }
 
@@ -94,6 +98,9 @@ impl fmt::Display for EditorVirtualCommandError {
             Self::UnknownMaterial(material) => {
                 write!(formatter, "material {material} is not available")
             }
+            Self::SemanticCatalogUnavailable => {
+                formatter.write_str("tile semantic catalog is not configured")
+            }
             Self::Map(error) => error.fmt(formatter),
         }
     }
@@ -110,7 +117,14 @@ impl EditorModel {
         match command {
             EditorVirtualCommand::Inspect => Ok((
                 self.clone(),
-                EditorVirtualCommandResult::State(self.virtual_state()),
+                EditorVirtualCommandResult::State(Box::new(self.virtual_state())),
+            )),
+            EditorVirtualCommand::ValidateSemantics => Ok((
+                self.clone(),
+                EditorVirtualCommandResult::Diagnostics(
+                    self.semantic_diagnostics()
+                        .ok_or(EditorVirtualCommandError::SemanticCatalogUnavailable)?,
+                ),
             )),
             command => {
                 let (model, effect) = self.apply_virtual_command(command)?;
@@ -126,6 +140,7 @@ impl EditorModel {
     ) -> Result<(Self, EditorEffect), EditorVirtualCommandError> {
         match command {
             EditorVirtualCommand::Inspect => Ok((self.clone(), EditorEffect::None)),
+            EditorVirtualCommand::ValidateSemantics => Ok((self.clone(), EditorEffect::None)),
             EditorVirtualCommand::SelectAtomic { tile } => {
                 let index = self.atomic_index(&tile)?;
                 self.reduce(EditorIntent::SelectAtomic(index))
@@ -279,6 +294,10 @@ fn validate_cells(
 #[cfg(test)]
 mod tests {
     use map_project::{CompositeTile, MapProject, MapProjectId};
+    use map_tile_semantics::{
+        FORMAT_VERSION, Neighbours8, TileDefinition, TileHardRules, TileSemanticsCatalog,
+        TileStatus,
+    };
 
     use super::*;
 
@@ -290,6 +309,33 @@ mod tests {
             MapProject::blank(MapProjectId::new("test").unwrap(), 3, 2, Some(base)),
             vec![grass, rock],
         )
+    }
+
+    fn model_with_semantics() -> EditorModel {
+        let model = model();
+        let semantics = TileSemanticsCatalog {
+            format_version: FORMAT_VERSION.into(),
+            tiles: vec![
+                TileDefinition {
+                    id: AtomicTileId::new("grass").unwrap(),
+                    status: TileStatus::Approved {
+                        tags: Default::default(),
+                        rules: Box::new(TileHardRules {
+                            stack: Vec::new(),
+                            neighbours: Neighbours8::filled(map_tile_semantics::NeighbourRule::Any),
+                        }),
+                    },
+                },
+                TileDefinition {
+                    id: AtomicTileId::new("rock").unwrap(),
+                    status: TileStatus::Blocked {
+                        reason: "fixture".into(),
+                    },
+                },
+            ],
+            patterns: Vec::new(),
+        };
+        EditorModel::with_semantics(model.project, model.atomic_ids, semantics)
     }
 
     #[test]
@@ -369,6 +415,34 @@ mod tests {
             Err(EditorVirtualCommandError::Map(MapError::DuplicateMaterial(
                 _
             )))
+        ));
+    }
+
+    #[test]
+    fn returns_semantic_diagnostics_without_mutating_the_editor() {
+        let semantic_model = model_with_semantics();
+        let (next, result) = semantic_model
+            .execute_virtual_command(EditorVirtualCommand::ValidateSemantics)
+            .unwrap();
+        assert_eq!(next.project, semantic_model.project);
+        assert!(
+            matches!(result, EditorVirtualCommandResult::Diagnostics(ref diagnostics) if diagnostics.is_empty())
+        );
+
+        let (_, result) = semantic_model
+            .execute_virtual_command(EditorVirtualCommand::PaintVisual {
+                cells: vec![TilePosition::new(0, 0)],
+                material: Some(CompositeTileId::new("base").unwrap()),
+            })
+            .unwrap();
+        assert!(matches!(
+            result,
+            EditorVirtualCommandResult::Effect(EditorEffect::None)
+        ));
+
+        assert!(matches!(
+            model().execute_virtual_command(EditorVirtualCommand::ValidateSemantics),
+            Err(EditorVirtualCommandError::SemanticCatalogUnavailable)
         ));
     }
 

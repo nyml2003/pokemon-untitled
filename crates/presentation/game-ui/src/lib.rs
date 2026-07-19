@@ -10,7 +10,7 @@ use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
 
 pub use console::{ConsoleEntry, ConsoleIntent, ConsoleOutcome, ConsoleState, GameConsole};
 pub use presentation::{
-    PokedexUiSnapshot, PresentationAction, PresentationSnapshot, PresentationState,
+    PokedexAction, PokedexUiSnapshot, PresentationAction, PresentationSnapshot, PresentationState,
     PresentationUpdate,
 };
 

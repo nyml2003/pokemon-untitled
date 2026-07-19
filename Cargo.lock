@@ -984,8 +984,8 @@ dependencies = [
  "game-view",
  "map-assets",
  "map-project",
- "map-project-storage",
  "map-render",
+ "map-tile-semantics",
  "narrative-compiler",
  "narrative-cps",
  "narrative-token",
@@ -993,8 +993,12 @@ dependencies = [
  "punctum-gpu",
  "punctum-grid",
  "punctum-input",
+ "punctum-ui",
+ "serde",
+ "serde_json",
  "winit",
  "world-application",
+ "world-project",
 ]
 
 [[package]]
@@ -1064,6 +1068,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "game-ui-kit"
+version = "0.0.0"
+dependencies = [
+ "punctum-ui",
+]
+
+[[package]]
 name = "game-view"
 version = "0.0.0"
 dependencies = [
@@ -1072,6 +1083,7 @@ dependencies = [
  "game-assets",
  "game-data",
  "game-ui",
+ "game-ui-kit",
  "map-project",
  "narrative-cps",
  "punctum-gpu",
@@ -1534,6 +1546,7 @@ dependencies = [
  "map-project",
  "map-project-storage",
  "map-render",
+ "map-tile-semantics",
  "punctum-gpu",
  "punctum-ui",
  "winit",
@@ -1548,6 +1561,7 @@ dependencies = [
  "map-editor-core",
  "map-project",
  "map-project-storage",
+ "map-tile-semantics",
  "serde",
  "serde_json",
 ]
@@ -1557,6 +1571,7 @@ name = "map-editor-core"
 version = "0.0.0"
 dependencies = [
  "map-project",
+ "map-tile-semantics",
  "punctum-gpu",
  "punctum-grid",
  "punctum-input",
@@ -1603,6 +1618,15 @@ dependencies = [
  "map-project",
  "punctum-gpu",
  "punctum-grid",
+]
+
+[[package]]
+name = "map-tile-semantics"
+version = "0.0.0"
+dependencies = [
+ "map-project",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3122,6 +3146,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "tile-editor"
+version = "0.0.0"
+dependencies = [
+ "game-assets",
+ "game-fs-assets",
+ "game-native-target",
+ "map-assets",
+ "map-project",
+ "map-render",
+ "map-tile-semantics",
+ "punctum-gpu",
+ "punctum-ui",
+ "tile-editor-core",
+ "winit",
+]
+
+[[package]]
+name = "tile-editor-core"
+version = "0.0.0"
+dependencies = [
+ "map-project",
+ "map-tile-semantics",
+ "serde_json",
+]
+
+[[package]]
 name = "tiny-skia"
 version = "0.11.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3968,6 +4018,13 @@ dependencies = [
 [[package]]
 name = "world-domain"
 version = "0.0.0"
+
+[[package]]
+name = "world-project"
+version = "0.0.0"
+dependencies = [
+ "map-project",
+]
 
 [[package]]
 name = "x11-dl"

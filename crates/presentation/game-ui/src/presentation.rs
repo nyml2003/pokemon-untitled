@@ -62,6 +62,12 @@ pub struct PokedexUiSnapshot {
     pub selected_index: usize,
 }
 
+/// A page-level intent emitted by the Pokedex UI tree.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PokedexAction {
+    SelectEntry { index: usize },
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PresentationState {
     battle_ui: BattleUiState,
@@ -95,6 +101,28 @@ impl PresentationState {
                 .collect(),
             selected_index: self.console.selected_index,
             diagnostic: self.console.diagnostic.clone(),
+        }
+    }
+
+    /// Applies a Pokedex intent without giving the UI access to mutable state.
+    pub fn handle_pokedex_action(mut self, action: PokedexAction) -> (Self, PresentationUpdate) {
+        let update = self.handle_pokedex_action_mut(action);
+        (self, update)
+    }
+
+    fn handle_pokedex_action_mut(&mut self, action: PokedexAction) -> PresentationUpdate {
+        let Some(pokedex) = &mut self.pokedex else {
+            return PresentationUpdate::default();
+        };
+        match action {
+            PokedexAction::SelectEntry { index } => {
+                let selected_index = index.min(POKEDEX_ENTRY_COUNT.saturating_sub(1));
+                if pokedex.selected_index == selected_index {
+                    return PresentationUpdate::default();
+                }
+                pokedex.selected_index = selected_index;
+                PresentationUpdate::redraw()
+            }
         }
     }
 
@@ -189,39 +217,46 @@ impl PresentationState {
         if self.console.is_open() {
             return self.handle_console_key(key, text);
         }
-        if let Some(pokedex) = &mut self.pokedex {
+        if self.pokedex.is_some() {
             if key.phase == KeyPhase::Release {
                 return PresentationUpdate::default();
             }
-            match key.logical {
+            let selected_index = self
+                .pokedex
+                .as_ref()
+                .expect("the Pokedex remains open while handling its key")
+                .selected_index;
+            let action = match key.logical {
                 LogicalKey::Named(NamedKey::Escape) => {
                     self.pokedex = None;
+                    return PresentationUpdate::redraw();
                 }
                 LogicalKey::Character(ref value) if value.eq_ignore_ascii_case("p") => {
                     self.pokedex = None;
+                    return PresentationUpdate::redraw();
                 }
                 LogicalKey::Named(NamedKey::ArrowUp) | LogicalKey::Named(NamedKey::ArrowLeft) => {
-                    pokedex.selected_index =
-                        (pokedex.selected_index + POKEDEX_ENTRY_COUNT - 1) % POKEDEX_ENTRY_COUNT;
+                    PokedexAction::SelectEntry {
+                        index: (selected_index + POKEDEX_ENTRY_COUNT - 1) % POKEDEX_ENTRY_COUNT,
+                    }
                 }
                 LogicalKey::Named(NamedKey::ArrowDown)
-                | LogicalKey::Named(NamedKey::ArrowRight) => {
-                    pokedex.selected_index = (pokedex.selected_index + 1) % POKEDEX_ENTRY_COUNT;
-                }
-                LogicalKey::Named(NamedKey::PageUp) => {
-                    pokedex.selected_index =
-                        (pokedex.selected_index + POKEDEX_ENTRY_COUNT - 10) % POKEDEX_ENTRY_COUNT;
-                }
-                LogicalKey::Named(NamedKey::PageDown) => {
-                    pokedex.selected_index = (pokedex.selected_index + 10) % POKEDEX_ENTRY_COUNT;
-                }
-                LogicalKey::Named(NamedKey::Home) => pokedex.selected_index = 0,
-                LogicalKey::Named(NamedKey::End) => {
-                    pokedex.selected_index = POKEDEX_ENTRY_COUNT - 1
-                }
+                | LogicalKey::Named(NamedKey::ArrowRight) => PokedexAction::SelectEntry {
+                    index: (selected_index + 1) % POKEDEX_ENTRY_COUNT,
+                },
+                LogicalKey::Named(NamedKey::PageUp) => PokedexAction::SelectEntry {
+                    index: (selected_index + POKEDEX_ENTRY_COUNT - 10) % POKEDEX_ENTRY_COUNT,
+                },
+                LogicalKey::Named(NamedKey::PageDown) => PokedexAction::SelectEntry {
+                    index: (selected_index + 10) % POKEDEX_ENTRY_COUNT,
+                },
+                LogicalKey::Named(NamedKey::Home) => PokedexAction::SelectEntry { index: 0 },
+                LogicalKey::Named(NamedKey::End) => PokedexAction::SelectEntry {
+                    index: POKEDEX_ENTRY_COUNT - 1,
+                },
                 _ => return PresentationUpdate::default(),
-            }
-            return PresentationUpdate::redraw();
+            };
+            return self.handle_pokedex_action_mut(action);
         }
         if game.scene() == GameScene::World
             && key.phase == KeyPhase::Press
@@ -872,6 +907,28 @@ mod tests {
             state.handle_key(&key(NamedKey::Escape), None, false, &snapshot, Vec::new());
         let (_, view) = next.snapshot(&snapshot, PixelSize::new(30, 30));
         assert!(view.pokedex.is_none());
+    }
+
+    #[test]
+    fn pokedex_action_selects_an_entry_without_exposing_mutable_ui_state() {
+        let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 13).unwrap();
+        let snapshot = game.snapshot();
+        let (state, _) = PresentationState::default().handle_key(
+            &character("p"),
+            None,
+            false,
+            &snapshot,
+            Vec::new(),
+        );
+        let (state, update) = state.handle_pokedex_action(PokedexAction::SelectEntry { index: 42 });
+        assert!(update.redraw);
+        let (_, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
+        assert_eq!(view.pokedex.unwrap().selected_index, 42);
+
+        let (state, update) = PresentationState::default()
+            .handle_pokedex_action(PokedexAction::SelectEntry { index: 42 });
+        assert!(!update.redraw);
+        assert!(state.pokedex.is_none());
     }
 
     fn toggle(phase: KeyPhase, physical: bool) -> KeyEvent {

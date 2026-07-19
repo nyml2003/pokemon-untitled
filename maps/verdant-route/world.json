@@ -1,0 +1,79 @@
+{
+  "format_version": "world-map-layout-v1",
+  "initial": [
+    1,
+    1
+  ],
+  "maps": [
+    {
+      "coordinate": [
+        0,
+        0
+      ],
+      "file": "northern-thicket.json"
+    },
+    {
+      "coordinate": [
+        1,
+        0
+      ],
+      "file": "moss-pass.json"
+    },
+    {
+      "coordinate": [
+        2,
+        0
+      ],
+      "file": "stoneleaf-rise.json"
+    },
+    {
+      "coordinate": [
+        0,
+        1
+      ],
+      "file": "western-meadow.json"
+    },
+    {
+      "coordinate": [
+        1,
+        1
+      ],
+      "file": "wayfarer-crossroads.json"
+    },
+    {
+      "coordinate": [
+        2,
+        1
+      ],
+      "file": "sunlit-clearing.json"
+    },
+    {
+      "coordinate": [
+        3,
+        1
+      ],
+      "file": "old-east-road.json"
+    },
+    {
+      "coordinate": [
+        0,
+        2
+      ],
+      "file": "southern-field.json"
+    },
+    {
+      "coordinate": [
+        1,
+        2
+      ],
+      "file": "fern-hollow.json"
+    },
+    {
+      "coordinate": [
+        2,
+        2
+      ],
+      "file": "quiet-grove.json"
+    }
+  ]
+}

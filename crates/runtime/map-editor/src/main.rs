@@ -13,6 +13,7 @@ use map_editor_core::{
 };
 use map_editor_view::{centered_map_viewport, editor_viewport, intent_for_ui_hit, project};
 use map_render::AtomicTileCatalog;
+use map_tile_semantics::TileSemanticsCatalog;
 use punctum_gpu::{PixelSize, Rgba8, Viewport};
 use punctum_ui::UiFrame;
 use winit::{
@@ -35,6 +36,7 @@ struct MapEditorApp {
     controller: EditorController,
     assets: NativeAssets,
     catalog: AtomicTileCatalog,
+    semantics: TileSemanticsCatalog,
     modifiers: ModifiersState,
     map_tile_span: u32,
     viewport: Viewport,
@@ -52,12 +54,14 @@ impl MapEditorApp {
             .map(PathBuf::from)
             .unwrap_or_else(default_project_path);
         let project = load_project(&project_path, &assets.project_ids)?;
+        let model = EditorModel::with_semantics(project, assets.ids, assets.semantics.clone());
         Ok(Self {
             project_path,
-            model: EditorModel::new(project, assets.ids),
+            model,
             controller: EditorController::default(),
             assets: assets.native,
             catalog: assets.catalog,
+            semantics: assets.semantics,
             modifiers: ModifiersState::empty(),
             map_tile_span: map_editor_core::layout::MAP_TILE_SPAN,
             viewport: editor_viewport(PixelSize::new(1600, 950)),
@@ -171,6 +175,14 @@ impl MapEditorApp {
     }
 
     fn save(&mut self) {
+        let diagnostics = self.semantics.lint(&self.model.project);
+        if let Some(diagnostic) = diagnostics.first() {
+            self.model = self.model.with_error(format!(
+                "地图语义校验失败（共 {} 项）：{diagnostic:?}",
+                diagnostics.len()
+            ));
+            return;
+        }
         let known = self
             .model
             .atomic_ids

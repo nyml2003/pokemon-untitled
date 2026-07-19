@@ -14,16 +14,18 @@
    配套的可实现设计在 [`docs/02-narrative-dsl/`](../02-narrative-dsl/README.md)。
 3. [世界人物与 NPC 契约方案](006-proposals/002-world-characters-and-npc-contract.md)：主角与 NPC 的统一投影契约、动作能力、地图人物和分阶段迁移方案。
 4. [Flex UI 布局与 GPU 渲染改造方案](006-proposals/001-flex-ui-layout-and-rendering.md)：`punctum-ui`、像素 GPU 提交、页面迁移和验收顺序的提案草案。
-5. [宏观战略版：设定总纲与核心架构](000-interviews/002-macro-strategy-outline.md)：公平准则、培育、经济、势力、终局和长线战略。它是战略输入，不等于实现决策。
-6. [Agent 与活世界：战略访谈记录](000-interviews/001-agent-world-vision-interview.md)：本轮产品、世界和 UI 访谈的原始结论；本轮已结束。
-7. [架构大纲](001-overview/001-architecture-outline.md)：文档范围、问题清单和目录。
-8. [系统总览](001-overview/002-system-overview.md)：分层、工作区边界和核心术语。
-9. [运行时流程](001-overview/003-runtime-flows.md)：游戏、地图编辑器和数据导入的端到端路径。
-10. `002-domains/`：战斗、世界地图、数据资产三个业务领域。
-11. `003-layers/`：各层 crate 的职责、依赖方向和例外。
-12. `004-cross-cutting/`：状态、渲染、输入、资产和质量策略等横切问题。
-13. `005-evolution/`：已发现的边界风险、扩展点和待决策问题。
-14. `006-proposals/`：基于已确认战略输入编写、但尚未实施的改造方案。
+5. [固定地图网格与 3x3 预加载窗口](006-proposals/005-standard-map-grid-and-preload-window.md)：标准地图尺寸、稀疏坐标与相邻地图预加载的分阶段方案。
+6. [地图瓦片语义目录与硬校验](006-proposals/006-map-tile-semantics-and-validation.md)：原子瓦片的图层、八邻域、图样和叠加校验方案。
+7. [宏观战略版：设定总纲与核心架构](000-interviews/002-macro-strategy-outline.md)：公平准则、培育、经济、势力、终局和长线战略。它是战略输入，不等于实现决策。
+8. [Agent 与活世界：战略访谈记录](000-interviews/001-agent-world-vision-interview.md)：本轮产品、世界和 UI 访谈的原始结论；本轮已结束。
+9. [架构大纲](001-overview/001-architecture-outline.md)：文档范围、问题清单和目录。
+10. [系统总览](001-overview/002-system-overview.md)：分层、工作区边界和核心术语。
+11. [运行时流程](001-overview/003-runtime-flows.md)：游戏、地图编辑器和数据导入的端到端路径。
+12. `002-domains/`：战斗、世界地图、数据资产三个业务领域。
+13. `003-layers/`：各层 crate 的职责、依赖方向和例外。
+14. `004-cross-cutting/`：状态、渲染、输入、资产和质量策略等横切问题。
+15. `005-evolution/`：已发现的边界风险、扩展点和待决策问题。
+16. `006-proposals/`：基于已确认战略输入编写、但尚未实施的改造方案。
 
 ## 文档约定
 

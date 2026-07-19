@@ -19,7 +19,7 @@ game-ui = { path = "../../presentation/game-ui" }
 game-view = { path = "../../presentation/game-view" }
 map-assets = { path = "../../presentation/map-assets" }
 map-project = { workspace = true }
-map-project-storage = { workspace = true }
+map-tile-semantics = { workspace = true }
 map-render = { workspace = true }
 narrative-compiler = { workspace = true }
 narrative-cps = { workspace = true }
@@ -28,5 +28,9 @@ nucleo-matcher = "0.3.1"
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }
 punctum-input = { workspace = true }
+punctum-ui = { workspace = true }
 winit = "0.30.13"
 world-application = { path = "../../application/world-application" }
+world-project = { workspace = true }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"

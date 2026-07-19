@@ -7,6 +7,7 @@ use map_assets::{build_tile_assets, project_from_json_or_default};
 use map_project::{AtomicTileId, MapProject};
 use map_project_storage::{FILE_EXTENSION, MapProjectReader};
 use map_render::AtomicTileCatalog;
+use map_tile_semantics::TileSemanticsCatalog;
 use punctum_gpu::Rgba8;
 
 pub struct EditorAssets {
@@ -14,6 +15,7 @@ pub struct EditorAssets {
     pub catalog: AtomicTileCatalog,
     pub project_ids: Vec<AtomicTileId>,
     pub ids: Vec<AtomicTileId>,
+    pub semantics: TileSemanticsCatalog,
 }
 
 pub fn load_assets() -> Result<EditorAssets, Box<dyn Error>> {
@@ -29,6 +31,9 @@ pub fn load_assets() -> Result<EditorAssets, Box<dyn Error>> {
     let hidden_palette_tile =
         AtomicTileId::new("tile-0030").expect("the configured hidden palette tile id is valid");
     let project_ids = assets.ids;
+    let known = project_ids.iter().cloned().collect::<BTreeSet<_>>();
+    let semantics_path = root.join("source/map/tile/tile-semantics-v1.json");
+    let semantics = TileSemanticsCatalog::from_json(&fs::read_to_string(semantics_path)?, &known)?;
     let ids = project_ids
         .iter()
         .filter(|id| *id != &hidden_palette_tile)
@@ -39,6 +44,7 @@ pub fn load_assets() -> Result<EditorAssets, Box<dyn Error>> {
         catalog: assets.catalog,
         project_ids,
         ids,
+        semantics,
     })
 }
 

@@ -2,6 +2,7 @@ use map_project::{
     AtomicTileId, CellChange, Collision, CompositeTile, CompositeTileId, EditHistory, MapCell,
     MapEditCommand, MapError, MapEventKind, MapProject, TilePosition,
 };
+use map_tile_semantics::{MapSemanticDiagnostic, TileSemanticsCatalog};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +44,7 @@ pub struct EditorModel {
     pub dirty: bool,
     pub show_help: bool,
     pub status: String,
+    semantics: Option<TileSemanticsCatalog>,
     history: EditHistory,
     next_material: u32,
 }
@@ -60,9 +62,26 @@ impl EditorModel {
             dirty: false,
             show_help: false,
             status: "就绪".into(),
+            semantics: None,
             history: EditHistory::default(),
             next_material,
         }
+    }
+
+    pub fn with_semantics(
+        project: MapProject,
+        atomic_ids: Vec<AtomicTileId>,
+        semantics: TileSemanticsCatalog,
+    ) -> Self {
+        let mut model = Self::new(project, atomic_ids);
+        model.semantics = Some(semantics);
+        model
+    }
+
+    pub fn semantic_diagnostics(&self) -> Option<Vec<MapSemanticDiagnostic>> {
+        self.semantics
+            .as_ref()
+            .map(|semantics| semantics.lint(&self.project))
     }
 
     pub fn reduce(&self, intent: EditorIntent) -> Result<(Self, EditorEffect), MapError> {

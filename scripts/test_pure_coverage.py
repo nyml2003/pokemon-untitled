@@ -18,6 +18,9 @@ PURE_CRATES = (
     "crates/domain/narrative-token",
     "crates/domain/narrative-cps",
     "crates/domain/narrative-compiler",
+    "crates/domain/world-project",
+    "crates/domain/map-tile-semantics",
+    "crates/application/tile-editor-core",
     "crates/presentation/game-asset-plan",
 )
 

@@ -3,6 +3,8 @@ members = [
     "crates/domain/battle-domain",
     "crates/domain/game-data",
     "crates/domain/map-project",
+    "crates/domain/map-tile-semantics",
+    "crates/domain/world-project",
     "crates/domain/narrative-compiler",
     "crates/domain/narrative-cps",
     "crates/domain/narrative-token",
@@ -16,10 +18,12 @@ members = [
     "crates/application/battle-session",
     "crates/application/game-session",
     "crates/application/map-editor-core",
+    "crates/application/tile-editor-core",
     "crates/application/world-application",
     "crates/presentation/game-assets",
     "crates/presentation/map-assets",
     "crates/presentation/game-ui",
+    "crates/presentation/game-ui-kit",
     "crates/presentation/game-view",
     "crates/presentation/game-scene-view",
     "crates/presentation/game-native-plan",
@@ -37,6 +41,7 @@ members = [
     "crates/runtime/game-host",
     "crates/runtime/map-editor",
     "crates/runtime/map-editor-cli",
+    "crates/runtime/tile-editor",
     "crates/quality/game-e2e",
 ]
 resolver = "2"
@@ -52,6 +57,9 @@ battle-domain = { path = "crates/domain/battle-domain" }
 battle-session = { path = "crates/application/battle-session" }
 game-session = { path = "crates/application/game-session" }
 map-project = { path = "crates/domain/map-project" }
+map-tile-semantics = { path = "crates/domain/map-tile-semantics" }
+tile-editor-core = { path = "crates/application/tile-editor-core" }
+world-project = { path = "crates/domain/world-project" }
 map-project-storage = { path = "crates/adapter/map-project-storage" }
 map-render = { path = "crates/presentation/map-render" }
 narrative-compiler = { path = "crates/domain/narrative-compiler" }

@@ -106,6 +106,24 @@ impl UiContentId {
     }
 }
 
+/// A stable semantic identity for a dynamic node across pure tree rebuilds.
+/// Static nodes should not need a key.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UiKey(String);
+impl UiKey {
+    pub fn new(value: impl Into<String>) -> Result<Self, UiBuildError> {
+        let value = value.into();
+        if value.is_empty() {
+            Err(UiBuildError::EmptyKey)
+        } else {
+            Ok(Self(value))
+        }
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Insets {
     pub left: u32,
@@ -293,8 +311,10 @@ pub struct UiStyle {
     pub cross_align: CrossAlign,
     pub position: Position,
     pub clip: bool,
+    #[deprecated(note = "Use UiNode::with_action for activatable nodes.")]
     pub interactive: bool,
 }
+#[allow(deprecated)]
 impl Default for UiStyle {
     fn default() -> Self {
         Self {
@@ -353,20 +373,68 @@ pub enum UiContent {
     },
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UiNode {
+pub struct UiNode<Action = ()> {
+    /// Legacy structural identity. New page code should use `UiNode::auto()`.
     pub id: UiId,
+    pub key: Option<UiKey>,
+    pub action: Option<Action>,
     pub style: UiStyle,
     pub content: UiContent,
-    pub children: Vec<UiNode>,
+    pub children: Vec<UiNode<Action>>,
+    automatic_id: bool,
 }
-impl UiNode {
+impl UiNode<()> {
+    #[deprecated(
+        note = "Use UiNode::auto(); UiTree::new assigns structural IDs deterministically."
+    )]
     pub fn new(id: UiId) -> Self {
         Self {
             id,
+            key: None,
+            action: None,
             style: UiStyle::default(),
             content: UiContent::Empty,
             children: Vec::new(),
+            automatic_id: false,
         }
+    }
+}
+impl<Action> UiNode<Action> {
+    /// Creates a node whose structural ID is assigned by `UiTree::new`.
+    pub fn auto() -> Self {
+        Self {
+            id: UiId::default(),
+            key: None,
+            action: None,
+            style: UiStyle::default(),
+            content: UiContent::Empty,
+            children: Vec::new(),
+            automatic_id: true,
+        }
+    }
+    #[deprecated(
+        note = "Use UiNode::auto(); UiTree::new assigns structural IDs deterministically."
+    )]
+    pub fn legacy(id: UiId) -> Self {
+        Self {
+            id,
+            key: None,
+            action: None,
+            style: UiStyle::default(),
+            content: UiContent::Empty,
+            children: Vec::new(),
+            automatic_id: false,
+        }
+    }
+    pub fn with_key(mut self, key: UiKey) -> Self {
+        self.key = Some(key);
+        self
+    }
+    #[allow(deprecated)]
+    pub fn with_action(mut self, action: Action) -> Self {
+        self.action = Some(action);
+        self.style.interactive = true;
+        self
     }
     pub fn with_style(mut self, style: UiStyle) -> Self {
         self.style = style;
@@ -376,37 +444,99 @@ impl UiNode {
         self.content = content;
         self
     }
-    pub fn with_children(mut self, children: impl IntoIterator<Item = UiNode>) -> Self {
+    pub fn with_children(mut self, children: impl IntoIterator<Item = UiNode<Action>>) -> Self {
         self.children = children.into_iter().collect();
         self
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UiTree {
-    root: UiNode,
+pub struct UiTree<Action = ()> {
+    root: UiNode<Action>,
 }
-impl UiTree {
-    pub fn new(root: UiNode) -> Result<Self, UiBuildError> {
+impl<Action> UiTree<Action> {
+    pub fn new(mut root: UiNode<Action>) -> Result<Self, UiBuildError> {
+        let mut reserved_ids = BTreeSet::new();
+        collect_explicit_ids(&root, &mut reserved_ids)?;
+        assign_automatic_ids(&mut root, &reserved_ids)?;
         let mut ids = BTreeSet::new();
-        validate_node(&root, &mut ids)?;
+        let mut keys = BTreeSet::new();
+        validate_node(&root, &mut ids, &mut keys)?;
         Ok(Self { root })
     }
-    pub fn root(&self) -> &UiNode {
+    pub fn root(&self) -> &UiNode<Action> {
         &self.root
     }
-    pub fn resolve(&self, viewport: UiSize) -> Result<UiFrame, UiLayoutError> {
+}
+impl<Action: Clone> UiTree<Action> {
+    pub fn resolve(&self, viewport: UiSize) -> Result<UiFrame<Action>, UiLayoutError> {
         resolve_tree(&self.root, viewport)
     }
 }
-fn validate_node(node: &UiNode, ids: &mut BTreeSet<UiId>) -> Result<(), UiBuildError> {
+fn collect_explicit_ids<Action>(
+    node: &UiNode<Action>,
+    ids: &mut BTreeSet<UiId>,
+) -> Result<(), UiBuildError> {
+    if !node.automatic_id && !ids.insert(node.id) {
+        return Err(UiBuildError::DuplicateId(node.id));
+    }
+    for child in &node.children {
+        collect_explicit_ids(child, ids)?;
+    }
+    Ok(())
+}
+fn assign_automatic_ids<Action>(
+    node: &mut UiNode<Action>,
+    reserved: &BTreeSet<UiId>,
+) -> Result<(), UiBuildError> {
+    fn next_available(
+        next: &mut u32,
+        reserved: &BTreeSet<UiId>,
+        assigned: &BTreeSet<UiId>,
+    ) -> Result<UiId, UiBuildError> {
+        loop {
+            let id = UiId(*next);
+            if !reserved.contains(&id) && !assigned.contains(&id) {
+                return Ok(id);
+            }
+            *next = next.checked_add(1).ok_or(UiBuildError::IdExhausted)?;
+        }
+    }
+    fn visit<Action>(
+        node: &mut UiNode<Action>,
+        next: &mut u32,
+        reserved: &BTreeSet<UiId>,
+        assigned: &mut BTreeSet<UiId>,
+    ) -> Result<(), UiBuildError> {
+        if node.automatic_id {
+            node.id = next_available(next, reserved, assigned)?;
+            node.automatic_id = false;
+            assigned.insert(node.id);
+        }
+        for child in &mut node.children {
+            visit(child, next, reserved, assigned)?;
+        }
+        Ok(())
+    }
+    visit(node, &mut 0, reserved, &mut BTreeSet::new())
+}
+fn validate_node<Action>(
+    node: &UiNode<Action>,
+    ids: &mut BTreeSet<UiId>,
+    keys: &mut BTreeSet<UiKey>,
+) -> Result<(), UiBuildError> {
     if !ids.insert(node.id) {
         return Err(UiBuildError::DuplicateId(node.id));
+    }
+    if let Some(key) = &node.key
+        && !keys.insert(key.clone())
+    {
+        return Err(UiBuildError::DuplicateKey(key.clone()));
     }
     validate_style(node.id, node.style)?;
     validate_content(node.id, &node.content)?;
     for child in &node.children {
-        validate_node(child, ids)?;
+        validate_node(child, ids, keys)?;
     }
     Ok(())
 }
@@ -471,12 +601,19 @@ pub struct UiHitRegion {
     pub bounds: UiRect,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct UiFrame {
+pub struct UiActionHit<Action> {
+    pub key: Option<UiKey>,
+    pub action: Action,
+    pub bounds: UiRect,
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UiFrame<Action = ()> {
     viewport: UiSize,
     commands: Vec<UiDrawCommand>,
     hits: Vec<UiHitRegion>,
+    action_hits: Vec<UiActionHit<Action>>,
 }
-impl UiFrame {
+impl<Action> UiFrame<Action> {
     pub const fn viewport(&self) -> UiSize {
         self.viewport
     }
@@ -486,6 +623,7 @@ impl UiFrame {
     pub fn hit_regions(&self) -> &[UiHitRegion] {
         &self.hits
     }
+    #[deprecated(note = "Use UiFrame::hit_action for page interaction.")]
     pub fn hit_test(&self, x: u32, y: u32) -> Option<UiId> {
         self.hits
             .iter()
@@ -493,12 +631,26 @@ impl UiFrame {
             .find(|region| region.bounds.contains(x, y))
             .map(|region| region.id)
     }
+    pub fn action_hits(&self) -> &[UiActionHit<Action>] {
+        &self.action_hits
+    }
+    pub fn hit_action(&self, x: u32, y: u32) -> Option<&Action> {
+        self.action_hits
+            .iter()
+            .rev()
+            .find(|region| region.bounds.contains(x, y))
+            .map(|region| &region.action)
+    }
 }
 
-fn resolve_tree(root: &UiNode, viewport: UiSize) -> Result<UiFrame, UiLayoutError> {
+fn resolve_tree<Action: Clone>(
+    root: &UiNode<Action>,
+    viewport: UiSize,
+) -> Result<UiFrame<Action>, UiLayoutError> {
     let root_bounds = UiRect::new(0, 0, viewport.width, viewport.height);
     let mut commands = Vec::new();
     let mut hits = Vec::new();
+    let mut action_hits = Vec::new();
     resolve_node(
         root,
         root_bounds,
@@ -506,20 +658,24 @@ fn resolve_tree(root: &UiNode, viewport: UiSize) -> Result<UiFrame, UiLayoutErro
         root_bounds,
         &mut commands,
         &mut hits,
+        &mut action_hits,
     )?;
     Ok(UiFrame {
         viewport,
         commands,
         hits,
+        action_hits,
     })
 }
-fn resolve_node(
-    node: &UiNode,
+#[allow(deprecated)]
+fn resolve_node<Action: Clone>(
+    node: &UiNode<Action>,
     offered: UiRect,
     ratio_basis: UiSize,
     inherited_clip: UiRect,
     commands: &mut Vec<UiDrawCommand>,
     hits: &mut Vec<UiHitRegion>,
+    action_hits: &mut Vec<UiActionHit<Action>>,
 ) -> Result<(), UiLayoutError> {
     let bounds = constrain(node, offered, ratio_basis)?;
     let clip = if node.style.clip {
@@ -600,10 +756,18 @@ fn resolve_node(
             clip,
         }),
     }
-    if node.style.interactive {
+    let hit_bounds = bounds.intersect(clip).unwrap_or_default();
+    if node.style.interactive || node.action.is_some() {
         hits.push(UiHitRegion {
             id: node.id,
-            bounds: bounds.intersect(clip).unwrap_or_default(),
+            bounds: hit_bounds,
+        });
+    }
+    if let Some(action) = &node.action {
+        action_hits.push(UiActionHit {
+            key: node.key.clone(),
+            action: action.clone(),
+            bounds: hit_bounds,
         });
     }
     layout_children(
@@ -612,6 +776,7 @@ fn resolve_node(
         clip,
         commands,
         hits,
+        action_hits,
     )
 }
 
@@ -623,7 +788,11 @@ fn inset(bounds: UiRect, insets: Insets) -> UiRect {
         bounds.height.saturating_sub(insets.vertical()),
     )
 }
-fn constrain(node: &UiNode, offered: UiRect, ratio_basis: UiSize) -> Result<UiRect, UiLayoutError> {
+fn constrain<Action>(
+    node: &UiNode<Action>,
+    offered: UiRect,
+    ratio_basis: UiSize,
+) -> Result<UiRect, UiLayoutError> {
     let intrinsic = intrinsic_size(node, ratio_basis);
     let width = dimension(node.style.width, ratio_basis.width, intrinsic.width);
     let height = dimension(node.style.height, ratio_basis.height, intrinsic.height);
@@ -652,7 +821,7 @@ fn constrain(node: &UiNode, offered: UiRect, ratio_basis: UiSize) -> Result<UiRe
     }
     Ok(UiRect::new(offered.x, offered.y, width, height))
 }
-fn intrinsic_size(node: &UiNode, ratio_basis: UiSize) -> UiSize {
+fn intrinsic_size<Action>(node: &UiNode<Action>, ratio_basis: UiSize) -> UiSize {
     match &node.content {
         UiContent::Text {
             content, font_size, ..
@@ -683,12 +852,13 @@ fn dimension(dimension: Dimension, offered: u32, intrinsic: u32) -> u32 {
         Dimension::Fill => offered,
     }
 }
-fn layout_children(
-    node: &UiNode,
+fn layout_children<Action: Clone>(
+    node: &UiNode<Action>,
     content: UiRect,
     clip: UiRect,
     commands: &mut Vec<UiDrawCommand>,
     hits: &mut Vec<UiHitRegion>,
+    action_hits: &mut Vec<UiActionHit<Action>>,
 ) -> Result<(), UiLayoutError> {
     let flow: Vec<_> = node
         .children
@@ -892,7 +1062,15 @@ fn layout_children(
                 offered.height.min(main_available.saturating_sub(cursor)),
             )
         };
-        resolve_node(child, offered, content.size(), clip, commands, hits)?;
+        resolve_node(
+            child,
+            offered,
+            content.size(),
+            clip,
+            commands,
+            hits,
+            action_hits,
+        )?;
         if !stacked {
             cursor = cursor
                 .saturating_add(main)
@@ -917,7 +1095,15 @@ fn layout_children(
             content.width.saturating_sub(left),
             content.height.saturating_sub(top),
         );
-        resolve_node(child, offered, content.size(), clip, commands, hits)?;
+        resolve_node(
+            child,
+            offered,
+            content.size(),
+            clip,
+            commands,
+            hits,
+            action_hits,
+        )?;
     }
     let _ = used;
     Ok(())
@@ -941,7 +1127,10 @@ const fn cross_margin(margin: Insets, horizontal: bool) -> u32 {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UiBuildError {
     EmptyContentId,
+    EmptyKey,
     DuplicateId(UiId),
+    DuplicateKey(UiKey),
+    IdExhausted,
     ZeroRatioBase(UiId),
     ZeroLogicalCanvas(UiId),
     ZeroTextSizeBase(UiId),
@@ -950,7 +1139,10 @@ impl fmt::Display for UiBuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyContentId => f.write_str("UI content id must not be empty"),
+            Self::EmptyKey => f.write_str("UI key must not be empty"),
             Self::DuplicateId(id) => write!(f, "UI node id {:?} is duplicated", id),
+            Self::DuplicateKey(key) => write!(f, "UI key {:?} is duplicated", key),
+            Self::IdExhausted => f.write_str("UI tree exhausted all structural IDs"),
             Self::ZeroRatioBase(id) => write!(f, "UI node {:?} has a zero ratio base", id),
             Self::ZeroLogicalCanvas(id) => {
                 write!(f, "UI node {:?} has a zero logical canvas", id)
@@ -978,6 +1170,7 @@ impl fmt::Display for UiLayoutError {
 impl Error for UiLayoutError {}
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
     fn fill(id: u32, style: UiStyle) -> UiNode {
@@ -1049,6 +1242,83 @@ mod tests {
         assert_eq!(frame.hit_test(15, 15), Some(UiId(3)));
         assert_eq!(frame.hit_test(25, 15), None);
     }
+
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    enum TestAction {
+        Back,
+        Front,
+    }
+
+    #[test]
+    fn automatic_ids_and_typed_actions_are_deterministic() {
+        let item_style = UiStyle {
+            width: Dimension::Px(30),
+            height: Dimension::Px(30),
+            position: Position::Absolute { left: 10, top: 10 },
+            ..UiStyle::default()
+        };
+        let tree = UiTree::<TestAction>::new(
+            UiNode::auto()
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    direction: FlexDirection::Stack,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    UiNode::auto()
+                        .with_key(UiKey::new("back").unwrap())
+                        .with_style(item_style)
+                        .with_action(TestAction::Back),
+                    UiNode::auto()
+                        .with_key(UiKey::new("front").unwrap())
+                        .with_style(item_style)
+                        .with_action(TestAction::Front),
+                    UiNode::legacy(UiId(1)).with_style(UiStyle::fixed(1, 1)),
+                ]),
+        )
+        .unwrap();
+
+        assert_eq!(tree.root().id, UiId(0));
+        assert_eq!(tree.root().children[0].id, UiId(2));
+        assert_eq!(tree.root().children[1].id, UiId(3));
+        assert_eq!(tree.root().children[2].id, UiId(1));
+
+        let frame = tree.resolve(UiSize::new(40, 40)).unwrap();
+        assert_eq!(frame.hit_action(15, 15), Some(&TestAction::Front));
+        assert_eq!(frame.action_hits().len(), 2);
+        assert_eq!(
+            frame.action_hits()[1].key,
+            Some(UiKey::new("front").unwrap())
+        );
+    }
+
+    #[test]
+    fn a_large_automatic_tree_needs_no_caller_supplied_ids() {
+        let tree = UiTree::new(
+            UiNode::<()>::auto()
+                .with_children((0..1_000).map(|_| UiNode::auto().with_style(UiStyle::fixed(1, 1)))),
+        )
+        .unwrap();
+
+        assert_eq!(tree.root().id, UiId(0));
+        assert_eq!(tree.root().children.len(), 1_000);
+        assert_eq!(tree.root().children[999].id, UiId(1_000));
+    }
+
+    #[test]
+    fn duplicate_ui_keys_are_build_errors() {
+        let duplicate = UiTree::<TestAction>::new(UiNode::auto().with_children([
+            UiNode::auto().with_key(UiKey::new("entry").unwrap()),
+            UiNode::auto().with_key(UiKey::new("entry").unwrap()),
+        ]));
+        assert!(matches!(
+            duplicate,
+            Err(UiBuildError::DuplicateKey(key)) if key == UiKey::new("entry").unwrap()
+        ));
+        assert_eq!(UiKey::new(""), Err(UiBuildError::EmptyKey));
+    }
+
     #[test]
     fn logical_canvas_coordinates_resolve_without_grid_types() {
         let tree = UiTree::new(

@@ -4,7 +4,7 @@
 
 use game_data::PokedexData;
 use game_session::{GameScene, GameSnapshot};
-use game_ui::{CommandConsoleView, PresentationSnapshot};
+use game_ui::{CommandConsoleView, PokedexAction, PresentationSnapshot};
 use game_view::{
     BattleSpriteResources, CANVAS_HEIGHT, CANVAS_WIDTH, GameView, compose_world, project_battle_ui,
     project_console_ui, project_pokedex,
@@ -36,8 +36,19 @@ pub struct ProjectedScene {
 pub enum SceneFrame {
     Grid(GameView),
     Ui(UiFrame),
-    GridWithUi { base: GameView, overlay: UiFrame },
-    UiWithUi { base: UiFrame, overlay: UiFrame },
+    Pokedex(UiFrame<PokedexAction>),
+    GridWithUi {
+        base: GameView,
+        overlay: UiFrame,
+    },
+    UiWithUi {
+        base: UiFrame,
+        overlay: UiFrame,
+    },
+    PokedexWithUi {
+        base: UiFrame<PokedexAction>,
+        overlay: UiFrame,
+    },
 }
 
 #[derive(Debug)]
@@ -76,8 +87,8 @@ pub fn project_scene(input: SceneViewInput<'_>) -> Result<ProjectedScene, SceneV
             .resolve(ui_size)
             .map_err(SceneViewError::UiLayout)?;
         match console {
-            Some(overlay) => SceneFrame::UiWithUi { base, overlay },
-            None => SceneFrame::Ui(base),
+            Some(overlay) => SceneFrame::PokedexWithUi { base, overlay },
+            None => SceneFrame::Pokedex(base),
         }
     } else {
         let base = match input.game.scene() {
@@ -172,7 +183,9 @@ mod tests {
     use game_assets::AssetKey;
     use game_data::CurrentDataSet;
     use game_session::{GameCommand, GameSession};
-    use game_ui::{BattleUiState, PresentationSnapshot, WorldAnimation};
+    use game_ui::{
+        BattleUiState, PokedexAction, PokedexUiSnapshot, PresentationSnapshot, WorldAnimation,
+    };
     use map_project::{
         AtomicTileId, CharacterAppearanceId, CompositeTile, CompositeTileId, MapActor, MapActorId,
         MapDirection, MapProjectId, TilePosition,
@@ -262,6 +275,36 @@ mod tests {
             .unwrap();
         assert_eq!(npc.asset.as_str(), "character/dppt/000/1/0");
         assert_eq!(npc.pixel_offset, PixelOffset::new(-12, 6));
+    }
+
+    #[test]
+    fn pokedex_scene_keeps_typed_actions_after_layout() {
+        let (project, catalog) = map();
+        let game = GameSession::new(
+            CurrentDataSet::embedded().unwrap(),
+            WorldApplication::from_map_project(&project).unwrap(),
+            17,
+        )
+        .unwrap();
+        let mut view = presentation(PixelOffset::new(0, 0));
+        view.pokedex = Some(PokedexUiSnapshot { selected_index: 0 });
+        let projected = project_scene(SceneViewInput {
+            game: &game.snapshot(),
+            presentation: view,
+            console: None,
+            pokedex: &PokedexData::embedded_gen3().unwrap(),
+            map_project: &project,
+            map_catalog: &catalog,
+            viewport: game_viewport(PixelSize::new(960, 720)),
+        })
+        .unwrap();
+        let SceneFrame::Pokedex(frame) = projected.frame else {
+            panic!("Pokedex keeps its typed UI frame")
+        };
+        assert!(matches!(
+            frame.action_hits()[0].action,
+            PokedexAction::SelectEntry { index: 0 }
+        ));
     }
 
     #[test]

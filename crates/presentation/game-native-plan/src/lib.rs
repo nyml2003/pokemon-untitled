@@ -180,8 +180,8 @@ pub struct FramePlan {
 impl FramePlan {
     /// Converts an already-resolved pixel UI frame at the adapter boundary.
     /// The UI crate stays independent from atlas IDs and GPU plans.
-    pub fn from_ui_frame(
-        frame: &UiFrame,
+    pub fn from_ui_frame<Action>(
+        frame: &UiFrame<Action>,
         assets: &NativeAssets,
         text_scale: TextScale,
     ) -> Result<Self, FramePlanError> {

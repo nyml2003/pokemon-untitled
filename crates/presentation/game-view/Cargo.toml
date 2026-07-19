@@ -10,6 +10,7 @@ battle-session = { workspace = true }
 game-assets = { path = "../game-assets" }
 game-data = { path = "../../domain/game-data" }
 game-ui = { path = "../game-ui" }
+game-ui-kit = { path = "../game-ui-kit" }
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }
 punctum-ui = { workspace = true }

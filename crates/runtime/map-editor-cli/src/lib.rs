@@ -34,7 +34,7 @@ pub fn save_requested(response: &CliResponse) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use map_editor_core::{EditorVirtualCommandResult, EditorVirtualState};
+    use map_editor_core::EditorVirtualCommandResult;
     use map_project::{AtomicTileId, CompositeTile, CompositeTileId, MapProject, MapProjectId};
 
     use super::*;
@@ -57,7 +57,7 @@ mod tests {
         let (_, response) = execute(&model, EditorVirtualCommand::Inspect).unwrap();
         assert!(matches!(
             &response,
-            CliResponse::Result(EditorVirtualCommandResult::State(EditorVirtualState { .. }))
+            CliResponse::Result(EditorVirtualCommandResult::State(_))
         ));
         assert!(
             serde_json::to_string(&response)

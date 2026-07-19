@@ -16,17 +16,20 @@ use game_native_target::{
 };
 use game_scene_view::{SceneFrame, SceneViewInput, game_viewport, project_scene};
 use game_session::{GameCommand, GameError, GameEvents, GameScene, GameSession};
-use game_ui::{GameConsole, PresentationAction, PresentationState, PresentationUpdate};
+use game_ui::{
+    GameConsole, PokedexAction, PresentationAction, PresentationState, PresentationUpdate,
+};
 use map::load_map;
 use map_project::MapProject;
 use map_render::AtomicTileCatalog;
 use narrative::load_narrative_scripts;
 use punctum_gpu::{PixelSize, Rgba8};
+use punctum_ui::UiFrame;
 use sprites::load_game_assets;
 use winit::{
     application::ApplicationHandler,
-    dpi::{LogicalSize, PhysicalSize},
-    event::{Ime, WindowEvent},
+    dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
+    event::{ElementState, Ime, MouseButton, WindowEvent},
     event_loop::{ActiveEventLoop, EventLoop},
     keyboard::ModifiersState,
     window::{Window, WindowId},
@@ -45,6 +48,8 @@ struct CreatureGameApp {
     console: GameConsole,
     assets: NativeAssets,
     modifiers: ModifiersState,
+    cursor: Option<PhysicalPosition<f64>>,
+    pokedex_frame: Option<UiFrame<PokedexAction>>,
     last_real_instant: Instant,
     next_world_tick: Instant,
     next_wakeup: Option<Instant>,
@@ -83,6 +88,8 @@ impl CreatureGameApp {
             console: GameConsole::default(),
             assets,
             modifiers: ModifiersState::empty(),
+            cursor: None,
+            pokedex_frame: None,
             last_real_instant: now,
             next_world_tick: now + WORLD_LOGIC_TICK,
             next_wakeup: None,
@@ -152,11 +159,19 @@ impl CreatureGameApp {
         let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
             return;
         };
+        self.pokedex_frame = match &projected.frame {
+            SceneFrame::Pokedex(frame) => Some(frame.clone()),
+            SceneFrame::PokedexWithUi { base, .. } => Some(base.clone()),
+            _ => None,
+        };
         let plan_result = match projected.frame {
             SceneFrame::Grid(view) => {
                 FramePlan::from_game_view(&view, &self.assets, viewport, GAME_TEXT_SCALE)
             }
             SceneFrame::Ui(frame) => {
+                FramePlan::from_ui_frame(&frame, &self.assets, TextScale::new(1, 1, 16, 28))
+            }
+            SceneFrame::Pokedex(frame) => {
                 FramePlan::from_ui_frame(&frame, &self.assets, TextScale::new(1, 1, 16, 28))
             }
             SceneFrame::GridWithUi { base, overlay } => FramePlan::from_game_view(
@@ -170,6 +185,17 @@ impl CreatureGameApp {
                     .map(|overlay| FramePlan::compose(base, overlay))
             }),
             SceneFrame::UiWithUi { base, overlay } => {
+                FramePlan::from_ui_frame(&base, &self.assets, TextScale::new(1, 1, 16, 28))
+                    .and_then(|base| {
+                        FramePlan::from_ui_frame(
+                            &overlay,
+                            &self.assets,
+                            TextScale::new(1, 1, 16, 28),
+                        )
+                        .map(|overlay| FramePlan::compose(base, overlay))
+                    })
+            }
+            SceneFrame::PokedexWithUi { base, overlay } => {
                 FramePlan::from_ui_frame(&base, &self.assets, TextScale::new(1, 1, 16, 28))
                     .and_then(|base| {
                         FramePlan::from_ui_frame(
@@ -244,6 +270,24 @@ impl CreatureGameApp {
             &snapshot,
             entries,
         );
+        self.presentation = presentation;
+        self.apply_presentation_update(update);
+    }
+
+    fn handle_pokedex_click(&mut self) {
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+        let Some(action) = self
+            .pokedex_frame
+            .as_ref()
+            .and_then(|frame| frame.hit_action(cursor.x.max(0.0) as u32, cursor.y.max(0.0) as u32))
+            .copied()
+        else {
+            return;
+        };
+        let presentation = mem::take(&mut self.presentation);
+        let (presentation, update) = presentation.handle_pokedex_action(action);
         self.presentation = presentation;
         self.apply_presentation_update(update);
     }
@@ -397,6 +441,13 @@ impl ApplicationHandler for CreatureGameApp {
                 self.apply_presentation_update(update);
             }
             WindowEvent::KeyboardInput { event, .. } => self.handle_key(event),
+            WindowEvent::CursorMoved { position, .. } => self.cursor = Some(position),
+            WindowEvent::CursorLeft { .. } => self.cursor = None,
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } => self.handle_pokedex_click(),
             WindowEvent::Ime(event) => self.handle_ime_event(event),
             WindowEvent::RedrawRequested => self.redraw(event_loop),
             _ => {}
