@@ -244,6 +244,39 @@ fn compiler_validates_named_and_positional_arguments() {
 }
 
 #[test]
+fn compiler_accepts_structured_values_when_the_schema_requires_them() {
+    let item = registration(
+        "/battle/turn",
+        "submit",
+        Effect::Invoke,
+        vec![
+            parameter("payload", ValueType::Record, true, false),
+            parameter("selection", ValueType::List, true, false),
+        ],
+    );
+    let (compiler, authorization, principal) =
+        compiler_with(item, &[Capability::Discover, Capability::Invoke]);
+    let session = authorization.session(&principal).unwrap();
+    let plan = compiler.seal(
+        &session.view(),
+        draft(vec![
+            named(
+                "payload",
+                Value::Record(BTreeMap::from([(
+                    String::from("name"),
+                    Value::String(String::from("route-rival")),
+                )])),
+            ),
+            named(
+                "selection",
+                Value::List(vec![Value::Integer(1), Value::Integer(2)]),
+            ),
+        ]),
+    );
+    assert!(plan.is_ok());
+}
+
+#[test]
 fn compiler_reports_each_argument_contract_failure() {
     let item = registration(
         "/battle/turn",

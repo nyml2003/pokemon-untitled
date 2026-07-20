@@ -699,6 +699,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
+name = "editor-application"
+version = "0.0.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "editor-ramus-adapter"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+ "ramus-core",
+ "serde_json",
+]
+
+[[package]]
+name = "editor-resource-adapter"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+]
+
+[[package]]
 name = "either"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1590,12 +1614,14 @@ dependencies = [
 name = "map-editor-core"
 version = "0.0.0"
 dependencies = [
+ "editor-application",
  "map-project",
  "map-tile-semantics",
  "punctum-gpu",
  "punctum-grid",
  "punctum-input",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2320,6 +2346,42 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "pokemon-editor"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+ "editor-ramus-adapter",
+ "editor-resource-adapter",
+ "game-assets",
+ "game-native-target",
+ "pokemon-editor-core",
+ "punctum-gpu",
+ "punctum-ui",
+ "serde_json",
+ "winit",
+]
+
+[[package]]
+name = "pokemon-editor-cli"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+ "editor-ramus-adapter",
+ "editor-resource-adapter",
+ "pokemon-editor-core",
+ "serde_json",
+]
+
+[[package]]
+name = "pokemon-editor-core"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -3276,6 +3338,44 @@ name = "tracing-core"
 version = "0.1.36"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
+
+[[package]]
+name = "trainer-editor"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+ "editor-ramus-adapter",
+ "editor-resource-adapter",
+ "game-assets",
+ "game-foundation",
+ "game-native-target",
+ "punctum-gpu",
+ "punctum-ui",
+ "serde_json",
+ "trainer-editor-core",
+ "winit",
+]
+
+[[package]]
+name = "trainer-editor-cli"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+ "editor-ramus-adapter",
+ "editor-resource-adapter",
+ "game-foundation",
+ "serde_json",
+ "trainer-editor-core",
+]
+
+[[package]]
+name = "trainer-editor-core"
+version = "0.0.0"
+dependencies = [
+ "editor-application",
+ "game-foundation",
+ "serde",
+]
 
 [[package]]
 name = "ttf-parser"

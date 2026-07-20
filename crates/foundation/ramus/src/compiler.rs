@@ -408,6 +408,7 @@ fn validate_value(value: Value, expected: &ValueType) -> Result<Value, Diagnosti
         (ValueType::Enum(variants), Value::String(value)) => {
             variants.iter().any(|variant| variant == value)
         }
+        (ValueType::List, Value::List(_)) | (ValueType::Record, Value::Record(_)) => true,
         _ => false,
     };
     if valid {

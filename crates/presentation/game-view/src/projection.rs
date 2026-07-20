@@ -460,9 +460,24 @@ fn foundation_journey(
     }
     let encounter = match (state.pending_encounter(), state.active_battle()) {
         (Some(position), _) => format!("草丛遭遇  {}, {}", position.x(), position.y()),
-        (_, Some(battle)) => format!("战斗中  {}", battle.battle().as_str()),
+        (_, Some(battle)) => battle
+            .trainer()
+            .and_then(|trainer| content.trainer(trainer))
+            .map(|trainer| {
+                let opponent = trainer
+                    .pokemon()
+                    .first()
+                    .map(|pokemon| format!("{} Lv{}", pokemon.species(), pokemon.level()))
+                    .unwrap_or_else(|| String::from("未知队伍"));
+                format!("对战中  {} / {}", trainer.name(), opponent)
+            })
+            .unwrap_or_else(|| format!("战斗中  {}", battle.battle().as_str())),
         (None, None) => String::from("探索中"),
     };
+    let dialogue = state
+        .last_message()
+        .map(foundation_dialogue)
+        .unwrap_or_else(|| String::from("尚无对话"));
     let movement_actions = [
         foundation_action_button(
             "↑",
@@ -544,7 +559,7 @@ fn foundation_journey(
                 std::iter::once(ui_text(
                     &FOUNDATION_THEME,
                     TextTone::Default,
-                    "队伍",
+                    format!("队伍  对话: {dialogue}"),
                     16,
                     Dimension::Fill,
                 ))
@@ -580,6 +595,20 @@ fn foundation_journey(
             ),
         ],
     ))
+}
+
+fn foundation_dialogue(message: &str) -> String {
+    const MAX_VISIBLE_CHARACTERS: usize = 40;
+    let mut characters = message.chars();
+    let visible = characters
+        .by_ref()
+        .take(MAX_VISIBLE_CHARACTERS)
+        .collect::<String>();
+    if characters.next().is_some() {
+        format!("{visible}...")
+    } else {
+        visible
+    }
 }
 
 fn foundation_bag(

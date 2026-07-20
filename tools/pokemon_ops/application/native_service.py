@@ -21,10 +21,10 @@ class NativeService:
         synced = self._sync_service.sync(config, progress=progress)
         if not synced.is_ok:
             return Result(error=synced.error)
-        action = "building" if operation is NativeOperation.BUILD_GAME_HOST else "running"
-        stage = "build.start" if operation is NativeOperation.BUILD_GAME_HOST else "run.start"
+        action = "building" if operation.is_build else "running"
+        stage = "build.start" if operation.is_build else "run.start"
         if progress is not None:
-            progress.report(ProgressEvent(ProgressEventType.PROGRESS, stage, f"{action} game-host on Windows; native output follows"))
+            progress.report(ProgressEvent(ProgressEventType.PROGRESS, stage, f"{action} {operation.target} on Windows; native output follows"))
         dispatched = self._dispatcher.dispatch(
             NativeRunRequest(operation=operation, profile=profile, mirror_root=config.mirror_root),
             progress=progress,

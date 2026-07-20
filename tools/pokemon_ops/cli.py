@@ -21,6 +21,14 @@ from tools.pokemon_ops.domain.errors import Result
 from tools.pokemon_ops.domain.model import BuildProfile, NativeOperation, TestSuite
 
 
+NATIVE_OPERATIONS: dict[str, tuple[NativeOperation, NativeOperation]] = {
+    "game-host": (NativeOperation.BUILD_GAME_HOST, NativeOperation.RUN_GAME_HOST),
+    "map-editor": (NativeOperation.BUILD_MAP_EDITOR, NativeOperation.RUN_MAP_EDITOR),
+    "pokemon-editor": (NativeOperation.BUILD_POKEMON_EDITOR, NativeOperation.RUN_POKEMON_EDITOR),
+    "trainer-editor": (NativeOperation.BUILD_TRAINER_EDITOR, NativeOperation.RUN_TRAINER_EDITOR),
+}
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="ops")
     parser.add_argument("--json", action="store_true", dest="json_output")
@@ -53,7 +61,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("build", "run"):
         native_parser = commands.add_parser(name)
         command_parsers.append(native_parser)
-        native_parser.add_argument("target", choices=["game-host"])
+        native_parser.add_argument("target", choices=sorted(NATIVE_OPERATIONS))
         native_parser.add_argument("--profile", choices=[profile.value for profile in BuildProfile], default=BuildProfile.DEBUG.value)
     for command_parser in command_parsers:
         command_parser.add_argument("--json", action="store_true", dest="json_output", default=argparse.SUPPRESS)
@@ -176,6 +184,7 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
     if args.command == "sync":
         return _emit(sync_service.sync(config, progress), args.json_output)
 
-    operation = NativeOperation.BUILD_GAME_HOST if args.command == "build" else NativeOperation.RUN_GAME_HOST
+    build_operation, run_operation = NATIVE_OPERATIONS[args.target]
+    operation = build_operation if args.command == "build" else run_operation
     native = NativeService(sync_service, WindowsNativeRunDispatcher(config))
     return _emit(native.execute(config, operation, BuildProfile(args.profile), progress), args.json_output)

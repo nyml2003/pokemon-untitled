@@ -34,7 +34,7 @@ class WindowsNativeRunDispatcher:
                 "windows_root": str(request.mirror_root.windows_path),
             }
         )
-        stage = "build.output" if request.operation is NativeOperation.BUILD_GAME_HOST else "run.output"
+        stage = "build.output" if request.operation.is_build else "run.output"
         completed = run_streamed_process(
             (str(executable), "-m", self._config.windows_runner.module),
             request.mirror_root.wsl_mount_path,
@@ -51,14 +51,14 @@ class WindowsNativeRunDispatcher:
             return Result(error=completed.error)
         assert completed.value is not None
         if completed.value.exit_code != 0:
-            code = ErrorCode.BUILD_FAILED if request.operation is NativeOperation.BUILD_GAME_HOST else ErrorCode.RUN_FAILED
+            code = ErrorCode.BUILD_FAILED if request.operation.is_build else ErrorCode.RUN_FAILED
             if progress is not None:
                 progress.report(ProgressEvent(ProgressEventType.ERROR, stage, "Windows private runner exited unsuccessfully", code=code.value))
             details = {"exit_code": str(completed.value.exit_code)}
             if completed.value.output_tail:
                 details["output_tail"] = "\n".join(completed.value.output_tail)
             return Result.fail(code, "Windows private runner exited unsuccessfully", **details)
-        exit_stage = "build.done" if request.operation is NativeOperation.BUILD_GAME_HOST else "run.exit"
+        exit_stage = "build.done" if request.operation.is_build else "run.exit"
         if progress is not None:
             progress.report(ProgressEvent(ProgressEventType.PROGRESS, exit_stage, f"Windows private runner exited with code {completed.value.exit_code}"))
         return Result.ok(completed.value.exit_code)

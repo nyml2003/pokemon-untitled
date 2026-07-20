@@ -14,10 +14,20 @@ def main() -> int:
         windows_root = request["windows_root"]
     except (KeyError, json.JSONDecodeError, TypeError):
         return 2
-    if operation not in {"build_game_host", "run_game_host"} or profile not in {"debug", "release"}:
+    operations = {
+        "build_game_host": "game-host",
+        "run_game_host": "game-host",
+        "build_map_editor": "map-editor",
+        "run_map_editor": "map-editor",
+        "build_trainer_editor": "trainer-editor",
+        "run_trainer_editor": "trainer-editor",
+        "build_pokemon_editor": "pokemon-editor",
+        "run_pokemon_editor": "pokemon-editor",
+    }
+    if operation not in operations or profile not in {"debug", "release"}:
         return 2
 
-    command = ["cargo", "build" if operation == "build_game_host" else "run", "--bin", "game-host"]
+    command = ["cargo", "build" if operation.startswith("build_") else "run", "--bin", operations[operation]]
     if profile == "release":
         command.append("--release")
     return subprocess.run(command, cwd=Path(windows_root), check=False).returncode

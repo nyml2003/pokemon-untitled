@@ -2,6 +2,7 @@ mod map;
 mod narrative;
 mod sprites;
 mod thin_slice;
+mod trainer_content;
 
 use std::{
     error::Error,
@@ -70,7 +71,9 @@ struct CreatureGameApp {
 
 impl CreatureGameApp {
     fn new() -> Result<Self, Box<dyn Error>> {
+        let trainer_catalog = trainer_content::load_trainer_catalog()?;
         let foundation_content = ThinSliceContent::standard()
+            .and_then(|content| content.with_trainer_catalog(trainer_catalog))
             .map_err(|error| std::io::Error::other(format!("foundation content: {error:?}")))?;
         let foundation_state = FoundationState::new(&foundation_content)
             .map_err(|error| std::io::Error::other(format!("foundation state: {error:?}")))?;

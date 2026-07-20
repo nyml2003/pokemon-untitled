@@ -39,6 +39,8 @@ pub enum ValueType {
     Integer,
     Boolean,
     Enum(Vec<String>),
+    List,
+    Record,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

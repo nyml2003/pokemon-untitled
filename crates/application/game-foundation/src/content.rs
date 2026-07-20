@@ -2,11 +2,12 @@ use std::collections::BTreeMap;
 
 use crate::{
     BattleId, CreatureTemplateId, EconomyError, EventFlagId, ItemCategory, ItemDefinition, ItemId,
-    MapId, Money, NpcId, Position, ShopId, ShopListing, WarpId,
+    MapId, Money, NpcId, Position, ShopId, ShopListing, TrainerCatalog, TrainerDefinition,
+    TrainerError, TrainerId, WarpId,
 };
 use world_domain::{Tile, TileMap, WorldError};
 
-pub const CONTENT_VERSION: &str = "thin-slice-v2";
+pub const CONTENT_VERSION: &str = "thin-slice-v3";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MapDefinition {
@@ -126,6 +127,7 @@ pub enum NpcCapability {
         quantity: u16,
     },
     Trainer {
+        trainer: TrainerId,
         battle: BattleId,
     },
     Merchant {
@@ -279,6 +281,7 @@ pub struct ThinSliceContent {
     shops: BTreeMap<ShopId, ShopDefinition>,
     battles: BTreeMap<BattleId, BattleDefinition>,
     creatures: BTreeMap<CreatureTemplateId, CreatureTemplate>,
+    trainers: BTreeMap<TrainerId, TrainerDefinition>,
     encounters: BTreeMap<MapId, BattleId>,
     starting_map: MapId,
     starting_money: Money,
@@ -291,6 +294,7 @@ impl ThinSliceContent {
         let route = MapId::new("verdant-route")?;
         let professor = NpcId::new("professor")?;
         let trainer = NpcId::new("route-trainer")?;
+        let trainer_profile = TrainerId::new("route-rival")?;
         let merchant = NpcId::new("merchant")?;
         let potion = ItemId::new("potion")?;
         let starter = CreatureTemplateId::new("starter-treecko")?;
@@ -342,6 +346,7 @@ impl ThinSliceContent {
             35,
             35,
         )?])?;
+        let trainers = map_by_id(TrainerCatalog::standard()?.trainers().to_vec())?;
         let battles = map_by_id(vec![
             BattleDefinition::new(wild_battle.clone(), 20, Money::new(0), None),
             BattleDefinition::new(
@@ -368,6 +373,7 @@ impl ThinSliceContent {
             NpcDefinition::new(
                 ActorDefinition::new(trainer.clone(), route.clone(), Position::new(4, 2), true),
                 vec![NpcCapability::Trainer {
+                    trainer: trainer_profile,
                     battle: trainer_battle,
                 }],
             ),
@@ -385,6 +391,7 @@ impl ThinSliceContent {
             shops,
             battles,
             creatures,
+            trainers,
             encounters: BTreeMap::from([(route.clone(), wild_battle)]),
             starting_map: town,
             starting_money: Money::new(200),
@@ -431,6 +438,9 @@ impl ThinSliceContent {
     pub fn creature(&self, id: &CreatureTemplateId) -> Option<&CreatureTemplate> {
         self.creatures.get(id)
     }
+    pub fn trainer(&self, id: &TrainerId) -> Option<&TrainerDefinition> {
+        self.trainers.get(id)
+    }
     pub fn encounter_battle(&self, map: &MapId) -> Option<&BattleId> {
         self.encounters.get(map)
     }
@@ -444,6 +454,24 @@ impl ThinSliceContent {
                 )
             })
         })
+    }
+
+    pub fn with_trainer_catalog(mut self, catalog: TrainerCatalog) -> Result<Self, ContentError> {
+        let trainers = map_by_id(catalog.trainers().to_vec())?;
+        for npc in self.npcs.values() {
+            for capability in npc.capabilities() {
+                if let NpcCapability::Trainer { trainer, .. } = capability
+                    && !trainers.contains_key(trainer)
+                {
+                    return Err(ContentError::MissingTrainerDefinition {
+                        npc: npc.actor().id().clone(),
+                        trainer: trainer.clone(),
+                    });
+                }
+            }
+        }
+        self.trainers = trainers;
+        Ok(self)
     }
 }
 
@@ -498,6 +526,12 @@ impl ContentIdentity for CreatureTemplate {
         self.id()
     }
 }
+impl ContentIdentity for TrainerDefinition {
+    type Id = TrainerId;
+    fn content_id(&self) -> &Self::Id {
+        self.id()
+    }
+}
 
 fn map_by_id<T: ContentIdentity>(values: Vec<T>) -> Result<BTreeMap<T::Id, T>, ContentError> {
     let mut mapped = BTreeMap::new();
@@ -514,11 +548,13 @@ fn map_by_id<T: ContentIdentity>(values: Vec<T>) -> Result<BTreeMap<T::Id, T>, C
 pub enum ContentError {
     Id(crate::GameIdError),
     Economy(EconomyError),
+    Trainer(TrainerError),
     World(WorldError),
     DuplicateContentId,
     DuplicateShopListing { shop: ShopId },
     InvalidMapSpawn { map: MapId, spawn: Position },
     InvalidCreatureTemplate { id: CreatureTemplateId },
+    MissingTrainerDefinition { npc: NpcId, trainer: TrainerId },
 }
 
 impl From<crate::GameIdError> for ContentError {
@@ -529,6 +565,11 @@ impl From<crate::GameIdError> for ContentError {
 impl From<EconomyError> for ContentError {
     fn from(value: EconomyError) -> Self {
         Self::Economy(value)
+    }
+}
+impl From<TrainerError> for ContentError {
+    fn from(value: TrainerError) -> Self {
+        Self::Trainer(value)
     }
 }
 impl From<WorldError> for ContentError {

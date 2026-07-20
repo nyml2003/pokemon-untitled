@@ -1,6 +1,6 @@
 use crate::{
     BattleOutcome, GameCommand, GameError, GameState, ItemId, Money, NpcId, SaveEnvelope,
-    ThinSliceContent, WarpId,
+    ThinSliceContent, TrainerCatalog, TrainerEditCommand, TrainerId, TrainerPokemon, WarpId,
 };
 
 fn apply(
@@ -100,6 +100,10 @@ fn thin_slice_round_trip_preserves_the_complete_player_state() -> Result<(), Str
             npc: trainer.clone(),
         },
     )?;
+    assert_eq!(
+        state.last_message(),
+        Some("前方是训练家的道路。准备好就来对战吧。")
+    );
     let state = apply(
         state,
         &content,
@@ -244,5 +248,50 @@ fn trainer_cannot_be_completed_twice() -> Result<(), String> {
     let (after, result) = state.transition(&content, GameCommand::Interact { npc: trainer });
     assert!(matches!(result, Err(GameError::TrainerAlreadyDefeated(_))));
     assert_eq!(after, before);
+    Ok(())
+}
+
+#[test]
+fn trainer_catalog_edits_name_pokemon_and_script_transactionally() -> Result<(), String> {
+    let catalog = TrainerCatalog::standard().map_err(|error| error.to_string())?;
+    let trainer =
+        TrainerId::new("route-rival").map_err(|error| format!("trainer id: {error:?}"))?;
+    let catalog = catalog
+        .transition(TrainerEditCommand::SetName {
+            trainer: trainer.clone(),
+            name: String::from("短裤小子 阿健"),
+        })
+        .map_err(|error| error.to_string())?;
+    let catalog = catalog
+        .transition(TrainerEditCommand::AddPokemon {
+            trainer: trainer.clone(),
+            pokemon: TrainerPokemon::new("Poochyena", 6).map_err(|error| error.to_string())?,
+        })
+        .map_err(|error| error.to_string())?;
+    let catalog = catalog
+        .transition(TrainerEditCommand::SetScript {
+            trainer: trainer.clone(),
+            script: String::from("我的宝可梦绝不会输。"),
+        })
+        .map_err(|error| error.to_string())?;
+    let definition = catalog
+        .trainer(&trainer)
+        .ok_or_else(|| String::from("missing edited trainer"))?;
+    assert_eq!(definition.name(), "短裤小子 阿健");
+    assert_eq!(definition.pokemon().len(), 2);
+    assert_eq!(
+        definition.pokemon().get(1).map(TrainerPokemon::species),
+        Some("Poochyena")
+    );
+    assert_eq!(definition.script(), "我的宝可梦绝不会输。");
+
+    let json = catalog
+        .to_json_pretty()
+        .map_err(|error| error.to_string())?;
+    let decoded = TrainerCatalog::from_json(&json).map_err(|error| error.to_string())?;
+    assert_eq!(decoded, catalog);
+
+    let result = catalog.transition(TrainerEditCommand::RemovePokemon { trainer, slot: 8 });
+    assert!(result.is_err());
     Ok(())
 }

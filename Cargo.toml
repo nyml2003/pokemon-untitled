@@ -17,10 +17,13 @@ members = [
     "crates/foundation/ramus",
     "crates/application/battle-application",
     "crates/application/battle-session",
+    "crates/application/editor-application",
     "crates/application/game-foundation",
     "crates/application/game-session",
     "crates/application/map-editor-core",
+    "crates/application/pokemon-editor-core",
     "crates/application/tile-editor-core",
+    "crates/application/trainer-editor-core",
     "crates/application/world-application",
     "crates/presentation/game-assets",
     "crates/presentation/map-assets",
@@ -33,6 +36,8 @@ members = [
     "crates/presentation/map-render",
     "crates/presentation/map-editor-view",
     "crates/adapter/battle-ramus-adapter",
+    "crates/adapter/editor-ramus-adapter",
+    "crates/adapter/editor-resource-adapter",
     "crates/adapter/game-ramus-adapter",
     "crates/adapter/game-data-import-core",
     "crates/adapter/game-data-import",
@@ -44,7 +49,11 @@ members = [
     "crates/runtime/game-host",
     "crates/runtime/map-editor",
     "crates/runtime/map-editor-cli",
+    "crates/runtime/pokemon-editor",
+    "crates/runtime/pokemon-editor-cli",
     "crates/runtime/tile-editor",
+    "crates/runtime/trainer-editor",
+    "crates/runtime/trainer-editor-cli",
     "crates/quality/game-e2e",
     "crates/quality/wslg-wgpu-clear-smoke",
 ]
@@ -59,20 +68,25 @@ rust-version = "1.88"
 battle-application = { path = "crates/application/battle-application" }
 battle-domain = { path = "crates/domain/battle/battle-domain" }
 battle-session = { path = "crates/application/battle-session" }
+editor-application = { path = "crates/application/editor-application" }
 game-foundation = { path = "crates/application/game-foundation" }
 world-application = { path = "crates/application/world-application" }
 map-editor-core = { path = "crates/application/map-editor-core" }
+pokemon-editor-core = { path = "crates/application/pokemon-editor-core" }
 game-session = { path = "crates/application/game-session" }
 game-data = { path = "crates/domain/data/game-data" }
 map-project = { path = "crates/domain/map/map-project" }
 map-tile-semantics = { path = "crates/domain/map/map-tile-semantics" }
 tile-editor-core = { path = "crates/application/tile-editor-core" }
+trainer-editor-core = { path = "crates/application/trainer-editor-core" }
 world-project = { path = "crates/domain/world/world-project" }
 map-project-storage = { path = "crates/adapter/map-project-storage" }
 game-data-import-core = { path = "crates/adapter/game-data-import-core" }
 game-fs-assets = { path = "crates/adapter/game-fs-assets" }
 game-native-target = { path = "crates/adapter/game-native-target" }
 battle-ramus-adapter = { path = "crates/adapter/battle-ramus-adapter" }
+editor-ramus-adapter = { path = "crates/adapter/editor-ramus-adapter" }
+editor-resource-adapter = { path = "crates/adapter/editor-resource-adapter" }
 game-ramus-adapter = { path = "crates/adapter/game-ramus-adapter" }
 map-render = { path = "crates/presentation/map-render" }
 map-assets = { path = "crates/presentation/map-assets" }

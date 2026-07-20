@@ -1,0 +1,23 @@
+[package]
+name = "trainer-editor"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+editor-application = { workspace = true }
+editor-ramus-adapter = { workspace = true }
+editor-resource-adapter = { workspace = true }
+game-foundation = { workspace = true }
+game-assets = { workspace = true }
+game-native-target = { workspace = true }
+punctum-gpu = { workspace = true }
+punctum-ui = { workspace = true }
+serde_json = "1.0.149"
+trainer-editor-core = { workspace = true }
+winit = "0.30.13"
+
+[[bin]]
+name = "trainer-editor"
+path = "src/main.rs"

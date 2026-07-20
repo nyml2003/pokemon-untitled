@@ -8,6 +8,8 @@ use std::{
 use game_foundation::{GameState, SaveEnvelope, ThinSliceContent};
 use game_ramus_adapter::{GameRamusRouter, RoutedIntent};
 
+use crate::trainer_content;
+
 const DEFAULT_SAVE_PATH: &str = "target/thin-slice.save.json";
 type EntryResult = Result<(), Box<dyn Error>>;
 type ArgumentResult = Result<Option<EntryResult>, Box<dyn Error>>;
@@ -61,7 +63,10 @@ pub fn run_from_arguments(arguments: impl Iterator<Item = OsString>) -> Argument
 }
 
 fn run_script(source: &str, save_path: &Path) -> Result<(), Box<dyn Error>> {
-    let content = ThinSliceContent::standard().map_err(content_error)?;
+    let trainer_catalog = trainer_content::load_trainer_catalog()?;
+    let content = ThinSliceContent::standard()
+        .and_then(|content| content.with_trainer_catalog(trainer_catalog))
+        .map_err(content_error)?;
     let router = GameRamusRouter::new().map_err(router_error)?;
     let intents = router.route(source).map_err(router_error)?;
     let mut state = GameState::new(&content).map_err(foundation_error)?;

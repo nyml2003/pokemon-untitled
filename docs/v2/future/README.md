@@ -11,6 +11,7 @@
 | 游戏基座与薄切片验证 | 先定义持久游戏状态、世界内容合同与事件运行时，再用最薄流程验证它们。详见 [游戏基座与薄切片验证](game-foundation-thin-slice.md)。 | 新游戏、跨图、交互、遭遇、战斗结果、物品/金钱和存档重载可由同一可复现状态模型验证。 |
 | 持久活世界 | 先定义世界状态、事件账本、版本化存档和 `WorldPatch` 合同。 | 可复现的状态变更、审计和失败路径都已验证。 |
 | 叙事 DSL 与 Ramus | 当前 lexer、单脚本编译和最小 capability 基线可用。 | 通用任务运行时、世界提交/审计及边界治理具备端到端测试。 |
+| 编辑器应用协议 | 统一编辑资源、结构化调用、Ramus 鉴权和资源 adapter。详见[编辑器应用协议与结构化调用](editor-application-protocol.md)。 | 地图、训练师和宝可梦均通过同一协议提供 GUI、CLI 和模型调用边界。 |
 | 地图存储与流式加载 | 先保留现有地图项目兼容性和编辑器可读性。 | 新格式、迁移、校验与运行时加载均通过兼容性测试。 |
 | Web runtime | 复用 core、场景投影和帧计划；重新实现文件与呈现边界。详见 [Web runtime 与 WebGL 降级方案](web-runtime-webgl.md) 和 [Punctum UI 与 DOM 接入](punctum-ui-dom-bridge.md)。 | 浏览器 API 未进入 foundation/domain/application，且独立 runtime 已完成目标平台验收。 |
 

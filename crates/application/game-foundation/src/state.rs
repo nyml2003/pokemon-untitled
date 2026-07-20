@@ -8,7 +8,7 @@ use world_domain::{
 
 use crate::{
     BattleId, CreatureId, CreatureTemplateId, EconomyError, EventFlagId, Inventory, ItemId, MapId,
-    Money, NpcCapability, NpcId, ShopId, ThinSliceContent, WarpId,
+    Money, NpcCapability, NpcId, ShopId, ThinSliceContent, TrainerId, WarpId,
 };
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -94,6 +94,8 @@ pub struct ActiveBattle {
     battle: BattleId,
     participant: CreatureId,
     encounter_roll: Option<u8>,
+    #[serde(default)]
+    trainer: Option<TrainerId>,
 }
 
 impl ActiveBattle {
@@ -107,6 +109,10 @@ impl ActiveBattle {
 
     pub const fn encounter_roll(&self) -> Option<u8> {
         self.encounter_roll
+    }
+
+    pub fn trainer(&self) -> Option<&TrainerId> {
+        self.trainer.as_ref()
     }
 }
 
@@ -123,6 +129,8 @@ pub struct GameState {
     active_battle: Option<ActiveBattle>,
     pending_encounter: Option<Position>,
     encounter_history: Vec<u8>,
+    #[serde(default)]
+    last_message: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,6 +187,7 @@ pub enum GameEvent {
     },
     TrainerBattleStarted {
         battle: BattleId,
+        trainer: TrainerId,
     },
     MerchantOpened {
         shop: ShopId,
@@ -211,6 +220,7 @@ pub enum GameError {
     UnknownItem(ItemId),
     UnknownShop(ShopId),
     UnknownBattle(BattleId),
+    UnknownTrainer(TrainerId),
     UnknownCreatureTemplate(CreatureTemplateId),
     EncounterUnavailable {
         map: MapId,
@@ -292,6 +302,7 @@ impl GameState {
             active_battle: None,
             pending_encounter: None,
             encounter_history: Vec::new(),
+            last_message: None,
         };
         state.validate(content)?;
         Ok(state)
@@ -339,6 +350,10 @@ impl GameState {
 
     pub fn encounter_history(&self) -> &[u8] {
         &self.encounter_history
+    }
+
+    pub fn last_message(&self) -> Option<&str> {
+        self.last_message.as_deref()
     }
 
     pub fn validate(&self, content: &ThinSliceContent) -> Result<(), GameError> {
@@ -435,6 +450,11 @@ impl GameState {
                     active.participant.clone(),
                 ));
             }
+            if let Some(trainer) = active.trainer()
+                && content.trainer(trainer).is_none()
+            {
+                return Err(GameError::UnknownTrainer(trainer.clone()));
+            }
         }
         if let Some(position) = self.pending_encounter
             && map.tile(position) != Some(world_domain::Tile::Grass)
@@ -520,14 +540,19 @@ impl GameState {
                 NpcCapability::Gift { claimed_flag, .. } => {
                     return Err(GameError::GiftAlreadyClaimed(claimed_flag.clone()));
                 }
-                NpcCapability::Trainer { battle } => {
+                NpcCapability::Trainer { trainer, battle } => {
                     if self.defeated_trainers.contains(&npc) {
                         return Err(GameError::TrainerAlreadyDefeated(npc));
                     }
+                    let trainer_definition = content
+                        .trainer(trainer)
+                        .ok_or_else(|| GameError::UnknownTrainer(trainer.clone()))?;
                     self.require_party()?;
-                    self.start_battle(content, battle.clone(), None)?;
+                    self.start_battle(content, battle.clone(), None, Some(trainer.clone()))?;
+                    self.last_message = Some(trainer_definition.script().to_owned());
                     return Ok(GameEvent::TrainerBattleStarted {
                         battle: battle.clone(),
+                        trainer: trainer.clone(),
                     });
                 }
                 NpcCapability::Merchant { shop } => {
@@ -610,7 +635,7 @@ impl GameState {
                 map: self.map.clone(),
             })?
             .clone();
-        self.start_battle(content, battle.clone(), Some(roll))?;
+        self.start_battle(content, battle.clone(), Some(roll), None)?;
         self.pending_encounter = None;
         self.encounter_history.push(roll);
         Ok(GameEvent::EncounterStarted { battle, roll })
@@ -621,12 +646,18 @@ impl GameState {
         content: &ThinSliceContent,
         battle: BattleId,
         encounter_roll: Option<u8>,
+        trainer: Option<TrainerId>,
     ) -> Result<(), GameError> {
         if self.active_battle.is_some() {
             return Err(GameError::BattleAlreadyActive);
         }
         if content.battle(&battle).is_none() {
             return Err(GameError::UnknownBattle(battle));
+        }
+        if let Some(trainer) = &trainer
+            && content.trainer(trainer).is_none()
+        {
+            return Err(GameError::UnknownTrainer(trainer.clone()));
         }
         let participant = self
             .party
@@ -638,6 +669,7 @@ impl GameState {
             battle,
             participant,
             encounter_roll,
+            trainer,
         });
         Ok(())
     }

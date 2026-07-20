@@ -19,6 +19,21 @@ class BuildProfile(StrEnum):
 class NativeOperation(StrEnum):
     BUILD_GAME_HOST = "build_game_host"
     RUN_GAME_HOST = "run_game_host"
+    BUILD_MAP_EDITOR = "build_map_editor"
+    RUN_MAP_EDITOR = "run_map_editor"
+    BUILD_TRAINER_EDITOR = "build_trainer_editor"
+    RUN_TRAINER_EDITOR = "run_trainer_editor"
+    BUILD_POKEMON_EDITOR = "build_pokemon_editor"
+    RUN_POKEMON_EDITOR = "run_pokemon_editor"
+
+    @property
+    def is_build(self) -> bool:
+        return self.value.startswith("build_")
+
+    @property
+    def target(self) -> str:
+        prefix = "build_" if self.is_build else "run_"
+        return self.value.removeprefix(prefix).replace("_", "-")
 
 
 class ProgressEventType(StrEnum):

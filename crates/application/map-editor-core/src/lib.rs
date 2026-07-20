@@ -3,12 +3,14 @@
 #![forbid(unsafe_code)]
 
 mod controller;
+mod editor_protocol;
 mod input;
 pub mod layout;
 mod model;
 mod virtual_command;
 
 pub use controller::{EditorController, EditorMapViewport, PointerButton};
+pub use editor_protocol::{MapEditorProtocolError, virtual_command_from_editor_call};
 pub use input::{key_intent, wheel_intent};
 pub use model::{EditorEffect, EditorIntent, EditorModel, EditorTool, tool_name};
 pub use virtual_command::{
