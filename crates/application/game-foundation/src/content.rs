@@ -194,6 +194,7 @@ pub struct BattleDefinition {
     experience_reward: u32,
     money_reward: Money,
     trainer: Option<NpcId>,
+    wild_opponent: Option<WildOpponentDefinition>,
 }
 
 impl BattleDefinition {
@@ -208,6 +209,22 @@ impl BattleDefinition {
             experience_reward,
             money_reward,
             trainer,
+            wild_opponent: None,
+        }
+    }
+
+    pub fn wild(
+        id: BattleId,
+        experience_reward: u32,
+        money_reward: Money,
+        opponent: WildOpponentDefinition,
+    ) -> Self {
+        Self {
+            id,
+            experience_reward,
+            money_reward,
+            trainer: None,
+            wild_opponent: Some(opponent),
         }
     }
 
@@ -225,6 +242,34 @@ impl BattleDefinition {
 
     pub fn trainer(&self) -> Option<&NpcId> {
         self.trainer.as_ref()
+    }
+
+    pub fn wild_opponent(&self) -> Option<&WildOpponentDefinition> {
+        self.wild_opponent.as_ref()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WildOpponentDefinition {
+    species: String,
+    level: u8,
+}
+
+impl WildOpponentDefinition {
+    pub fn new(species: impl Into<String>, level: u8) -> Result<Self, ContentError> {
+        let species = species.into();
+        if species.trim().is_empty() || !(1..=100).contains(&level) {
+            return Err(ContentError::InvalidWildOpponent { species, level });
+        }
+        Ok(Self { species, level })
+    }
+
+    pub fn species(&self) -> &str {
+        &self.species
+    }
+
+    pub const fn level(&self) -> u8 {
+        self.level
     }
 }
 
@@ -288,7 +333,56 @@ pub struct ThinSliceContent {
     inventory_capacity: u16,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContentDefinitions {
+    pub maps: Vec<MapDefinition>,
+    pub warps: Vec<WarpDefinition>,
+    pub npcs: Vec<NpcDefinition>,
+    pub items: Vec<ItemDefinition>,
+    pub shops: Vec<ShopDefinition>,
+    pub battles: Vec<BattleDefinition>,
+    pub creatures: Vec<CreatureTemplate>,
+    pub trainers: Vec<TrainerDefinition>,
+    pub encounters: Vec<(MapId, BattleId)>,
+    pub starting_map: MapId,
+    pub starting_money: Money,
+    pub inventory_capacity: u16,
+}
+
 impl ThinSliceContent {
+    pub fn from_definitions(definitions: ContentDefinitions) -> Result<Self, ContentError> {
+        let ContentDefinitions {
+            maps,
+            warps,
+            npcs,
+            items,
+            shops,
+            battles,
+            creatures,
+            trainers,
+            encounters,
+            starting_map,
+            starting_money,
+            inventory_capacity,
+        } = definitions;
+        let content = Self {
+            maps: map_by_id(maps)?,
+            warps: map_by_id(warps)?,
+            npcs: map_by_id(npcs)?,
+            items: map_by_id(items)?,
+            shops: map_by_id(shops)?,
+            battles: map_by_id(battles)?,
+            creatures: map_by_id(creatures)?,
+            trainers: map_by_id(trainers)?,
+            encounters: encounters.into_iter().collect(),
+            starting_map,
+            starting_money,
+            inventory_capacity,
+        };
+        content.validate_references()?;
+        Ok(content)
+    }
+
     pub fn standard() -> Result<Self, ContentError> {
         let town = MapId::new("starting-town")?;
         let route = MapId::new("verdant-route")?;
@@ -348,7 +442,12 @@ impl ThinSliceContent {
         )?])?;
         let trainers = map_by_id(TrainerCatalog::standard()?.trainers().to_vec())?;
         let battles = map_by_id(vec![
-            BattleDefinition::new(wild_battle.clone(), 20, Money::new(0), None),
+            BattleDefinition::wild(
+                wild_battle.clone(),
+                20,
+                Money::new(0),
+                WildOpponentDefinition::new("Torchic", 3)?,
+            ),
             BattleDefinition::new(
                 trainer_battle.clone(),
                 45,
@@ -438,8 +537,17 @@ impl ThinSliceContent {
     pub fn creature(&self, id: &CreatureTemplateId) -> Option<&CreatureTemplate> {
         self.creatures.get(id)
     }
+    pub fn creatures(&self) -> impl Iterator<Item = &CreatureTemplate> {
+        self.creatures.values()
+    }
     pub fn trainer(&self, id: &TrainerId) -> Option<&TrainerDefinition> {
         self.trainers.get(id)
+    }
+    pub fn trainers(&self) -> impl Iterator<Item = &TrainerDefinition> {
+        self.trainers.values()
+    }
+    pub fn battles(&self) -> impl Iterator<Item = &BattleDefinition> {
+        self.battles.values()
     }
     pub fn encounter_battle(&self, map: &MapId) -> Option<&BattleId> {
         self.encounters.get(map)
@@ -471,7 +579,136 @@ impl ThinSliceContent {
             }
         }
         self.trainers = trainers;
+        self.validate_references()?;
         Ok(self)
+    }
+
+    fn validate_references(&self) -> Result<(), ContentError> {
+        if self.maps.is_empty() {
+            return Err(ContentError::EmptyMaps);
+        }
+        if !self.maps.contains_key(&self.starting_map) {
+            return Err(ContentError::MissingStartingMap(self.starting_map.clone()));
+        }
+        if self.inventory_capacity == 0 {
+            return Err(ContentError::ZeroInventoryCapacity);
+        }
+        for warp in self.warps.values() {
+            let Some(destination_map) = self.maps.get(warp.to_map()) else {
+                return Err(ContentError::MissingMapReference {
+                    owner: warp.id().as_str().to_owned(),
+                    map: warp.to_map().clone(),
+                });
+            };
+            if !self.maps.contains_key(warp.from_map()) {
+                return Err(ContentError::MissingMapReference {
+                    owner: warp.id().as_str().to_owned(),
+                    map: warp.from_map().clone(),
+                });
+            }
+            if !destination_map
+                .tile(warp.destination())
+                .is_some_and(Tile::is_walkable)
+            {
+                return Err(ContentError::InvalidWarpDestination {
+                    warp: warp.id().clone(),
+                    map: warp.to_map().clone(),
+                    destination: warp.destination(),
+                });
+            }
+        }
+        for npc in self.npcs.values() {
+            let actor = npc.actor();
+            let Some(map) = self.maps.get(actor.map()) else {
+                return Err(ContentError::MissingMapReference {
+                    owner: actor.id().as_str().to_owned(),
+                    map: actor.map().clone(),
+                });
+            };
+            if !map.tile(actor.position()).is_some_and(Tile::is_walkable) {
+                return Err(ContentError::InvalidNpcPosition {
+                    npc: actor.id().clone(),
+                    map: actor.map().clone(),
+                    position: actor.position(),
+                });
+            }
+            for capability in npc.capabilities() {
+                match capability {
+                    NpcCapability::Gift { creature, item, .. } => {
+                        if !self.creatures.contains_key(creature) {
+                            return Err(ContentError::MissingContentReference {
+                                owner: actor.id().as_str().to_owned(),
+                                reference: creature.as_str().to_owned(),
+                            });
+                        }
+                        if !self.items.contains_key(item) {
+                            return Err(ContentError::MissingContentReference {
+                                owner: actor.id().as_str().to_owned(),
+                                reference: item.as_str().to_owned(),
+                            });
+                        }
+                    }
+                    NpcCapability::Trainer { trainer, battle } => {
+                        if !self.trainers.contains_key(trainer) {
+                            return Err(ContentError::MissingTrainerDefinition {
+                                npc: actor.id().clone(),
+                                trainer: trainer.clone(),
+                            });
+                        }
+                        if !self.battles.contains_key(battle) {
+                            return Err(ContentError::MissingContentReference {
+                                owner: actor.id().as_str().to_owned(),
+                                reference: battle.as_str().to_owned(),
+                            });
+                        }
+                    }
+                    NpcCapability::Merchant { shop } => {
+                        if !self.shops.contains_key(shop) {
+                            return Err(ContentError::MissingContentReference {
+                                owner: actor.id().as_str().to_owned(),
+                                reference: shop.as_str().to_owned(),
+                            });
+                        }
+                    }
+                    NpcCapability::Guide => {}
+                }
+            }
+        }
+        for shop in self.shops.values() {
+            for listing in shop.listings.values() {
+                if !self.items.contains_key(listing.item()) {
+                    return Err(ContentError::MissingContentReference {
+                        owner: shop.id().as_str().to_owned(),
+                        reference: listing.item().as_str().to_owned(),
+                    });
+                }
+            }
+        }
+        for battle in self.battles.values() {
+            if let Some(trainer) = battle.trainer()
+                && !self.npcs.contains_key(trainer)
+            {
+                return Err(ContentError::MissingContentReference {
+                    owner: battle.id().as_str().to_owned(),
+                    reference: trainer.as_str().to_owned(),
+                });
+            }
+        }
+        for (map, battle) in &self.encounters {
+            if !self.maps.contains_key(map) {
+                return Err(ContentError::MissingMapReference {
+                    owner: battle.as_str().to_owned(),
+                    map: map.clone(),
+                });
+            }
+            if !self.battles.contains_key(battle) {
+                return Err(ContentError::MissingContentReference {
+                    owner: map.as_str().to_owned(),
+                    reference: battle.as_str().to_owned(),
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -551,10 +788,45 @@ pub enum ContentError {
     Trainer(TrainerError),
     World(WorldError),
     DuplicateContentId,
-    DuplicateShopListing { shop: ShopId },
-    InvalidMapSpawn { map: MapId, spawn: Position },
-    InvalidCreatureTemplate { id: CreatureTemplateId },
-    MissingTrainerDefinition { npc: NpcId, trainer: TrainerId },
+    EmptyMaps,
+    MissingStartingMap(MapId),
+    ZeroInventoryCapacity,
+    MissingMapReference {
+        owner: String,
+        map: MapId,
+    },
+    InvalidWarpDestination {
+        warp: WarpId,
+        map: MapId,
+        destination: Position,
+    },
+    InvalidNpcPosition {
+        npc: NpcId,
+        map: MapId,
+        position: Position,
+    },
+    MissingContentReference {
+        owner: String,
+        reference: String,
+    },
+    DuplicateShopListing {
+        shop: ShopId,
+    },
+    InvalidMapSpawn {
+        map: MapId,
+        spawn: Position,
+    },
+    InvalidCreatureTemplate {
+        id: CreatureTemplateId,
+    },
+    InvalidWildOpponent {
+        species: String,
+        level: u8,
+    },
+    MissingTrainerDefinition {
+        npc: NpcId,
+        trainer: TrainerId,
+    },
 }
 
 impl From<crate::GameIdError> for ContentError {

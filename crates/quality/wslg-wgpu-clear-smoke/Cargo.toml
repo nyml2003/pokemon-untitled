@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+log = "0.4.28"
 pollster = "0.4.0"
 wgpu = "30.0.0"
 winit = "0.30.13"

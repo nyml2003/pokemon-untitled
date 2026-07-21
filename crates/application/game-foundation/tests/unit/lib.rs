@@ -1,6 +1,9 @@
 use crate::{
-    BattleOutcome, GameCommand, GameError, GameState, ItemId, Money, NpcId, SaveEnvelope,
-    ThinSliceContent, TrainerCatalog, TrainerEditCommand, TrainerId, TrainerPokemon, WarpId,
+    BattleId, BattleOutcome, BattleResolution, ContentPackage, ContentPackageDocument,
+    ContentPackageError, ContentPackageId, ContentPackageManifest, EMBEDDED_GEN3_DATA_REFERENCE,
+    GameCommand, GameError, GameState, ItemId, LEGACY_GEN3_RULESET_REFERENCE, Money, NpcId,
+    SaveEnvelope, ThinSliceContent, TrainerCatalog, TrainerEditCommand, TrainerId, TrainerPokemon,
+    WarpId,
 };
 
 fn apply(
@@ -171,6 +174,60 @@ fn rejected_command_does_not_mutate_state() -> Result<(), String> {
 }
 
 #[test]
+fn rejected_battle_resolution_preserves_the_active_battle_and_player_state() -> Result<(), String> {
+    let content = ThinSliceContent::standard().map_err(|error| format!("content: {error:?}"))?;
+    let state = GameState::new(&content).map_err(|error| format!("state: {error:?}"))?;
+    let state = apply(
+        state,
+        &content,
+        GameCommand::Move {
+            direction: crate::Direction::Up,
+        },
+    )?;
+    let state = apply(
+        state,
+        &content,
+        GameCommand::Interact {
+            npc: npc("professor")?,
+        },
+    )?;
+    let state = apply(
+        state,
+        &content,
+        GameCommand::Warp {
+            warp: warp("town-to-route")?,
+        },
+    )?;
+    let state = apply(
+        state,
+        &content,
+        GameCommand::Move {
+            direction: crate::Direction::Right,
+        },
+    )?;
+    let state = apply(state, &content, GameCommand::Encounter { roll: 7 })?;
+    let participant = state
+        .active_battle()
+        .map(|active| active.participant().clone())
+        .ok_or_else(|| String::from("missing active battle"))?;
+    let before = state.clone();
+    let (after, result) = state.apply_battle_resolution(
+        &content,
+        BattleResolution::new(
+            BattleId::new("route-trainer-battle")
+                .map_err(|error| format!("battle id: {error:?}"))?,
+            participant,
+            BattleOutcome::Victory,
+            28,
+            24,
+        ),
+    );
+    assert!(matches!(result, Err(GameError::BattleMismatch { .. })));
+    assert_eq!(after, before);
+    Ok(())
+}
+
+#[test]
 fn trainer_cannot_be_completed_twice() -> Result<(), String> {
     let content = ThinSliceContent::standard().map_err(|error| format!("content: {error:?}"))?;
     let trainer = npc("route-trainer")?;
@@ -293,5 +350,58 @@ fn trainer_catalog_edits_name_pokemon_and_script_transactionally() -> Result<(),
 
     let result = catalog.transition(TrainerEditCommand::RemovePokemon { trainer, slot: 8 });
     assert!(result.is_err());
+    Ok(())
+}
+
+#[test]
+fn content_package_binds_static_content_to_a_versioned_manifest() -> Result<(), String> {
+    let package = ContentPackage::standard().map_err(|error| format!("package: {error:?}"))?;
+    assert_eq!(package.manifest().storage_key(), "starter-region@1");
+    assert_eq!(
+        package.manifest().content_version(),
+        package.content().content_version()
+    );
+
+    let invalid_revision = ContentPackageManifest::new(
+        ContentPackageId::new("alternate").map_err(|error| format!("id: {error:?}"))?,
+        0,
+        package.content().content_version(),
+        EMBEDDED_GEN3_DATA_REFERENCE,
+        LEGACY_GEN3_RULESET_REFERENCE,
+    );
+    assert!(matches!(
+        invalid_revision,
+        Err(ContentPackageError::InvalidRevision(0))
+    ));
+
+    let mismatched_manifest = ContentPackageManifest::new(
+        ContentPackageId::new("alternate").map_err(|error| format!("id: {error:?}"))?,
+        1,
+        "another-content-version",
+        EMBEDDED_GEN3_DATA_REFERENCE,
+        LEGACY_GEN3_RULESET_REFERENCE,
+    )
+    .map_err(|error| format!("manifest: {error:?}"))?;
+    let mismatched_content =
+        ThinSliceContent::standard().map_err(|error| format!("content: {error:?}"))?;
+    assert!(matches!(
+        ContentPackage::new(mismatched_manifest, mismatched_content),
+        Err(ContentPackageError::ContentVersionMismatch { .. })
+    ));
+    Ok(())
+}
+
+#[test]
+fn starter_region_json_document_loads_the_same_static_content() -> Result<(), String> {
+    let document = ContentPackageDocument::from_json(include_str!(
+        "../../../../../assets/content/starter-region/content.json"
+    ))
+    .map_err(|error| format!("document: {error:?}"))?;
+    let package = document
+        .into_package()
+        .map_err(|error| format!("package: {error:?}"))?;
+    let standard = ThinSliceContent::standard().map_err(|error| format!("standard: {error:?}"))?;
+    assert_eq!(package.manifest().storage_key(), "starter-region@1");
+    assert_eq!(package.content(), &standard);
     Ok(())
 }

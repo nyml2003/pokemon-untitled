@@ -5,7 +5,7 @@ use std::{collections::BTreeSet, error::Error, fs, mem, path::PathBuf, sync::Arc
 use assets::{default_project_path, load_assets, load_project};
 use game_native_target::{
     FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, WinitKeyEventSnapshot,
-    normalize_key_event,
+    instance_for_event_loop, normalize_key_event,
 };
 use map_editor_core::{
     EditorController, EditorEffect, EditorIntent, EditorModel, PointerButton, key_intent,
@@ -81,7 +81,9 @@ impl MapEditorApp {
             )?,
         );
         let size = pixel_size(window.inner_size());
-        let runtime = NativeTarget::new(window.clone(), size, &self.assets, CLEAR_COLOR)?;
+        let instance = instance_for_event_loop(event_loop);
+        let runtime =
+            NativeTarget::new(&instance, window.clone(), size, &self.assets, CLEAR_COLOR)?;
         self.viewport = editor_viewport(size);
         self.window = Some(window);
         self.runtime = Some(runtime);

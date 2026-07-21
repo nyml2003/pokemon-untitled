@@ -4,6 +4,9 @@ use world_application::{Direction, Position};
 
 use super::{GameCommand, GameError, GameScene, GameSession};
 
+mod battle_contract;
+mod product_session;
+
 fn submit(game: GameSession, command: GameCommand) -> GameSession {
     let (game, result) = game.transition(command);
     result.unwrap();

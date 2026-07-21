@@ -8,6 +8,8 @@
 
 每条 `GameCommand` 在克隆的候选状态上执行。成功才返回候选状态，因此失败不会部分修改原状态。
 
+产品路径在真实 `BattleSession` 结束后构造 `BattleResolution`，再调用 `GameState::apply_battle_resolution`。该入口先验证 `active_battle` 的战斗 ID 与参战宝可梦，再验证 HP/PP，最后才更新队伍、奖励、训练师完成标记并清除活动战斗。任一验证失败时返回原 `GameState`；因此不能出现奖励已入账、活动战斗却仍存在的中间状态。`ResolveBattle { outcome, hp, pp }` 只兼容旧薄切片命令，内部复用同一结算规则，不是产品会话的正式输入。
+
 `Inventory` 维护格子容量和按物品定义计算的堆叠上限；`Money` 对余额不足和溢出返回显式错误。购买在同一候选状态中先计算价格、扣款和入包，因此外部可见的失败仍保持原状态。
 
-`SaveEnvelope` 包含格式版本、内容版本、状态和基于规范 JSON 的完整性校验。读写两侧均调用 `GameState::validate`，拒绝未知内容 ID、非法 HP/PP、非法背包条目、未知 flag 和不合法训练师完成状态。序列化不访问文件系统，文件读写由 runtime 入口负责。
+`ContentPackageDocument` 把 JSON 中的地图、warp、NPC capability、物品、商店、战斗、训练师、遭遇和起始状态转换为 `ContentDefinitions`。转换会验证格子尺寸、出生点、地图/物品/训练师/战斗引用与 NPC 位置，成功后才创建 `ThinSliceContent` 和 `ContentPackage`；JSON 读取本身由 runtime 负责。`SaveEnvelope` 包含格式版本、内容版本、可选规则/内容包引用、状态和基于规范 JSON 的完整性校验。读写两侧均调用 `GameState::validate`，拒绝未知内容 ID、非法 HP/PP、非法背包条目、未知 flag 和不合法训练师完成状态。基础保存可不使用这些引用；`ProductSession` 写入并在恢复时验证它们。序列化不访问文件系统，文件读写由 runtime 入口负责。

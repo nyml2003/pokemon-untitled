@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/domain/battle/battle-domain",
+    "crates/domain/battle/battle-ruleset",
     "crates/domain/data/game-data",
     "crates/domain/map/map-project",
     "crates/domain/map/map-tile-semantics",
@@ -67,6 +68,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 battle-application = { path = "crates/application/battle-application" }
 battle-domain = { path = "crates/domain/battle/battle-domain" }
+battle-ruleset = { path = "crates/domain/battle/battle-ruleset" }
 battle-session = { path = "crates/application/battle-session" }
 editor-application = { path = "crates/application/editor-application" }
 game-foundation = { path = "crates/application/game-foundation" }

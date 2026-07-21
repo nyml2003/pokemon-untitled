@@ -11,15 +11,21 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
+use battle_application::Action;
 use game_data::{CurrentDataSet, PokedexData};
-use game_foundation::{GameState as FoundationState, ThinSliceContent};
+use game_foundation::{
+    ContentPackage, ContentPackageDocument, GameCommand as FoundationCommand, ItemId, SaveEnvelope,
+    ThinSliceContent,
+};
 use game_native_target::{
     FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, WinitCommittedTextSnapshot,
-    WinitKeyEventSnapshot, normalize_committed_text, normalize_key_event,
+    WinitKeyEventSnapshot, instance_for_event_loop, normalize_committed_text, normalize_key_event,
 };
 use game_ramus_adapter::{GameRamusRouter, RoutedIntent};
 use game_scene_view::{SceneFrame, SceneViewInput, game_viewport, project_scene};
-use game_session::{GameCommand, GameError, GameEvents, GameScene, GameSession};
+use game_session::{
+    GameCommand, GameError, GameEvents, GameScene, GameSession, ProductCommand, ProductSession,
+};
 use game_ui::{
     GameConsole, PokedexAction, PresentationAction, PresentationState, PresentationUpdate,
 };
@@ -48,8 +54,8 @@ const FOUNDATION_SAVE_PATH: &str = "target/foundation-page.save.json";
 
 struct CreatureGameApp {
     game: Option<GameSession>,
+    product: Option<ProductSession>,
     foundation_content: ThinSliceContent,
-    foundation_state: FoundationState,
     foundation_router: GameRamusRouter,
     foundation_page: Option<FoundationPage>,
     pokedex: PokedexData,
@@ -71,12 +77,10 @@ struct CreatureGameApp {
 
 impl CreatureGameApp {
     fn new() -> Result<Self, Box<dyn Error>> {
-        let trainer_catalog = trainer_content::load_trainer_catalog()?;
-        let foundation_content = ThinSliceContent::standard()
-            .and_then(|content| content.with_trainer_catalog(trainer_catalog))
-            .map_err(|error| std::io::Error::other(format!("foundation content: {error:?}")))?;
-        let foundation_state = FoundationState::new(&foundation_content)
-            .map_err(|error| std::io::Error::other(format!("foundation state: {error:?}")))?;
+        let package = load_product_content_package()?;
+        let foundation_content = package.content().clone();
+        let product = ProductSession::from_package(CurrentDataSet::embedded()?, package)
+            .map_err(|error| std::io::Error::other(format!("product session: {error:?}")))?;
         let foundation_router = GameRamusRouter::new().map_err(|error| {
             std::io::Error::other(format!("foundation Ramus router: {error:?}"))
         })?;
@@ -101,11 +105,12 @@ impl CreatureGameApp {
         )?;
         let now = Instant::now();
         Ok(Self {
-            game: Some(game),
+            // 旧演示会话只用于启动期资源清单，不能与产品会话并存为运行中业务状态。
+            game: None,
+            product: Some(product),
             foundation_content,
-            foundation_state,
             foundation_router,
-            foundation_page: None,
+            foundation_page: Some(FoundationPage::Journey),
             pokedex,
             presentation: PresentationState::default(),
             map_project: loaded_map.project,
@@ -128,6 +133,78 @@ impl CreatureGameApp {
         self.game.as_ref()
     }
 
+    fn product(&self) -> Option<&ProductSession> {
+        self.product.as_ref()
+    }
+
+    fn submit_product(&mut self, command: ProductCommand) -> Result<(), String> {
+        let product = self
+            .product
+            .take()
+            .ok_or_else(|| String::from("product session is unavailable"))?;
+        let (product, result) = product.transition(command);
+        self.product = Some(product);
+        result
+            .map(|_| ())
+            .map_err(|error| format!("product command rejected: {error:?}"))
+    }
+
+    fn advance_product_battle(&mut self) {
+        let command = {
+            let Some(product) = self.product() else {
+                eprintln!("product battle rejected: product session is unavailable");
+                return;
+            };
+            let snapshot = product.snapshot();
+            let Some(battle) = snapshot.battle() else {
+                eprintln!("product battle rejected: no active battle");
+                return;
+            };
+            if battle.is_finished() {
+                ProductCommand::LeaveFinishedBattle
+            } else {
+                let actions = product.legal_player_actions();
+                if actions.is_empty() {
+                    ProductCommand::AdvanceBattlePlayback
+                } else {
+                    let Some(action) = actions
+                        .iter()
+                        .copied()
+                        .find(|action| matches!(action, Action::UseMove(_)))
+                        .or_else(|| actions.first().copied())
+                    else {
+                        eprintln!("product battle rejected: no legal action");
+                        return;
+                    };
+                    ProductCommand::SubmitBattleAction(action)
+                }
+            }
+        };
+        if let Err(error) = self.submit_product(command) {
+            eprintln!("{error}");
+        }
+    }
+
+    fn save_product(&mut self) -> Result<(), String> {
+        let product = self
+            .product()
+            .ok_or_else(|| String::from("product session is unavailable"))?;
+        let save = product
+            .save()
+            .map_err(|error| format!("product save: {error:?}"))?;
+        let bytes = save
+            .to_json()
+            .map_err(|error| format!("save encode: {error:?}"))?;
+        let loaded = SaveEnvelope::from_json(&self.foundation_content, &bytes)
+            .map_err(|error| format!("save reload: {error:?}"))?;
+        let data = CurrentDataSet::embedded().map_err(|error| format!("data reload: {error:?}"))?;
+        let product = ProductSession::from_save(data, self.foundation_content.clone(), loaded)
+            .map_err(|error| format!("product reload: {error:?}"))?;
+        write_foundation_save(&bytes)?;
+        self.product = Some(product);
+        Ok(())
+    }
+
     fn submit_game(&mut self, command: GameCommand) -> Result<GameEvents, GameError> {
         let game = self.game.take().ok_or(GameError::BattleStateMissing)?;
         let (game, result) = game.transition(command);
@@ -144,7 +221,9 @@ impl CreatureGameApp {
             )?,
         );
         let size = pixel_size(window.inner_size());
-        let runtime = NativeTarget::new(window.clone(), size, &self.assets, CLEAR_COLOR)?;
+        let instance = instance_for_event_loop(event_loop);
+        let runtime =
+            NativeTarget::new(&instance, window.clone(), size, &self.assets, CLEAR_COLOR)?;
         window.set_ime_allowed(false);
         window.request_redraw();
         self.window = Some(window);
@@ -159,15 +238,19 @@ impl CreatureGameApp {
         };
         let viewport = game_viewport(surface_size);
         if let Some(page) = self.foundation_page {
-            let tree =
-                match project_foundation(&self.foundation_content, &self.foundation_state, page) {
-                    Ok(tree) => tree,
-                    Err(error) => {
-                        eprintln!("foundation page tree construction failed: {error}");
-                        event_loop.exit();
-                        return;
-                    }
-                };
+            let Some(product) = self.product() else {
+                event_loop.exit();
+                return;
+            };
+            let snapshot = product.snapshot();
+            let tree = match project_foundation(&self.foundation_content, snapshot.state(), page) {
+                Ok(tree) => tree,
+                Err(error) => {
+                    eprintln!("foundation page tree construction failed: {error}");
+                    event_loop.exit();
+                    return;
+                }
+            };
             let frame = match tree.resolve(UiSize::new(
                 viewport.target_size.width,
                 viewport.target_size.height,
@@ -350,11 +433,7 @@ impl CreatureGameApp {
         if key.phase == KeyPhase::Press
             && matches!(&key.logical, LogicalKey::Character(value) if value.eq_ignore_ascii_case("f"))
         {
-            self.foundation_page = if self.foundation_page.is_some() {
-                None
-            } else {
-                Some(FoundationPage::Journey)
-            };
+            self.foundation_page = Some(FoundationPage::Journey);
             self.request_redraw();
             return;
         }
@@ -453,7 +532,7 @@ impl CreatureGameApp {
     fn dispatch_foundation_action(&mut self, action: FoundationPageAction) {
         match action {
             FoundationPageAction::SelectPage(page) => self.foundation_page = Some(page),
-            FoundationPageAction::Close => self.foundation_page = None,
+            FoundationPageAction::Close => self.foundation_page = Some(FoundationPage::Journey),
             FoundationPageAction::Move(direction) => {
                 self.route_foundation_source(&format!(
                     "/game/world move direction={}",
@@ -461,34 +540,27 @@ impl CreatureGameApp {
                 ));
             }
             FoundationPageAction::Interact => {
-                if let Some(npc) = self.foundation_npc_in_front() {
-                    self.route_foundation_source(&format!("/game/npc interact npc={npc}"));
-                } else {
-                    eprintln!("foundation interaction rejected: no NPC in front of the player");
+                if let Err(error) = self.submit_product(ProductCommand::InteractFront) {
+                    eprintln!("{error}");
                 }
             }
             FoundationPageAction::Encounter => {
                 self.route_foundation_source("/game/world encounter roll=7");
             }
-            FoundationPageAction::ResolveBattle => {
-                let Some(creature) = self.foundation_state.party().first() else {
-                    eprintln!("foundation battle resolution rejected: party is empty");
-                    self.request_redraw();
-                    return;
-                };
-                let hp = creature.hp().saturating_sub(1).max(1);
-                let pp = creature.pp().saturating_sub(1);
-                self.route_foundation_source(&format!(
-                    "/game/battle resolve outcome=victory hp={hp} pp={pp}"
-                ));
-            }
+            FoundationPageAction::ResolveBattle => self.advance_product_battle(),
             FoundationPageAction::BuyPotion => {
-                if let Some(npc) = self.foundation_npc_in_front() {
-                    self.route_foundation_source(&format!(
-                        "/game/shop buy npc={npc} item=potion quantity=1"
-                    ));
-                } else {
-                    eprintln!("foundation purchase rejected: no merchant in front of the player");
+                let item = match ItemId::new("potion") {
+                    Ok(item) => item,
+                    Err(error) => {
+                        eprintln!("foundation purchase rejected: {error:?}");
+                        self.request_redraw();
+                        return;
+                    }
+                };
+                if let Err(error) =
+                    self.submit_product(ProductCommand::BuyFromFront { item, quantity: 1 })
+                {
+                    eprintln!("{error}");
                 }
             }
             FoundationPageAction::Save => self.route_foundation_source("/game/save save"),
@@ -509,61 +581,26 @@ impl CreatureGameApp {
         };
         for intent in intents {
             match intent {
-                RoutedIntent::Command(command) => {
-                    let (state, result) = self
-                        .foundation_state
-                        .clone()
-                        .transition(&self.foundation_content, command);
-                    match result {
-                        Ok(_) => self.foundation_state = state,
-                        Err(error) => {
-                            eprintln!("foundation command rejected: {error:?}");
+                RoutedIntent::Command(command) => match product_command(command) {
+                    Ok(command) => {
+                        if let Err(error) = self.submit_product(command) {
+                            eprintln!("{error}");
                             return;
                         }
                     }
-                }
-                RoutedIntent::Save => match thin_slice::save_and_reload(
-                    &self.foundation_content,
-                    self.foundation_state.clone(),
-                    std::path::Path::new(FOUNDATION_SAVE_PATH),
-                ) {
-                    Ok(state) => self.foundation_state = state,
                     Err(error) => {
-                        eprintln!("foundation save rejected: {error}");
+                        eprintln!("foundation command rejected: {error}");
                         return;
                     }
                 },
-            }
-        }
-    }
-
-    fn foundation_npc_in_front(&self) -> Option<String> {
-        let position = self.foundation_state.position();
-        let facing = self.foundation_state.facing();
-        self.foundation_content
-            .npcs_on_map(self.foundation_state.map())
-            .find(|npc| {
-                let npc_position = npc.actor().position();
-                match facing {
-                    game_foundation::Direction::Up => {
-                        npc_position.x() == position.x()
-                            && npc_position.y().checked_add(1) == Some(position.y())
-                    }
-                    game_foundation::Direction::Down => {
-                        npc_position.x() == position.x()
-                            && position.y().checked_add(1) == Some(npc_position.y())
-                    }
-                    game_foundation::Direction::Left => {
-                        npc_position.y() == position.y()
-                            && npc_position.x().checked_add(1) == Some(position.x())
-                    }
-                    game_foundation::Direction::Right => {
-                        npc_position.y() == position.y()
-                            && position.x().checked_add(1) == Some(npc_position.x())
+                RoutedIntent::Save => {
+                    if let Err(error) = self.save_product() {
+                        eprintln!("foundation save rejected: {error}");
+                        return;
                     }
                 }
-            })
-            .map(|npc| npc.actor().id().as_str().to_owned())
+            }
+        }
     }
 
     fn apply_presentation_update(&mut self, update: PresentationUpdate) {
@@ -630,7 +667,8 @@ impl CreatureGameApp {
     }
 
     fn world_clock_is_active(&self) -> bool {
-        !self.presentation.is_console_open()
+        self.foundation_page.is_none()
+            && !self.presentation.is_console_open()
             && self
                 .game()
                 .is_some_and(|game| game.snapshot().scene() == GameScene::World)
@@ -743,6 +781,10 @@ impl ApplicationHandler for CreatureGameApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        if self.foundation_page.is_some() {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            return;
+        }
         let now = Instant::now();
         self.advance_presentation(now);
         self.advance_world_clock(now);
@@ -774,6 +816,62 @@ fn random_roster_seed() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
     (elapsed.as_nanos() as u64) ^ u64::from(std::process::id()).rotate_left(17)
+}
+
+fn load_product_content_package() -> Result<ContentPackage, Box<dyn Error>> {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../../assets/content/starter-region/content.json");
+    let json = std::fs::read_to_string(&path)?;
+    let document = ContentPackageDocument::from_json(&json).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("content package {}: {error:?}", path.display()),
+        )
+    })?;
+    document.into_package().map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("content package {}: {error:?}", path.display()),
+        )
+        .into()
+    })
+}
+
+fn product_command(command: FoundationCommand) -> Result<ProductCommand, &'static str> {
+    match command {
+        FoundationCommand::NewGame => Ok(ProductCommand::NewGame),
+        FoundationCommand::Interact { npc } => Ok(ProductCommand::Interact(npc)),
+        FoundationCommand::Move { direction } => Ok(ProductCommand::Move(direction)),
+        FoundationCommand::Warp { warp } => Ok(ProductCommand::Warp(warp)),
+        FoundationCommand::Encounter { roll } => Ok(ProductCommand::BeginEncounter { roll }),
+        FoundationCommand::Buy {
+            npc,
+            item,
+            quantity,
+        } => Ok(ProductCommand::Buy {
+            npc,
+            item,
+            quantity,
+        }),
+        FoundationCommand::ResolveBattle { .. } => {
+            Err("summary battle resolution is unavailable in the product session")
+        }
+    }
+}
+
+fn write_foundation_save(bytes: &[u8]) -> Result<(), String> {
+    let save_path = std::path::Path::new(FOUNDATION_SAVE_PATH);
+    let parent = save_path
+        .parent()
+        .ok_or_else(|| String::from("save path has no parent directory"))?;
+    std::fs::create_dir_all(parent).map_err(|error| format!("save directory: {error}"))?;
+    let temporary = parent.join(format!("foundation-page.{}.tmp", std::process::id()));
+    std::fs::write(&temporary, bytes).map_err(|error| format!("save write: {error}"))?;
+    if let Err(error) = std::fs::rename(&temporary, save_path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(format!("save replace: {error}"));
+    }
+    Ok(())
 }
 
 fn pixel_size(size: PhysicalSize<u32>) -> PixelSize {

@@ -4,7 +4,9 @@ use std::{collections::BTreeSet, error::Error, fs, path::PathBuf, sync::Arc};
 
 use game_assets::{AssetKey, DecodedImage};
 use game_fs_assets::{load_catalog, read_tile_sources};
-use game_native_target::{FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale};
+use game_native_target::{
+    FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, instance_for_event_loop,
+};
 use map_assets::build_tile_assets;
 use map_project::AtomicTileId;
 use map_render::AtomicTileCatalog;
@@ -107,7 +109,9 @@ impl TileEditorApp {
             )?,
         );
         let size = pixel_size(window.inner_size());
+        let instance = instance_for_event_loop(event_loop);
         self.runtime = Some(NativeTarget::new(
+            &instance,
             window.clone(),
             size,
             &self.assets,

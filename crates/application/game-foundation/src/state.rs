@@ -89,6 +89,53 @@ pub enum BattleOutcome {
     Defeat,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BattleResolution {
+    battle: BattleId,
+    participant: CreatureId,
+    outcome: BattleOutcome,
+    hp: u16,
+    pp: u8,
+}
+
+impl BattleResolution {
+    pub fn new(
+        battle: BattleId,
+        participant: CreatureId,
+        outcome: BattleOutcome,
+        hp: u16,
+        pp: u8,
+    ) -> Self {
+        Self {
+            battle,
+            participant,
+            outcome,
+            hp,
+            pp,
+        }
+    }
+
+    pub fn battle(&self) -> &BattleId {
+        &self.battle
+    }
+
+    pub fn participant(&self) -> &CreatureId {
+        &self.participant
+    }
+
+    pub const fn outcome(&self) -> BattleOutcome {
+        self.outcome
+    }
+
+    pub const fn hp(&self) -> u16 {
+        self.hp
+    }
+
+    pub const fn pp(&self) -> u8 {
+        self.pp
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ActiveBattle {
     battle: BattleId,
@@ -258,6 +305,14 @@ pub enum GameError {
     BattleAlreadyActive,
     EncounterPending,
     BattleMissing,
+    BattleMismatch {
+        expected: BattleId,
+        actual: BattleId,
+    },
+    BattleParticipantMismatch {
+        expected: CreatureId,
+        actual: CreatureId,
+    },
     InvalidEncounterRoll(u8),
     InvalidBattleState {
         hp: u16,
@@ -481,6 +536,19 @@ impl GameState {
         }
     }
 
+    pub fn apply_battle_resolution(
+        self,
+        content: &ThinSliceContent,
+        resolution: BattleResolution,
+    ) -> (Self, Result<GameEvent, GameError>) {
+        let mut candidate = self.clone();
+        let result = candidate.resolve_battle_resolution(content, resolution);
+        match result {
+            Ok(event) => (candidate, Ok(event)),
+            Err(error) => (self, Err(error)),
+        }
+    }
+
     fn apply(
         &mut self,
         content: &ThinSliceContent,
@@ -681,40 +749,92 @@ impl GameState {
         hp: u16,
         pp: u8,
     ) -> Result<GameEvent, GameError> {
-        let active = self.active_battle.take().ok_or(GameError::BattleMissing)?;
+        let active = self
+            .active_battle
+            .as_ref()
+            .ok_or(GameError::BattleMissing)?;
+        self.resolve_battle_resolution(
+            content,
+            BattleResolution::new(
+                active.battle.clone(),
+                active.participant.clone(),
+                outcome,
+                hp,
+                pp,
+            ),
+        )
+    }
+
+    fn resolve_battle_resolution(
+        &mut self,
+        content: &ThinSliceContent,
+        resolution: BattleResolution,
+    ) -> Result<GameEvent, GameError> {
+        let active = self
+            .active_battle
+            .as_ref()
+            .ok_or(GameError::BattleMissing)?;
+        if active.battle != resolution.battle {
+            return Err(GameError::BattleMismatch {
+                expected: active.battle.clone(),
+                actual: resolution.battle,
+            });
+        }
+        if active.participant != resolution.participant {
+            return Err(GameError::BattleParticipantMismatch {
+                expected: active.participant.clone(),
+                actual: resolution.participant,
+            });
+        }
+        let battle = active.battle.clone();
+        let participant_id = active.participant.clone();
         let definition = content
-            .battle(&active.battle)
-            .ok_or_else(|| GameError::UnknownBattle(active.battle.clone()))?;
+            .battle(&battle)
+            .ok_or_else(|| GameError::UnknownBattle(battle.clone()))?;
+        let participant_index = self
+            .party
+            .iter()
+            .position(|creature| creature.id() == &participant_id)
+            .ok_or(GameError::PartyRequired)?;
         let participant = self
             .party
-            .iter_mut()
-            .find(|creature| creature.id() == &active.participant)
+            .get(participant_index)
             .ok_or(GameError::PartyRequired)?;
         let template = content
             .creature(participant.template())
             .ok_or_else(|| GameError::UnknownCreatureTemplate(participant.template().clone()))?;
-        if hp > template.max_hp() || pp > template.max_pp() {
-            return Err(GameError::InvalidBattleState { hp, pp });
+        if resolution.hp > template.max_hp() || resolution.pp > template.max_pp() {
+            return Err(GameError::InvalidBattleState {
+                hp: resolution.hp,
+                pp: resolution.pp,
+            });
         }
-        let (experience, money) = match outcome {
+        let (experience, money) = match resolution.outcome {
             BattleOutcome::Victory => (definition.experience_reward(), definition.money_reward()),
             BattleOutcome::Defeat => (0, Money::new(0)),
         };
-        participant.hp = hp;
-        participant.pp = pp;
-        participant.experience = participant
+        let experience_total = participant
             .experience
             .checked_add(experience)
             .ok_or(GameError::ExperienceOverflow)?;
-        self.money = self.money.credit(money)?;
-        if outcome == BattleOutcome::Victory
+        let money_total = self.money.credit(money)?;
+        let participant = self
+            .party
+            .get_mut(participant_index)
+            .ok_or(GameError::PartyRequired)?;
+        participant.hp = resolution.hp;
+        participant.pp = resolution.pp;
+        participant.experience = experience_total;
+        self.money = money_total;
+        if resolution.outcome == BattleOutcome::Victory
             && let Some(trainer) = definition.trainer()
         {
             self.defeated_trainers.insert(trainer.clone());
         }
+        self.active_battle = None;
         Ok(GameEvent::BattleResolved {
-            battle: active.battle,
-            outcome,
+            battle,
+            outcome: resolution.outcome,
             experience,
             money,
         })

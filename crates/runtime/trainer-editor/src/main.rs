@@ -9,7 +9,9 @@ use editor_ramus_adapter::{EditorRamusRouter, RoutedEditorIntent};
 use editor_resource_adapter::EditorResourceRegistry;
 use game_assets::{AssetKey, DecodedImage};
 use game_foundation::{TrainerCatalog, TrainerEditCommand, TrainerPokemon};
-use game_native_target::{FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale};
+use game_native_target::{
+    FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, instance_for_event_loop,
+};
 use punctum_gpu::{PixelSize, Rgba8};
 use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiColor, UiContent, UiFrame,
@@ -104,7 +106,9 @@ impl App {
                     .with_inner_size(LogicalSize::new(960.0, 680.0)),
             )?,
         );
+        let instance = instance_for_event_loop(loop_);
         self.runtime = Some(NativeTarget::new(
+            &instance,
             window.clone(),
             pixel_size(window.inner_size()),
             &self.assets,
@@ -351,6 +355,14 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(s) => {
                 if let Some(r) = &mut self.runtime {
                     r.resize(pixel_size(s))
+                }
+                self.redraw_request()
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                if let Some(window) = &self.window
+                    && let Some(runtime) = &mut self.runtime
+                {
+                    runtime.resize(pixel_size(window.inner_size()));
                 }
                 self.redraw_request()
             }

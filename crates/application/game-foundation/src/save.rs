@@ -8,6 +8,10 @@ const SAVE_FORMAT_VERSION: u16 = 1;
 pub struct SaveEnvelope {
     format_version: u16,
     content_version: String,
+    #[serde(default)]
+    ruleset_reference: Option<String>,
+    #[serde(default)]
+    content_package_reference: Option<String>,
     checksum: u64,
     state: GameState,
 }
@@ -19,6 +23,8 @@ pub enum SaveError {
     UnsupportedFormat(u16),
     ContentMismatch { expected: String, actual: String },
     ChecksumMismatch,
+    EmptyRulesetReference,
+    EmptyContentPackageReference,
     Game(GameError),
 }
 
@@ -30,11 +36,56 @@ impl From<GameError> for SaveError {
 
 impl SaveEnvelope {
     pub fn from_state(content: &ThinSliceContent, state: GameState) -> Result<Self, SaveError> {
+        Self::from_state_with_optional_references(content, state, None, None)
+    }
+
+    pub fn from_state_with_ruleset(
+        content: &ThinSliceContent,
+        state: GameState,
+        ruleset_reference: impl Into<String>,
+    ) -> Result<Self, SaveError> {
+        let ruleset_reference = ruleset_reference.into();
+        if ruleset_reference.trim().is_empty() {
+            return Err(SaveError::EmptyRulesetReference);
+        }
+        Self::from_state_with_optional_references(content, state, Some(ruleset_reference), None)
+    }
+
+    pub fn from_state_with_references(
+        content: &ThinSliceContent,
+        state: GameState,
+        ruleset_reference: impl Into<String>,
+        content_package_reference: impl Into<String>,
+    ) -> Result<Self, SaveError> {
+        let ruleset_reference = ruleset_reference.into();
+        if ruleset_reference.trim().is_empty() {
+            return Err(SaveError::EmptyRulesetReference);
+        }
+        let content_package_reference = content_package_reference.into();
+        if content_package_reference.trim().is_empty() {
+            return Err(SaveError::EmptyContentPackageReference);
+        }
+        Self::from_state_with_optional_references(
+            content,
+            state,
+            Some(ruleset_reference),
+            Some(content_package_reference),
+        )
+    }
+
+    fn from_state_with_optional_references(
+        content: &ThinSliceContent,
+        state: GameState,
+        ruleset_reference: Option<String>,
+        content_package_reference: Option<String>,
+    ) -> Result<Self, SaveError> {
         state.validate(content)?;
         let checksum = checksum(&state)?;
         Ok(Self {
             format_version: SAVE_FORMAT_VERSION,
             content_version: content.content_version().into(),
+            ruleset_reference,
+            content_package_reference,
             checksum,
             state,
         })
@@ -62,6 +113,14 @@ impl SaveEnvelope {
     }
     pub fn state(&self) -> &GameState {
         &self.state
+    }
+
+    pub fn ruleset_reference(&self) -> Option<&str> {
+        self.ruleset_reference.as_deref()
+    }
+
+    pub fn content_package_reference(&self) -> Option<&str> {
+        self.content_package_reference.as_deref()
     }
 }
 

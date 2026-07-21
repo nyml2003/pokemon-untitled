@@ -16,8 +16,8 @@ pub use game_native_plan::{
     TextScale, text_bounds,
 };
 pub use punctum_wgpu::{
-    PresentOutcome, WinitCommittedTextSnapshot, WinitKeyEventSnapshot, normalize_committed_text,
-    normalize_key_event,
+    PresentOutcome, WinitCommittedTextSnapshot, WinitKeyEventSnapshot, instance_for_event_loop,
+    normalize_committed_text, normalize_key_event,
 };
 
 pub struct NativeTarget<'window> {
@@ -27,14 +27,14 @@ pub struct NativeTarget<'window> {
 
 impl<'window> NativeTarget<'window> {
     pub fn new(
+        instance: &wgpu::Instance,
         target: impl Into<wgpu::SurfaceTarget<'window>>,
         surface_size: PixelSize,
         assets: &NativeAssets,
         clear_color: Rgba8,
     ) -> Result<Self, NativeTargetError> {
-        let instance = wgpu::Instance::default();
         let runtime = pollster::block_on(GpuRuntime::new(
-            &instance,
+            instance,
             target,
             surface_size,
             assets.atlas(),

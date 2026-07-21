@@ -8,7 +8,9 @@ use editor_application::{EditorCall, EditorDocumentId, EditorKind, EditorOperati
 use editor_ramus_adapter::{EditorRamusRouter, RoutedEditorIntent};
 use editor_resource_adapter::EditorResourceRegistry;
 use game_assets::{AssetKey, DecodedImage};
-use game_native_target::{FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale};
+use game_native_target::{
+    FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, instance_for_event_loop,
+};
 use pokemon_editor_core::{
     PokemonCatalog, PokemonEditCommand, PokemonEditorCommand, PokemonEditorModel, PokemonId,
 };
@@ -93,7 +95,9 @@ impl App {
                     .with_inner_size(LogicalSize::new(900., 620.)),
             )?,
         );
+        let instance = instance_for_event_loop(l);
         self.runtime = Some(NativeTarget::new(
+            &instance,
             w.clone(),
             px(w.inner_size()),
             &self.assets,
@@ -271,6 +275,14 @@ impl ApplicationHandler for App {
             WindowEvent::Resized(s) => {
                 if let Some(r) = &mut self.runtime {
                     r.resize(px(s))
+                }
+                self.draw_request()
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                if let Some(window) = &self.window
+                    && let Some(runtime) = &mut self.runtime
+                {
+                    runtime.resize(px(window.inner_size()));
                 }
                 self.draw_request()
             }

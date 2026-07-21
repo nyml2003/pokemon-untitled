@@ -230,7 +230,7 @@ impl TrainerCatalog {
         Self::new(vec![TrainerDefinition::new(
             TrainerId::new("route-rival")?,
             "路线训练家 小遥",
-            vec![TrainerPokemon::new("Zigzagoon", 5)?],
+            vec![TrainerPokemon::new("Bulbasaur", 5)?],
             "前方是训练家的道路。准备好就来对战吧。",
         )?])
     }

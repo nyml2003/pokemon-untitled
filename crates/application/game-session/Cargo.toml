@@ -7,8 +7,10 @@ rust-version.workspace = true
 
 [dependencies]
 battle-application = { workspace = true }
+battle-ruleset = { workspace = true }
 battle-session = { workspace = true }
 game-data = { workspace = true }
+game-foundation = { workspace = true }
 world-application = { workspace = true }
 
 [lib]

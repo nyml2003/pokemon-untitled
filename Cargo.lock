@@ -229,6 +229,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "battle-ruleset"
+version = "0.0.0"
+dependencies = [
+ "battle-domain",
+ "game-data",
+]
+
+[[package]]
 name = "battle-session"
 version = "0.0.0"
 dependencies = [
@@ -1089,8 +1097,10 @@ name = "game-session"
 version = "0.0.0"
 dependencies = [
  "battle-application",
+ "battle-ruleset",
  "battle-session",
  "game-data",
+ "game-foundation",
  "world-application",
 ]
 
@@ -4150,6 +4160,7 @@ dependencies = [
 name = "wslg-wgpu-clear-smoke"
 version = "0.0.0"
 dependencies = [
+ "log",
  "pollster",
  "wgpu",
  "winit",

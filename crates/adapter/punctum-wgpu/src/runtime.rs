@@ -89,6 +89,7 @@ pub struct GpuRuntime<'window> {
     config: wgpu::SurfaceConfiguration,
     surface_size: PixelSize,
     configured: bool,
+    reconfigure_pending: bool,
     atlas_size: PixelSize,
     max_instances: u32,
     instance_buffer: wgpu::Buffer,
@@ -187,6 +188,7 @@ impl<'window> GpuRuntime<'window> {
             config,
             surface_size,
             configured,
+            reconfigure_pending: false,
             atlas_size: atlas.size(),
             max_instances,
             instance_buffer,
@@ -207,13 +209,14 @@ impl<'window> GpuRuntime<'window> {
         self.surface_size = size;
         if size.is_empty() {
             self.configured = false;
+            self.reconfigure_pending = false;
             return;
         }
 
         self.config.width = size.width;
         self.config.height = size.height;
-        self.surface.configure(&self.device, &self.config);
         self.configured = true;
+        self.reconfigure_pending = true;
     }
 
     pub fn present_surface(
@@ -298,6 +301,10 @@ impl<'window> GpuRuntime<'window> {
         }
         if !self.configured || self.surface_size.is_empty() {
             return Ok(PresentOutcome::SkippedMinimized);
+        }
+        if self.reconfigure_pending {
+            self.surface.configure(&self.device, &self.config);
+            self.reconfigure_pending = false;
         }
 
         match self.surface.get_current_texture() {

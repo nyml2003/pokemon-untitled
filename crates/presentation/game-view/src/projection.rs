@@ -512,7 +512,7 @@ fn foundation_journey(
             FoundationPageAction::Encounter,
         )?,
         foundation_action_button(
-            "结算",
+            "推进",
             "foundation-resolve",
             FoundationPageAction::ResolveBattle,
         )?,

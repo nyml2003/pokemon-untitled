@@ -2,6 +2,8 @@
 
 #![forbid(unsafe_code)]
 
+mod battle_contract;
+mod product_session;
 mod roster;
 
 use battle_application::{Action, BattleApplication, BattleError, BattleObservation, PokemonId};
@@ -13,6 +15,14 @@ use world_application::{
     Direction, WorldApplication, WorldApplicationError, WorldError, WorldEvent, WorldObservation,
 };
 
+pub use battle_contract::{
+    ActiveBattleContext, BattleContinuation, BattleContractError, BattleParticipantPatch,
+    BattleResultPatch, BattleSource, BattleStartRequest,
+};
+pub use product_session::{
+    ProductBattleSnapshot, ProductCommand, ProductError, ProductEvent, ProductEvents,
+    ProductSession, ProductSnapshot,
+};
 pub use roster::{DemoSpriteManifest, RosterError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

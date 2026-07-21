@@ -8,10 +8,14 @@ use battle_application::{
     StatProjectionError, TEAM_SIZE, Team, TrainingValues, ValidationError, Weather,
     WeatherAccuracyModifier, WeatherMoveModifier, calculate_gen3_stats,
 };
+use battle_ruleset::{BattleRuleset, RulesetError};
 use game_data::{
     CurrentDataSet, DamageClass as DataDamageClass, MoveId as DataMoveId, PokemonFormId,
     TypeId as DataTypeId,
 };
+use game_foundation::{BattleId, CreatureId, ThinSliceContent, TrainerId};
+
+use crate::{BattleSource, BattleStartRequest};
 
 const ROSTER_SIZE: usize = TEAM_SIZE * 2;
 const DEMO_LEVEL: u8 = 50;
@@ -37,6 +41,23 @@ pub enum RosterError {
     },
     MissingMovePower(DataMoveId),
     MissingMovePp(DataMoveId),
+    MissingPokemonSpecies(String),
+    MissingTrainer(TrainerId),
+    MissingWildOpponent(BattleId),
+    InvalidProductPartySize {
+        actual: usize,
+    },
+    UnsupportedTrainerRoster {
+        trainer: TrainerId,
+        actual: usize,
+    },
+    ProductParticipantNotFirst(CreatureId),
+    NoUsableProductMove {
+        pokemon: PokemonFormId,
+        level: u8,
+        required_pp: u8,
+    },
+    Ruleset(RulesetError),
     InvalidBattleModel(ValidationError),
     InvalidTraining(StatProjectionError),
 }
@@ -50,6 +71,12 @@ impl From<ValidationError> for RosterError {
 impl From<StatProjectionError> for RosterError {
     fn from(error: StatProjectionError) -> Self {
         Self::InvalidTraining(error)
+    }
+}
+
+impl From<RulesetError> for RosterError {
+    fn from(error: RulesetError) -> Self {
+        Self::Ruleset(error)
     }
 }
 
@@ -89,6 +116,102 @@ pub fn demo_teams(data: &CurrentDataSet, seed: u64) -> Result<(Team, Team), Rost
         build_team(data, "player", &members[..TEAM_SIZE])?,
         build_team(data, "rival", &members[TEAM_SIZE..])?,
     ))
+}
+
+pub(crate) fn product_teams(
+    data: &CurrentDataSet,
+    content: &ThinSliceContent,
+    ruleset: &BattleRuleset,
+    request: &BattleStartRequest,
+) -> Result<(Team, Team), RosterError> {
+    if request.player_party().len() != 1 {
+        return Err(RosterError::InvalidProductPartySize {
+            actual: request.player_party().len(),
+        });
+    }
+    let player = request
+        .player_party()
+        .first()
+        .ok_or(RosterError::InvalidProductPartySize { actual: 0 })?;
+    if player.id() != request.participant() {
+        return Err(RosterError::ProductParticipantNotFirst(
+            request.participant().clone(),
+        ));
+    }
+    let template = content
+        .creature(player.template())
+        .ok_or_else(|| RosterError::MissingPokemonSpecies(player.template().as_str().to_owned()))?;
+    let player_form = ruleset.resolve_default_form(data, template.species())?;
+    let builder = ProductRosterBuilder { data, ruleset };
+    let player_team = builder.team(
+        "product-player",
+        player_form,
+        PRODUCT_PLAYER_LEVEL,
+        u32::from(template.max_hp()),
+        u32::from(player.hp()),
+        Some(player.pp()),
+    )?;
+
+    let (opponent_species, opponent_level) = match request.source() {
+        BattleSource::Wild { .. } => {
+            let definition = content
+                .battle(request.battle())
+                .ok_or_else(|| RosterError::MissingWildOpponent(request.battle().clone()))?;
+            let opponent = definition
+                .wild_opponent()
+                .ok_or_else(|| RosterError::MissingWildOpponent(request.battle().clone()))?;
+            (opponent.species(), opponent.level())
+        }
+        BattleSource::Trainer { trainer, .. } => {
+            let definition = content
+                .trainer(trainer)
+                .ok_or_else(|| RosterError::MissingTrainer(trainer.clone()))?;
+            if definition.pokemon().len() != 1 {
+                return Err(RosterError::UnsupportedTrainerRoster {
+                    trainer: trainer.clone(),
+                    actual: definition.pokemon().len(),
+                });
+            }
+            let member = definition.pokemon().first().ok_or_else(|| {
+                RosterError::UnsupportedTrainerRoster {
+                    trainer: trainer.clone(),
+                    actual: 0,
+                }
+            })?;
+            (member.species(), member.level())
+        }
+    };
+    let opponent_form = ruleset.resolve_default_form(data, opponent_species)?;
+    let opponent_team = builder.team(
+        "product-opponent",
+        opponent_form,
+        opponent_level,
+        calculated_max_hp(data, opponent_form, opponent_level)?,
+        calculated_max_hp(data, opponent_form, opponent_level)?,
+        None,
+    )?;
+    Ok((player_team, opponent_team))
+}
+
+pub(crate) fn validate_product_content(
+    data: &CurrentDataSet,
+    content: &ThinSliceContent,
+    ruleset: &BattleRuleset,
+) -> Result<(), RosterError> {
+    for creature in content.creatures() {
+        ruleset.validate_member(data, creature.species(), PRODUCT_PLAYER_LEVEL)?;
+    }
+    for battle in content.battles() {
+        if let Some(opponent) = battle.wild_opponent() {
+            ruleset.validate_member(data, opponent.species(), opponent.level())?;
+        }
+    }
+    for trainer in content.trainers() {
+        for member in trainer.pokemon() {
+            ruleset.validate_member(data, member.species(), member.level())?;
+        }
+    }
+    Ok(())
 }
 
 pub fn sprite_manifest(
@@ -347,6 +470,16 @@ fn battle_ability(record: &game_data::AbilityRecord) -> Option<Ability> {
 fn battle_move(data: &CurrentDataSet, id: DataMoveId) -> Result<Move, RosterError> {
     let record = data.move_by_id(id).ok_or(RosterError::MissingMove(id))?;
     let pp = record.pp.ok_or(RosterError::MissingMovePp(id))?;
+    battle_move_with_pp(data, id, pp)
+}
+
+fn battle_move_with_pp(
+    data: &CurrentDataSet,
+    id: DataMoveId,
+    current_pp: u8,
+) -> Result<Move, RosterError> {
+    let record = data.move_by_id(id).ok_or(RosterError::MissingMove(id))?;
+    let pp = record.pp.ok_or(RosterError::MissingMovePp(id))?;
     let category = battle_move_category(record.damage_class);
     let effect = move_effect(record).unwrap_or(MoveEffect::None);
     let power = match category {
@@ -369,7 +502,7 @@ fn battle_move(data: &CurrentDataSet, id: DataMoveId) -> Result<Move, RosterErro
         power,
         accuracy,
         pp,
-        pp,
+        current_pp,
         record.priority,
         effect,
     )
@@ -534,6 +667,140 @@ fn battle_type(data: &CurrentDataSet, id: DataTypeId) -> Result<PokemonType, Ros
             identifier: identifier.to_owned(),
         }),
     }
+}
+
+const PRODUCT_PLAYER_LEVEL: u8 = 5;
+
+struct ProductRosterBuilder<'a> {
+    data: &'a CurrentDataSet,
+    ruleset: &'a BattleRuleset,
+}
+
+impl ProductRosterBuilder<'_> {
+    fn team(
+        &self,
+        prefix: &str,
+        form: PokemonFormId,
+        level: u8,
+        max_hp: u32,
+        current_hp: u32,
+        current_pp: Option<u8>,
+    ) -> Result<Team, RosterError> {
+        let mut members = Vec::with_capacity(TEAM_SIZE);
+        members.push(self.pokemon(prefix, form, level, max_hp, current_hp, current_pp)?);
+        for slot in 1..TEAM_SIZE {
+            members.push(self.pokemon(
+                &format!("{prefix}-reserve-{slot}"),
+                form,
+                level,
+                max_hp,
+                0,
+                Some(0),
+            )?);
+        }
+        Team::new(members).map_err(Into::into)
+    }
+
+    fn pokemon(
+        &self,
+        prefix: &str,
+        form: PokemonFormId,
+        level: u8,
+        max_hp: u32,
+        current_hp: u32,
+        current_pp: Option<u8>,
+    ) -> Result<Pokemon, RosterError> {
+        self.ruleset.validate_form(self.data, form)?;
+        let record = self
+            .data
+            .pokemon(form)
+            .ok_or(RosterError::MissingPokemon(form))?;
+        let primary = record
+            .types
+            .first()
+            .copied()
+            .ok_or(RosterError::MissingPokemon(form))?;
+        let primary_type = battle_type(self.data, primary)?;
+        let secondary_type = record
+            .types
+            .get(1)
+            .copied()
+            .map(|id| battle_type(self.data, id))
+            .transpose()?;
+        let candidate = self
+            .data
+            .learnset(form)
+            .into_iter()
+            .flatten()
+            .filter(|entry| self.data.can_learn_at_level(form, entry.move_id, level))
+            .find_map(|entry| {
+                let record = self.data.move_by_id(entry.move_id)?;
+                let maximum = record.pp?;
+                let current = current_pp.unwrap_or(maximum);
+                (maximum >= current
+                    && self
+                        .ruleset
+                        .validate_move(self.data, form, entry.move_id, level)
+                        .is_ok())
+                .then_some((entry.move_id, current))
+            })
+            .ok_or(RosterError::NoUsableProductMove {
+                pokemon: form,
+                level,
+                required_pp: current_pp.unwrap_or(0),
+            })?;
+        let moves = vec![battle_move_with_pp(self.data, candidate.0, candidate.1)?];
+        let calculated = calculate_gen3_stats(
+            StatBlock::new(
+                record.base_stats.hp,
+                record.base_stats.attack,
+                record.base_stats.defense,
+                record.base_stats.special_attack,
+                record.base_stats.special_defense,
+                record.base_stats.speed,
+            ),
+            level,
+            TrainingValues::perfect_untrained(),
+        )?;
+        let ability = self.ruleset.select_ability(self.data, form)?;
+        let id = PokemonId::new(format!("{prefix}-form-{}", form.0))?;
+        Pokemon::new_with_ability(
+            id,
+            &record.display_name.localized,
+            level,
+            primary_type,
+            secondary_type,
+            max_hp,
+            current_hp,
+            calculated.battle(),
+            moves,
+            ability,
+        )
+        .map_err(Into::into)
+    }
+}
+
+fn calculated_max_hp(
+    data: &CurrentDataSet,
+    form: PokemonFormId,
+    level: u8,
+) -> Result<u32, RosterError> {
+    let record = data
+        .pokemon(form)
+        .ok_or(RosterError::MissingPokemon(form))?;
+    Ok(calculate_gen3_stats(
+        StatBlock::new(
+            record.base_stats.hp,
+            record.base_stats.attack,
+            record.base_stats.defense,
+            record.base_stats.special_attack,
+            record.base_stats.special_defense,
+            record.base_stats.speed,
+        ),
+        level,
+        TrainingValues::perfect_untrained(),
+    )?
+    .max_hp())
 }
 
 struct RosterRng {

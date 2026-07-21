@@ -17,6 +17,24 @@ const CLEAR_COLOR: wgpu::Color = wgpu::Color {
     a: 1.0,
 };
 
+struct StderrLogger;
+
+impl log::Log for StderrLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            eprintln!("{} {}: {}", record.level(), record.target(), record.args());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: StderrLogger = StderrLogger;
+
 enum PresentOutcome {
     Presented,
     Reconfigure,
@@ -29,11 +47,15 @@ struct ClearTarget<'window> {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    configured: bool,
+    reconfigure_pending: bool,
 }
 
 impl<'window> ClearTarget<'window> {
-    async fn new(window: impl Into<wgpu::SurfaceTarget<'window>>) -> Result<Self, String> {
-        let instance = wgpu::Instance::default();
+    async fn new(
+        instance: &wgpu::Instance,
+        window: impl Into<wgpu::SurfaceTarget<'window>>,
+    ) -> Result<Self, String> {
         let surface = instance
             .create_surface(window)
             .map_err(|error| format!("create surface: {error}"))?;
@@ -62,26 +84,40 @@ impl<'window> ClearTarget<'window> {
             device,
             queue,
             config,
+            configured: true,
+            reconfigure_pending: false,
         })
     }
 
     fn resize(&mut self, size: PhysicalSize<u32>) {
         if size.width == 0 || size.height == 0 {
+            self.configured = false;
+            self.reconfigure_pending = false;
             return;
         }
         self.config.width = size.width;
         self.config.height = size.height;
-        self.surface.configure(&self.device, &self.config);
+        self.configured = true;
+        self.reconfigure_pending = true;
     }
 
     fn present(&mut self) -> PresentOutcome {
+        if !self.configured {
+            return PresentOutcome::Skipped;
+        }
+        if self.reconfigure_pending {
+            self.surface.configure(&self.device, &self.config);
+            self.reconfigure_pending = false;
+        }
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(frame) => {
                 self.clear(frame);
+                self.reconfigure_pending = true;
                 return PresentOutcome::Reconfigure;
             }
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.reconfigure_pending = true;
                 return PresentOutcome::Reconfigure;
             }
             wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
@@ -139,7 +175,14 @@ impl SmokeApp {
                 )
                 .map_err(|error| format!("create window: {error}"))?,
         );
-        let target = pollster::block_on(ClearTarget::new(window.clone()))?;
+        let mut descriptor = wgpu::InstanceDescriptor::new_with_display_handle(Box::new(
+            event_loop.owned_display_handle(),
+        ));
+        if std::env::var_os("WSL2_GUI_APPS_ENABLED").is_some() {
+            descriptor.backends = wgpu::Backends::VULKAN;
+        }
+        let instance = wgpu::Instance::new(descriptor);
+        let target = pollster::block_on(ClearTarget::new(&instance, window.clone()))?;
         window.request_redraw();
         self.window = Some(window);
         self.target = Some(target);
@@ -175,13 +218,20 @@ impl ApplicationHandler for SmokeApp {
                 if let Some(target) = &mut self.target {
                     target.resize(size);
                 }
+                window.request_redraw();
+            }
+            WindowEvent::ScaleFactorChanged { .. } => {
+                if let Some(target) = &mut self.target {
+                    target.resize(window.inner_size());
+                }
+                window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
                 let Some(target) = &mut self.target else {
                     return;
                 };
                 match target.present() {
-                    PresentOutcome::Presented => window.request_redraw(),
+                    PresentOutcome::Presented => {}
                     PresentOutcome::Reconfigure => {
                         let size = window.inner_size();
                         target.resize(size);
@@ -200,6 +250,10 @@ impl ApplicationHandler for SmokeApp {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    if let Err(error) = log::set_logger(&LOGGER) {
+        eprintln!("smoke logging setup failed: {error}");
+    }
+    log::set_max_level(log::LevelFilter::Warn);
     let event_loop = EventLoop::new()?;
     let mut app = SmokeApp::default();
     event_loop.run_app(&mut app)?;

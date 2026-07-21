@@ -37,6 +37,7 @@ stable_id!(BattleId);
 stable_id!(ShopId);
 stable_id!(EventFlagId);
 stable_id!(TrainerId);
+stable_id!(ContentPackageId);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum GameIdError {

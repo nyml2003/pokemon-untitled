@@ -1,6 +1,6 @@
 # Foundation 与 Domain
 
-> 分类：现状；最后核对：2026-07-20。
+> 分类：现状；最后核对：2026-07-22。
 > 依据：foundation/domain crate 的 `Cargo.toml`、根导出与单元测试。
 
 ## Foundation 是无业务前提的模型
@@ -20,11 +20,11 @@ foundation 的六个 crate 不依赖游戏 crate、文件系统、窗口或平�
 
 ## Domain 定义游戏语言
 
-domain 的九个 crate 定义各业务区域的合法数据、ID、规则与错误，不决定用户界面、路径或执行节奏。
+domain 的十个 crate 定义各业务区域的合法数据、ID、规则与错误，不决定用户界面、路径或执行节奏。
 
 | 领域 | crate | 当前边界 |
 | --- | --- | --- |
-| 对战 | `battle-domain` | 宝可梦、招式、回合与对战规则。 |
+| 对战 | `battle-domain`、`battle-ruleset` | 前者定义宝可梦、招式、回合与确定性战斗；后者冻结规则版本、前386准入和固定输入回放。 |
 | 游戏数据 | `game-data` | 已校验的只读数据集和图鉴数据。 |
 | 地图 | `map-project`、`map-tile-semantics` | 地图项目、瓦片、碰撞、事件和语义规则。 |
 | 世界 | `world-domain`、`world-project` | 世界网格、角色、命令、事件与项目模型。 |
