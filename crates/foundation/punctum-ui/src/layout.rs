@@ -57,14 +57,6 @@ impl<Action> UiFrame<Action> {
     pub fn hit_regions(&self) -> &[UiHitRegion] {
         &self.hits
     }
-    #[deprecated(note = "页面交互请使用 UiFrame::action_hit_at。")]
-    pub fn hit_test(&self, x: u32, y: u32) -> Option<UiId> {
-        self.hits
-            .iter()
-            .rev()
-            .find(|region| region.bounds.contains(x, y))
-            .map(|region| region.id)
-    }
     pub fn action_hits(&self) -> &[UiActionHit<Action>] {
         &self.action_hits
     }
@@ -106,7 +98,6 @@ pub(crate) fn resolve_tree<Action: Clone>(
         action_hits,
     })
 }
-#[allow(deprecated)]
 fn resolve_node<Action: Clone>(
     node: &UiNode<Action>,
     offered: UiRect,
@@ -196,7 +187,7 @@ fn resolve_node<Action: Clone>(
         }),
     }
     let hit_bounds = bounds.intersect(clip).unwrap_or_default();
-    if node.style.interactive || node.action.is_some() {
+    if node.action.is_some() {
         hits.push(UiHitRegion {
             id: node.id,
             bounds: hit_bounds,

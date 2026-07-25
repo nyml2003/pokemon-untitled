@@ -117,25 +117,25 @@ const BATTLE_THEME: GameUiTheme = GameUiTheme {
 };
 
 const FOUNDATION_THEME: GameUiTheme = GameUiTheme {
-    screen: UiColor::new(14, 22, 32, 255),
-    header: UiColor::new(26, 68, 79, 255),
-    panel: UiColor::new(28, 44, 56, 255),
-    selected: UiColor::new(56, 151, 123, 255),
-    selected_text: UiColor::new(20, 31, 36, 255),
-    card: UiColor::new(222, 234, 222, 255),
-    image_backdrop: UiColor::new(132, 181, 153, 255),
-    text: UiColor::new(245, 248, 240, 255),
-    muted_text: UiColor::new(183, 203, 199, 255),
-    ink: UiColor::new(22, 40, 45, 255),
-    muted_ink: UiColor::new(72, 97, 96, 255),
-    small_spacing: 8,
-    medium_spacing: 16,
-    large_spacing: 24,
-    small_radius: punctum_ui::UiBorderRadius::all(6),
-    medium_radius: punctum_ui::UiBorderRadius::all(8),
-    large_radius: punctum_ui::UiBorderRadius::all(10),
-    body_text_size: 18,
-    title_text_size: 28,
+    screen: UiColor::new(9, 16, 29, 255),
+    header: UiColor::new(22, 57, 94, 255),
+    panel: UiColor::new(18, 34, 55, 255),
+    selected: UiColor::new(211, 48, 55, 255),
+    selected_text: UiColor::new(255, 248, 231, 255),
+    card: UiColor::new(243, 232, 195, 255),
+    image_backdrop: UiColor::new(45, 93, 119, 255),
+    text: UiColor::new(255, 248, 231, 255),
+    muted_text: UiColor::new(165, 184, 207, 255),
+    ink: UiColor::new(24, 35, 52, 255),
+    muted_ink: UiColor::new(78, 91, 112, 255),
+    small_spacing: 6,
+    medium_spacing: 12,
+    large_spacing: 20,
+    small_radius: punctum_ui::UiBorderRadius::all(4),
+    medium_radius: punctum_ui::UiBorderRadius::all(6),
+    large_radius: punctum_ui::UiBorderRadius::all(8),
+    body_text_size: 16,
+    title_text_size: 24,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -443,7 +443,7 @@ fn project_page_world(
             page_header("小镇状态", None)?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -455,7 +455,7 @@ fn project_page_world(
                     ui_text(
                         &FOUNDATION_THEME,
                         TextTone::Muted,
-                        "页面 Demo：不绘制地图",
+                        "旅程状态 / STARTING TOWN",
                         15,
                         Dimension::Fill,
                     ),
@@ -463,7 +463,7 @@ fn project_page_world(
                     ui_row(
                         UiStyle {
                             width: Dimension::Fill,
-                            height: Dimension::Px(50),
+                            height: Dimension::Px(56),
                             gap: 6,
                             ..UiStyle::default()
                         },
@@ -527,35 +527,37 @@ fn project_page_pause(
 }
 
 fn project_pause_menu(notice: Option<&str>) -> Result<UiTree<PageIntent>, UiBuildError> {
-    let entries = [
-        ("队伍", PausePage::Party),
-        ("背包", PausePage::Bag),
-        ("图鉴", PausePage::Pokedex),
-        ("训练家卡", PausePage::TrainerCard),
-    ]
-    .into_iter()
-    .map(|(label, page)| {
-        page_action_button(
-            label,
-            match page {
-                PausePage::Menu => "page-pause-menu",
-                PausePage::Party => "page-pause-party",
-                PausePage::Bag => "page-pause-bag",
-                PausePage::Pokedex => "page-pause-pokedex",
-                PausePage::TrainerCard => "page-pause-trainer-card",
-            },
-            false,
-            Some(PageIntent::SelectPausePage(page)),
-        )
-    })
-    .collect::<Result<Vec<_>, _>>()?;
+    let party = page_action_button(
+        "队伍",
+        "page-pause-party",
+        false,
+        Some(PageIntent::SelectPausePage(PausePage::Party)),
+    )?;
+    let bag = page_action_button(
+        "背包",
+        "page-pause-bag",
+        false,
+        Some(PageIntent::SelectPausePage(PausePage::Bag)),
+    )?;
+    let pokedex = page_action_button(
+        "图鉴",
+        "page-pause-pokedex",
+        false,
+        Some(PageIntent::SelectPausePage(PausePage::Pokedex)),
+    )?;
+    let trainer_card = page_action_button(
+        "训练家卡",
+        "page-pause-trainer-card",
+        false,
+        Some(PageIntent::SelectPausePage(PausePage::TrainerCard)),
+    )?;
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
         [
             page_header("暂停菜单", Some(PageIntent::Close))?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -563,15 +565,34 @@ fn project_pause_menu(notice: Option<&str>) -> Result<UiTree<PageIntent>, UiBuil
                     padding: Insets::all(10),
                     ..UiStyle::default()
                 },
-                std::iter::once(ui_text(
-                    &FOUNDATION_THEME,
-                    TextTone::Muted,
-                    "任务面板不保留世界状态副本",
-                    15,
-                    Dimension::Fill,
-                ))
-                .chain(std::iter::once(page_notice(notice)))
-                .chain(entries),
+                [
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        "PLAYER MENU / 选择要查看的页面",
+                        15,
+                        Dimension::Fill,
+                    ),
+                    page_notice(notice),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(58),
+                            gap: FOUNDATION_THEME.small_spacing,
+                            ..UiStyle::default()
+                        },
+                        [party, bag],
+                    ),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(58),
+                            gap: FOUNDATION_THEME.small_spacing,
+                            ..UiStyle::default()
+                        },
+                        [pokedex, trainer_card],
+                    ),
+                ],
             ),
         ],
     ))
@@ -626,7 +647,7 @@ fn project_pause_party(
             page_header("队伍", Some(PageIntent::Close))?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -638,7 +659,7 @@ fn project_pause_party(
                     .chain(std::iter::once(ui_row(
                         UiStyle {
                             width: Dimension::Fill,
-                            height: Dimension::Px(42),
+                            height: Dimension::Px(56),
                             gap: 6,
                             ..UiStyle::default()
                         },
@@ -692,7 +713,7 @@ fn project_pause_bag(
             page_header("背包", Some(PageIntent::Close))?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -704,7 +725,7 @@ fn project_pause_bag(
                     .chain(std::iter::once(ui_row(
                         UiStyle {
                             width: Dimension::Fill,
-                            height: Dimension::Px(42),
+                            height: Dimension::Px(56),
                             gap: 6,
                             ..UiStyle::default()
                         },
@@ -738,7 +759,7 @@ fn project_pause_pokedex(
             page_header("图鉴", Some(PageIntent::Close))?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -759,9 +780,9 @@ fn project_pause_pokedex(
                         &FOUNDATION_THEME,
                         TextTone::Muted,
                         if pokedex.selected.known {
-                            "已知来自当前队伍拥有事实"
+                            "资料来源：当前队伍"
                         } else {
-                            "尚未拥有，不展示条目事实"
+                            "资料尚未解锁"
                         },
                         14,
                         Dimension::Fill,
@@ -794,7 +815,7 @@ fn project_pause_trainer_card(
             page_header("训练家卡", Some(PageIntent::Close))?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -842,9 +863,9 @@ fn project_page_shop(
     });
     let owned = detail.map_or(String::from("--"), |item| item.owned_quantity.to_string());
     let purchase_hint = match detail {
-        Some(item) if item.affordable => "余额和容量将在提交后从新快照刷新",
-        Some(_) => "余额不足，确认操作已禁用",
-        None => "选择物品后才能确认购买",
+        Some(item) if item.affordable => "确认后更新余额与背包",
+        Some(_) => "余额不足，无法购买",
+        None => "选择物品后确认购买",
     };
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
@@ -852,7 +873,7 @@ fn project_page_shop(
             page_header("小镇商店", Some(PageIntent::Close))?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -866,7 +887,7 @@ fn project_page_shop(
                     ui_row(
                         UiStyle {
                             width: Dimension::Fill,
-                            height: Dimension::Px(42),
+                            height: Dimension::Px(56),
                             gap: 6,
                             ..UiStyle::default()
                         },
@@ -886,7 +907,7 @@ fn project_page_shop(
                     ui_row(
                         UiStyle {
                             width: Dimension::Fill,
-                            height: Dimension::Px(38),
+                            height: Dimension::Px(56),
                             gap: 6,
                             ..UiStyle::default()
                         },
@@ -915,8 +936,8 @@ fn project_page_save_confirm(
     notice: Option<&str>,
 ) -> Result<UiTree<PageIntent>, UiBuildError> {
     let message = match save.unavailable_reason {
-        None => "此处是安全点，确认后由存档 adapter 写入。",
-        Some(SaveUnavailableReason::BattleActive) => "战斗进行中，不能保存。",
+        None => "当前位置安全，确认后写入当前存档。",
+        Some(SaveUnavailableReason::BattleActive) => "战斗进行中，暂时不能保存。",
     };
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
@@ -924,7 +945,7 @@ fn project_page_save_confirm(
             page_header("保存游戏", Some(PageIntent::Close))?,
             ui_panel(
                 &FOUNDATION_THEME,
-                PanelTone::Screen,
+                PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
@@ -976,12 +997,23 @@ fn project_page_save_confirm(
 
 fn page_notice(notice: Option<&str>) -> UiNode<PageIntent> {
     match notice {
-        Some(notice) => ui_text(
+        Some(notice) => ui_panel(
             &FOUNDATION_THEME,
-            TextTone::Muted,
-            notice,
-            14,
-            Dimension::Fill,
+            PanelTone::Selected,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Px(28),
+                padding: Insets::symmetric(8, 4),
+                border_radius: FOUNDATION_THEME.small_radius,
+                ..UiStyle::default()
+            },
+            [ui_text(
+                &FOUNDATION_THEME,
+                TextTone::Selected,
+                notice,
+                13,
+                Dimension::Fill,
+            )],
         ),
         None => UiNode::auto().with_style(UiStyle {
             width: Dimension::Fill,
@@ -1012,12 +1044,17 @@ fn page_header(title: &str, close: Option<PageIntent>) -> Result<UiNode<PageInte
         PanelTone::Header,
         UiStyle {
             width: Dimension::Fill,
-            height: Dimension::Px(46),
+            height: Dimension::Px(54),
             direction: FlexDirection::Row,
             main_align: MainAlign::SpaceBetween,
             cross_align: CrossAlign::Center,
-            gap: 8,
-            padding: Insets::symmetric(10, 8),
+            gap: FOUNDATION_THEME.small_spacing,
+            padding: Insets::symmetric(12, 8),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: UiColor::new(50, 97, 145, 255),
+            },
+            border_radius: FOUNDATION_THEME.medium_radius,
             ..UiStyle::default()
         },
         children,
@@ -1027,30 +1064,28 @@ fn page_header(title: &str, close: Option<PageIntent>) -> Result<UiNode<PageInte
 fn page_info_card(label: impl Into<String>, value: impl Into<String>) -> UiNode<PageIntent> {
     ui_panel(
         &FOUNDATION_THEME,
-        PanelTone::Panel,
+        PanelTone::Card,
         UiStyle {
             width: Dimension::Fill,
-            height: Dimension::Fill,
-            gap: 2,
-            padding: Insets::all(5),
+            height: Dimension::Px(56),
+            gap: 3,
+            padding: Insets::symmetric(8, 5),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: UiColor::new(216, 196, 142, 255),
+            },
             border_radius: FOUNDATION_THEME.small_radius,
             ..UiStyle::default()
         },
         [
             ui_text(
                 &FOUNDATION_THEME,
-                TextTone::Muted,
+                TextTone::MutedInk,
                 label,
                 12,
                 Dimension::Fill,
             ),
-            ui_text(
-                &FOUNDATION_THEME,
-                TextTone::Default,
-                value,
-                15,
-                Dimension::Fill,
-            ),
+            ui_text(&FOUNDATION_THEME, TextTone::Ink, value, 15, Dimension::Fill),
         ],
     )
 }
@@ -1075,6 +1110,11 @@ fn page_action_button(
             height: Dimension::Fill,
             main_align: MainAlign::Center,
             cross_align: CrossAlign::Center,
+            padding: Insets::symmetric(8, 4),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: UiColor::new(50, 78, 111, 255),
+            },
             border_radius: FOUNDATION_THEME.small_radius,
             ..UiStyle::default()
         },

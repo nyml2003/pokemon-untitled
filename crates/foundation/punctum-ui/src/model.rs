@@ -314,10 +314,7 @@ pub struct UiStyle {
     pub cross_align: CrossAlign,
     pub position: Position,
     pub clip: bool,
-    #[deprecated(note = "可触发节点请使用 UiNode::with_action。")]
-    pub interactive: bool,
 }
-#[allow(deprecated)]
 impl Default for UiStyle {
     fn default() -> Self {
         Self {
@@ -336,7 +333,6 @@ impl Default for UiStyle {
             cross_align: CrossAlign::Start,
             position: Position::Flow,
             clip: false,
-            interactive: false,
         }
     }
 }

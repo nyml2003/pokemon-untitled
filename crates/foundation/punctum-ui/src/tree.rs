@@ -17,20 +17,6 @@ pub struct UiNode<Action = ()> {
     pub children: Vec<UiNode<Action>>,
     automatic_id: bool,
 }
-impl UiNode<()> {
-    #[deprecated(note = "请使用 UiNode::auto()；UiTree::new 会确定性地分配结构 ID。")]
-    pub fn new(id: UiId) -> Self {
-        Self {
-            id,
-            key: None,
-            action: None,
-            style: UiStyle::default(),
-            content: UiContent::Empty,
-            children: Vec::new(),
-            automatic_id: false,
-        }
-    }
-}
 impl<Action> UiNode<Action> {
     /// 创建由 `UiTree::new` 分配结构 ID 的节点。
     pub fn auto() -> Self {
@@ -44,27 +30,13 @@ impl<Action> UiNode<Action> {
             automatic_id: true,
         }
     }
-    #[deprecated(note = "请使用 UiNode::auto()；UiTree::new 会确定性地分配结构 ID。")]
-    pub fn legacy(id: UiId) -> Self {
-        Self {
-            id,
-            key: None,
-            action: None,
-            style: UiStyle::default(),
-            content: UiContent::Empty,
-            children: Vec::new(),
-            automatic_id: false,
-        }
-    }
     pub fn with_key(mut self, key: UiKey) -> Self {
         self.key = Some(key);
         self
     }
     /// 关联触发动作，并将节点标记为可交互。
-    #[allow(deprecated)]
     pub fn with_action(mut self, action: Action) -> Self {
         self.action = Some(action);
-        self.style.interactive = true;
         self
     }
     pub fn with_style(mut self, style: UiStyle) -> Self {

@@ -1,0 +1,15 @@
+{
+  "lsp": {
+    "rust-analyzer": {
+      "binary": {
+        "path": "/usr/bin/env",
+        "arguments": [
+          "direnv",
+          "exec",
+          ".",
+          "rust-analyzer"
+        ]
+      }
+    }
+  }
+}
