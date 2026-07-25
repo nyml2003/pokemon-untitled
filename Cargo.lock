@@ -1143,6 +1143,7 @@ dependencies = [
  "punctum-gpu",
  "punctum-grid",
  "punctum-input",
+ "punctum-ui",
  "world-application",
 ]
 

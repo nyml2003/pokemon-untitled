@@ -87,15 +87,39 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         .model()?;
     let mut pokedex_ui = PageUiState::default();
     assert!(matches!(
-        pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
+        pokedex_ui.handle_key(&key(NamedKey::ArrowDown, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
     ));
-    assert_eq!(pokedex_ui.focus(), PageFocus::Pokedex(1));
+    let clicked = match &pokedex {
+        PageModel::Pause(PausePageModel::Pokedex(page)) => {
+            page.entries
+                .get(10)
+                .ok_or("pokedex fixture is missing entry 11")?
+                .number
+        }
+        _ => return Err("pokedex demo did not expose entries".into()),
+    };
+    pokedex_ui.focus_intent(&PageIntent::SelectPokedexEntry(clicked), &pokedex);
+    assert_eq!(pokedex_ui.focus(), PageFocus::Pokedex(10));
+    assert!(matches!(
+        pokedex_ui.handle_key(&key(NamedKey::ArrowDown, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(number)) if number.value() == 12
+    ));
+    assert!(matches!(pokedex_ui.focus(), PageFocus::Pokedex(_)));
+    assert!(matches!(
+        pokedex_ui.handle_key(&key(NamedKey::End, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
+    ));
+    assert!(matches!(pokedex_ui.focus(), PageFocus::Pokedex(_)));
+    assert!(matches!(
+        pokedex_ui.handle_key(&key(NamedKey::Home, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
+    ));
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated
     );
-    assert_eq!(pokedex_ui.focus(), PageFocus::Pokedex(2));
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexStats);
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::Enter, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)

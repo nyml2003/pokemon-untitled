@@ -25,10 +25,10 @@ use game_ui::{
 use super::{
     BattleSpriteResources, FoundationPage, FoundationPageAction, LayerKind, TextRole, ViewCell,
     ViewLayer, compose_world, move_category_icon_asset, page_party_pokemon_asset,
-    page_pokedex_pokemon_asset, page_world_player_asset, pill_ui_asset, pokemon_icon_asset,
-    project_battle, project_battle_ui, project_console, project_console_ui, project_foundation,
-    project_page_model, project_page_model_with_notice, project_pokedex, project_world,
-    rounded_ui_asset, type_icon_asset, world_character_asset,
+    page_pokedex_icon_asset, page_pokedex_pokemon_asset, page_world_player_asset, pill_ui_asset,
+    pokemon_icon_asset, project_battle, project_battle_ui, project_console, project_console_ui,
+    project_foundation, project_page_model, project_page_model_with_notice, project_pokedex,
+    project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
 };
 
 #[test]
@@ -74,6 +74,9 @@ fn page_demos_resolve_to_ui_with_optional_page_images() -> Result<(), Box<dyn st
             }
             PageModel::Pause(PausePageModel::Pokedex(pokedex)) => {
                 if let Some(asset) = page_pokedex_pokemon_asset(pokedex.selected.number.value()) {
+                    assert!(images.contains(&asset.as_str()));
+                }
+                if let Some(asset) = page_pokedex_icon_asset(pokedex.selected.number.value()) {
                     assert!(images.contains(&asset.as_str()));
                 }
             }

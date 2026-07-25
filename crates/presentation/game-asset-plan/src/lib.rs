@@ -11,8 +11,9 @@ use game_native_plan::NativeAssets;
 use game_session::DemoSpriteManifest;
 use game_ui::WorldAnimation;
 use game_view::{
-    move_category_icon_asset, opponent_front_asset, pill_ui_asset, player_back_asset,
-    pokemon_icon_asset, rounded_ui_asset, type_icon_asset, world_character_asset,
+    move_category_icon_asset, opponent_front_asset, page_pokedex_icon_asset, pill_ui_asset,
+    player_back_asset, pokemon_icon_asset, rounded_ui_asset, type_icon_asset,
+    world_character_asset,
 };
 use punctum_gpu::{PixelSize, Rgba8};
 use world_application::{CharacterAppearanceId, Direction, WorldObservation};
@@ -106,6 +107,16 @@ pub fn asset_requests(
             asset_key: AssetKey::from_resource_template(entry.front_asset.clone()),
             expected_size: None,
         });
+        if let Some(resource_key) = page_pokedex_icon_asset(entry.national_dex) {
+            requests.push(AssetRequest {
+                resource_key,
+                asset_key: AssetKey::from_resource_template(format!(
+                    "pokemon/{:04}/form/00/icon/00",
+                    entry.national_dex
+                )),
+                expected_size: None,
+            });
+        }
     }
     requests
 }

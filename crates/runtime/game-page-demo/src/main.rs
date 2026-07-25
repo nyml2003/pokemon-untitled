@@ -17,8 +17,8 @@ use game_page_model::{
 };
 use game_ui::{PageUiOutcome, PageUiState};
 use game_view::{
-    page_party_pokemon_asset, page_pokedex_pokemon_asset, page_world_player_asset,
-    page_world_tile_asset, project_page_model_with_notice,
+    page_party_pokemon_asset, page_pokedex_icon_asset, page_pokedex_pokemon_asset,
+    page_world_player_asset, page_world_tile_asset, project_page_model_with_notice,
 };
 use punctum_gpu::{PixelSize, Rgba8};
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
@@ -332,9 +332,12 @@ impl PageDemoApp {
     }
 
     fn dispatch_intent(&mut self, intent: PageIntent) {
-        match self.state.clone().transition(intent) {
+        match self.state.clone().transition(intent.clone()) {
             Ok((state, effect)) => {
                 self.state = state;
+                if let Ok(model) = project_demo_page(&self.context, self.state.route()) {
+                    self.page_ui.focus_intent(&intent, &model);
+                }
                 self.status = effect.map(effect_status);
             }
             Err(error) => self.status = Some(format!("操作未执行：{error}")),
@@ -384,6 +387,13 @@ fn load_page_demo_assets() -> Result<NativeAssets, Box<dyn Error>> {
             key,
             format!("source/pokemon/{number:04}/form/00/normal/front/00.png"),
         ));
+        let Some(key) = page_pokedex_icon_asset(number) else {
+            continue;
+        };
+        sources.push((
+            key,
+            format!("source/pokemon/{number:04}/form/00/icon/00.png"),
+        ));
     }
     for type_name in [
         "bug", "dark", "dragon", "electric", "fighting", "fire", "flying", "ghost", "grass",
@@ -391,6 +401,13 @@ fn load_page_demo_assets() -> Result<NativeAssets, Box<dyn Error>> {
     ] {
         let key = AssetKey::from_resource_template(format!("ui/battle/type/{type_name}"));
         sources.push((key, format!("source/ui/battle/type/{type_name}.png")));
+    }
+    for category in ["physical", "special", "status"] {
+        let key = AssetKey::from_resource_template(format!("ui/battle/move-category/{category}"));
+        sources.push((
+            key,
+            format!("source/ui/battle/move-category/{category}.png"),
+        ));
     }
     let mut images = vec![(
         AssetKey::from_resource_template("solid/white".into()),

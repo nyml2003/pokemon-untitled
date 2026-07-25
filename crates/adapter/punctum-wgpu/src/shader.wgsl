@@ -126,7 +126,7 @@ fn radar_value(data: RadarData, index: u32) -> f32 {
     if data.max == 0u {
         return 0.0;
     }
-    return min(f32(data.values[index]) / f32(data.max), 1.0);
+    return f32(data.values[index]) / f32(data.max);
 }
 
 fn radar_position(center: vec2<f32>, radius: f32, scale: f32, index: u32) -> vec2<f32> {

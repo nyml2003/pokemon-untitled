@@ -8,7 +8,8 @@
 use std::{collections::BTreeSet, error::Error, fmt};
 
 use game_data::{
-    CurrentDataSet, DataLoadError, GEN3_FIRST_DEX, GEN3_LAST_DEX, PokedexData, PokedexLoadError,
+    CurrentDataSet, DamageClass, DataLoadError, GEN3_FIRST_DEX, GEN3_LAST_DEX, MoveLearnMethod,
+    PokedexData, PokedexLoadError,
 };
 use game_foundation::{
     ContentError, CreatureId, CreatureTemplateId, Direction, GameIdError, ItemCategory, ItemId,
@@ -130,6 +131,8 @@ pub enum PauseRoute {
     Pokedex {
         selected: NationalDexNumber,
         stats_view: PokedexStatsView,
+        detail_view: PokedexDetailView,
+        selected_move: usize,
     },
     TrainerCard,
 }
@@ -156,6 +159,8 @@ impl PauseRoute {
             PausePage::Pokedex => Self::Pokedex {
                 selected: NationalDexNumber::first(),
                 stats_view: PokedexStatsView::Bars,
+                detail_view: PokedexDetailView::Overview,
+                selected_move: 0,
             },
             PausePage::TrainerCard => Self::TrainerCard,
         }
@@ -197,6 +202,8 @@ pub enum PageIntent {
     SelectBagItem(ItemId),
     SelectPokedexEntry(NationalDexNumber),
     TogglePokedexStatsView,
+    SelectPokedexDetail(PokedexDetailView),
+    SelectPokedexMove(usize),
     OpenShop { shop: ShopId },
     SelectShopItem(ItemId),
     SetShopQuantity(u16),
@@ -317,11 +324,17 @@ impl PageState {
             }
             (
                 PlayerRoute::Pause {
-                    route: PauseRoute::Pokedex { selected, .. },
+                    route:
+                        PauseRoute::Pokedex {
+                            selected,
+                            selected_move,
+                            ..
+                        },
                 },
                 PageIntent::SelectPokedexEntry(next),
             ) => {
                 *selected = next;
+                *selected_move = 0;
                 Ok((self, None))
             }
             (
@@ -331,6 +344,24 @@ impl PageState {
                 PageIntent::TogglePokedexStatsView,
             ) => {
                 *stats_view = stats_view.toggled();
+                Ok((self, None))
+            }
+            (
+                PlayerRoute::Pause {
+                    route: PauseRoute::Pokedex { detail_view, .. },
+                },
+                PageIntent::SelectPokedexDetail(next),
+            ) => {
+                *detail_view = next;
+                Ok((self, None))
+            }
+            (
+                PlayerRoute::Pause {
+                    route: PauseRoute::Pokedex { selected_move, .. },
+                },
+                PageIntent::SelectPokedexMove(next),
+            ) => {
+                *selected_move = next;
                 Ok((self, None))
             }
             (
@@ -457,6 +488,9 @@ pub struct PokedexPageModel {
     pub selected: PokedexEntryModel,
     pub entries: Vec<PokedexEntryModel>,
     pub stats_view: PokedexStatsView,
+    pub detail_view: PokedexDetailView,
+    pub selected_move: usize,
+    pub moves: Vec<PokedexMoveModel>,
     pub previous: Option<NationalDexNumber>,
     pub next: Option<NationalDexNumber>,
     pub known_count: usize,
@@ -470,6 +504,40 @@ pub struct PokedexEntryModel {
     pub stats: Option<PokedexStatsModel>,
     pub types: Vec<String>,
     pub known: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PokedexMoveModel {
+    pub name: String,
+    pub move_type: String,
+    pub category: PokedexMoveCategory,
+    pub power: Option<u16>,
+    pub accuracy: Option<u8>,
+    pub pp: Option<u8>,
+    pub method: PokedexMoveLearnMethod,
+    pub level: Option<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PokedexMoveCategory {
+    Physical,
+    Special,
+    Status,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PokedexMoveLearnMethod {
+    LevelUp,
+    Egg,
+    Tutor,
+    Machine,
+    Other(String),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PokedexDetailView {
+    Overview,
+    Moves,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -548,6 +616,7 @@ pub enum PageModelError {
     PartySelectionMissing(CreatureId),
     ItemMissing(ItemId),
     BagSelectionMissing(ItemId),
+    Data(DataLoadError),
     Pokedex(PokedexLoadError),
     PokedexEntryMissing(NationalDexNumber),
     ShopMissing(ShopId),
@@ -579,6 +648,7 @@ impl fmt::Display for PageModelError {
             Self::BagSelectionMissing(item) => {
                 write!(formatter, "bag item {} is not carried", item.as_str())
             }
+            Self::Data(error) => write!(formatter, "game data unavailable: {error}"),
             Self::Pokedex(error) => write!(formatter, "pokedex data unavailable: {error}"),
             Self::PokedexEntryMissing(number) => {
                 write!(formatter, "pokedex entry {} is missing", number.value())
@@ -692,11 +762,15 @@ fn project_pause_page(
         PauseRoute::Pokedex {
             selected,
             stats_view,
+            detail_view,
+            selected_move,
         } => PausePageModel::Pokedex(pokedex_page_model(
             content,
             snapshot,
             *selected,
             *stats_view,
+            *detail_view,
+            *selected_move,
             pokedex_display_mode,
         )?),
         PauseRoute::TrainerCard => PausePageModel::TrainerCard(TrainerCardPageModel {
@@ -794,9 +868,12 @@ fn pokedex_page_model(
     snapshot: &ProductSnapshot,
     selected: NationalDexNumber,
     stats_view: PokedexStatsView,
+    detail_view: PokedexDetailView,
+    selected_move: usize,
     display_mode: PokedexDisplayMode,
 ) -> Result<PokedexPageModel, PageModelError> {
     let pokedex = PokedexData::embedded_gen3().map_err(PageModelError::Pokedex)?;
+    let data = CurrentDataSet::embedded().map_err(PageModelError::Data)?;
     let known_species = party_species(content, snapshot)?;
     let entries = pokedex
         .entries()
@@ -838,16 +915,65 @@ fn pokedex_page_model(
         .find(|entry| entry.number == selected)
         .cloned()
         .ok_or(PageModelError::PokedexEntryMissing(selected))?;
+    let selected_data_entry = pokedex
+        .entries()
+        .iter()
+        .find(|entry| entry.national_dex == selected.value())
+        .ok_or(PageModelError::PokedexEntryMissing(selected))?;
+    let moves = if selected_entry.known {
+        pokedex_moves(&data, selected_data_entry.form_id)
+    } else {
+        Vec::new()
+    };
     let known_count = entries.iter().filter(|entry| entry.known).count();
     Ok(PokedexPageModel {
         selected: selected_entry,
         entries,
         stats_view,
+        detail_view,
+        selected_move: selected_move.min(moves.len().saturating_sub(1)),
+        moves,
         previous: selected.previous(),
         next: selected.next(),
         known_count,
         total_count: pokedex.entries().len(),
     })
+}
+
+fn pokedex_moves(
+    data: &CurrentDataSet,
+    form_id: game_data::PokemonFormId,
+) -> Vec<PokedexMoveModel> {
+    let Some(learnset) = data.learnset(form_id) else {
+        return Vec::new();
+    };
+    learnset
+        .iter()
+        .filter_map(|learnset_entry| {
+            let record = data.move_by_id(learnset_entry.move_id)?;
+            let move_type = data.type_by_id(record.move_type)?;
+            Some(PokedexMoveModel {
+                name: record.display_name.localized.clone(),
+                move_type: move_type.display_name.localized.clone(),
+                category: match record.damage_class {
+                    DamageClass::Physical => PokedexMoveCategory::Physical,
+                    DamageClass::Special => PokedexMoveCategory::Special,
+                    DamageClass::Status => PokedexMoveCategory::Status,
+                },
+                power: record.power,
+                accuracy: record.accuracy,
+                pp: record.pp,
+                method: match &learnset_entry.method {
+                    MoveLearnMethod::LevelUp => PokedexMoveLearnMethod::LevelUp,
+                    MoveLearnMethod::Egg => PokedexMoveLearnMethod::Egg,
+                    MoveLearnMethod::Tutor => PokedexMoveLearnMethod::Tutor,
+                    MoveLearnMethod::Machine => PokedexMoveLearnMethod::Machine,
+                    MoveLearnMethod::Other(value) => PokedexMoveLearnMethod::Other(value.clone()),
+                },
+                level: learnset_entry.level,
+            })
+        })
+        .collect()
 }
 
 fn demo_pokedex_known(number: u16) -> bool {
@@ -1042,6 +1168,8 @@ fn pokedex_route() -> Result<PlayerRoute, PageDemoError> {
         route: PauseRoute::Pokedex {
             selected: NationalDexNumber::new(252).map_err(PageDemoError::Dex)?,
             stats_view: PokedexStatsView::Bars,
+            detail_view: PokedexDetailView::Overview,
+            selected_move: 0,
         },
     })
 }

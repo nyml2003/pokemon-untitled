@@ -201,6 +201,48 @@ fn a_large_automatic_tree_needs_no_caller_supplied_ids() {
 }
 
 #[test]
+fn keyboard_scroll_view_moves_one_item_and_limits_virtual_nodes()
+-> Result<(), Box<dyn std::error::Error>> {
+    let mut view = KeyboardSingleColumnFixedHeightScrollView::new(100, 3, 10)
+        .with_gap(2)
+        .with_overscan(1);
+    assert_eq!(view.visible_range(), 0..3);
+    assert_eq!(view.render_range(), 0..4);
+    assert!(view.move_down());
+    assert_eq!(view.selected_index(), 1);
+    assert_eq!(view.first_visible(), 0);
+    assert!(view.move_down());
+    assert!(view.move_down());
+    assert_eq!(view.selected_index(), 3);
+    assert_eq!(view.first_visible(), 1);
+    assert_eq!(view.render_range(), 1..5);
+
+    assert!(view.move_to_bottom());
+    assert_eq!(view.selected_index(), 99);
+    assert_eq!(view.visible_range(), 97..100);
+    assert!(!view.move_down());
+    assert!(view.move_to_top());
+    assert_eq!(view.selected_index(), 0);
+    assert_eq!(view.visible_range(), 0..3);
+    assert!(!view.move_up());
+
+    let children = view
+        .render_range()
+        .map(|_| UiNode::<()>::auto().with_style(UiStyle::fixed(20, 10)));
+    let tree = UiTree::new(view.node(
+        UiStyle {
+            width: Dimension::Px(20),
+            height: Dimension::Px(30),
+            ..UiStyle::default()
+        },
+        children,
+    ))?;
+    assert_eq!(tree.root().children.len(), 4);
+    assert!(tree.resolve(UiSize::new(20, 30)).is_ok());
+    Ok(())
+}
+
+#[test]
 fn duplicate_ui_keys_are_build_errors() {
     let duplicate = UiTree::<TestAction>::new(UiNode::auto().with_children([
         UiNode::auto().with_key(UiKey::new("entry").unwrap()),

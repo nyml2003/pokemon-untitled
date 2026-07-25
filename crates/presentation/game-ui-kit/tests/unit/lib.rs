@@ -126,7 +126,7 @@ fn button_tab_bar_and_modal_use_their_theme_surfaces() {
 fn stat_chart_resolves_bars_and_hexagon_views() -> Result<(), Box<dyn Error>> {
     let values = StatChartValues {
         hp: 45,
-        attack: 49,
+        attack: 200,
         defense: 49,
         special_attack: 65,
         special_defense: 65,
@@ -136,6 +136,13 @@ fn stat_chart_resolves_bars_and_hexagon_views() -> Result<(), Box<dyn Error>> {
         let tree = UiTree::new(stat_chart::<()>(&THEME, view, Some(values)))?;
         let frame = tree.resolve(UiSize::new(280, 180))?;
         assert!(!frame.commands().is_empty());
+        if view == StatChartView::Hexagon {
+            assert!(frame.commands().iter().any(|command| matches!(
+                command,
+                UiDrawCommand::RadarChart { values, max, rings, .. }
+                    if values[1] == 200 && *max == 150 && *rings == 3
+            )));
+        }
     }
     Ok(())
 }

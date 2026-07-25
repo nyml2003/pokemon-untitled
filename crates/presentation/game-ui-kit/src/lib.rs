@@ -241,8 +241,9 @@ fn stat_hexagon<Action>(theme: &GameUiTheme, values: Option<StatChartValues>) ->
                 values.special_defense,
                 values.speed,
             ],
-            max: 256,
-            rings: 5,
+            // Keep the grid readable at 50/100/150 while allowing larger stats to spill out.
+            max: 150,
+            rings: 3,
             grid_color: theme.panel,
             axis_color: theme.muted_ink,
             fill_color: UiColor::new(

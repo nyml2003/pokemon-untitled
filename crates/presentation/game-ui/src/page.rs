@@ -1,7 +1,8 @@
 //! 玩家页面的键盘焦点和语义输入状态。
 
-use game_page_model::{BagFilter, PageIntent, PageModel, PausePageModel};
+use game_page_model::{BagFilter, PageIntent, PageModel, PausePageModel, PokedexDetailView};
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey, PhysicalKeyCode};
+use punctum_ui::KeyboardSingleColumnFixedHeightScrollView;
 
 /// 玩家页面当前可见的键盘焦点。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,6 +13,8 @@ pub enum PageFocus {
     BagCategory(usize),
     BagItem(usize),
     Pokedex(usize),
+    PokedexStats,
+    PokedexMoves(usize),
     TrainerCard,
     Shop(usize),
     SaveConfirm,
@@ -37,6 +40,8 @@ enum PageKey {
     OpenSave,
     PreviousCategory,
     NextCategory,
+    Home,
+    End,
 }
 
 /// 不依赖窗口或渲染器的玩家页面输入状态。
@@ -80,8 +85,14 @@ impl PageUiState {
                     PageFocus::BagItem(index.min(page.entries.len() - 1))
                 }
             }
-            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(_))) => {
-                PageFocus::Pokedex(index.min(2))
+            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
+                PageFocus::Pokedex(index.min(page.entries.len().saturating_sub(1)))
+            }
+            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+                PageFocus::PokedexStats
+            }
+            (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
+                PageFocus::PokedexMoves(index.min(page.moves.len().saturating_sub(1)))
             }
             (PageFocus::TrainerCard, PageModel::Pause(PausePageModel::TrainerCard(_))) => {
                 PageFocus::TrainerCard
@@ -91,6 +102,47 @@ impl PageUiState {
             (PageFocus::World, PageModel::World(_)) => PageFocus::World,
             _ => default_focus(model),
         };
+    }
+
+    /// 根据已执行的页面 intent 同步鼠标点击和键盘焦点。
+    pub fn focus_intent(&mut self, intent: &PageIntent, model: &PageModel) {
+        match (intent, model) {
+            (
+                PageIntent::SelectPokedexEntry(number),
+                PageModel::Pause(PausePageModel::Pokedex(page)),
+            ) => {
+                if let Some(index) = page
+                    .entries
+                    .iter()
+                    .position(|entry| entry.number == *number)
+                {
+                    self.focus = match page.detail_view {
+                        PokedexDetailView::Overview => PageFocus::Pokedex(index),
+                        PokedexDetailView::Moves => PageFocus::PokedexMoves(page.selected_move),
+                    };
+                }
+            }
+            (
+                PageIntent::SelectPokedexDetail(detail_view),
+                PageModel::Pause(PausePageModel::Pokedex(page)),
+            ) => {
+                self.focus = match detail_view {
+                    PokedexDetailView::Overview => PageFocus::PokedexStats,
+                    PokedexDetailView::Moves => PageFocus::PokedexMoves(page.selected_move),
+                };
+            }
+            (
+                PageIntent::SelectPokedexMove(index),
+                PageModel::Pause(PausePageModel::Pokedex(page)),
+            ) => {
+                self.focus =
+                    PageFocus::PokedexMoves((*index).min(page.moves.len().saturating_sub(1)));
+            }
+            (PageIntent::TogglePokedexStatsView, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+                self.focus = PageFocus::PokedexStats
+            }
+            _ => {}
+        }
     }
 
     pub fn action_key(self, model: &PageModel) -> Option<String> {
@@ -115,13 +167,16 @@ impl PageUiState {
                 .entries
                 .get(index)
                 .map(|entry| format!("page-bag-{}", entry.item.as_str())),
-            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(_))) => [
-                "page-pokedex-previous",
-                "page-pokedex-next",
-                "page-pokedex-stats-toggle",
-            ]
-            .get(index)
-            .map(|key| String::from(*key)),
+            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => page
+                .entries
+                .get(index)
+                .map(|entry| format!("page-pokedex-index-{}", entry.number.value())),
+            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+                Some(String::from("page-pokedex-stats-toggle"))
+            }
+            (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(_))) => {
+                Some(format!("page-pokedex-move-{index}"))
+            }
             (PageFocus::Shop(index), PageModel::Shop(_)) => {
                 ["page-shop-less", "page-shop-more", "page-shop-confirm"]
                     .get(index)
@@ -162,9 +217,12 @@ impl PageUiState {
             PageKey::Confirm if key.phase == KeyPhase::Press => self.confirm(model),
             PageKey::PreviousCategory => self.change_bag_category(model, false),
             PageKey::NextCategory => self.change_bag_category(model, true),
-            PageKey::Up | PageKey::Down | PageKey::Left | PageKey::Right => {
-                self.move_focus(action, model)
-            }
+            PageKey::Up
+            | PageKey::Down
+            | PageKey::Left
+            | PageKey::Right
+            | PageKey::Home
+            | PageKey::End => self.move_focus(action, model),
             PageKey::Confirm | PageKey::Cancel => PageUiOutcome::Ignored,
         }
     }
@@ -186,7 +244,7 @@ impl PageUiState {
                 .map(|member| {
                     PageUiOutcome::Intent(PageIntent::SelectPartyMember(member.id.clone()))
                 })
-                .unwrap_or(PageUiOutcome::Ignored),
+                .map_or(PageUiOutcome::Ignored, |outcome| outcome),
             (PageFocus::BagItem(index), PageModel::Pause(PausePageModel::Bag(page))) => page
                 .entries
                 .get(index)
@@ -197,17 +255,19 @@ impl PageUiState {
                     PageUiOutcome::Intent(PageIntent::SelectBagCategory(category))
                 })
             }
-            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
-                match index {
-                    0 => page.previous.map_or(PageUiOutcome::Ignored, |entry| {
-                        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(entry))
-                    }),
-                    1 => page.next.map_or(PageUiOutcome::Ignored, |entry| {
-                        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(entry))
-                    }),
-                    2 => PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView),
-                    _ => PageUiOutcome::Ignored,
-                }
+            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => page
+                .entries
+                .get(index)
+                .map(|entry| PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(entry.number)))
+                .unwrap_or(PageUiOutcome::Ignored),
+            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+                PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)
+            }
+            (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
+                page.moves
+                    .get(index)
+                    .map(|_| PageUiOutcome::Intent(PageIntent::SelectPokedexMove(index)))
+                    .unwrap_or(PageUiOutcome::Ignored)
             }
             (PageFocus::Shop(0), PageModel::Shop(page)) => page
                 .selected_item
@@ -307,22 +367,81 @@ impl PageUiState {
                     .unwrap_or(PageUiOutcome::Ignored)
             }
             (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
-                let next = match direction {
-                    PageKey::Left | PageKey::Up => index.checked_sub(1),
-                    PageKey::Right | PageKey::Down => index.checked_add(1),
-                    _ => None,
+                let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
+                    page.entries.len(),
+                    POKEDEX_VISIBLE_ITEMS,
+                    POKEDEX_ITEM_HEIGHT,
+                );
+                scroll.select(index);
+                let changed = match direction {
+                    PageKey::Up => scroll.move_up(),
+                    PageKey::Down => scroll.move_down(),
+                    PageKey::Home => scroll.move_to_top(),
+                    PageKey::End => scroll.move_to_bottom(),
+                    PageKey::Right => {
+                        self.focus = PageFocus::PokedexStats;
+                        return PageUiOutcome::Updated;
+                    }
+                    _ => false,
                 };
-                let Some(next) = next.filter(|next| *next < 3) else {
+                if !changed {
                     return PageUiOutcome::Ignored;
-                };
-                self.focus = PageFocus::Pokedex(next);
-                if next == 2 {
-                    return PageUiOutcome::Updated;
                 }
-                let entry = if next == 0 { page.previous } else { page.next };
-                entry.map_or(PageUiOutcome::Updated, |entry| {
-                    PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(entry))
-                })
+                let next = scroll.selected_index();
+                self.focus = PageFocus::Pokedex(next);
+                page.entries
+                    .get(next)
+                    .map_or(PageUiOutcome::Updated, |entry| {
+                        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(entry.number))
+                    })
+            }
+            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(page))) => {
+                if direction == PageKey::Left {
+                    let selected = page
+                        .entries
+                        .iter()
+                        .position(|entry| entry.number == page.selected.number)
+                        .map_or(0, |index| index);
+                    self.focus = PageFocus::Pokedex(selected);
+                    PageUiOutcome::Updated
+                } else if direction == PageKey::Right
+                    && page.detail_view == PokedexDetailView::Overview
+                {
+                    self.focus = PageFocus::PokedexMoves(page.selected_move);
+                    PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(PokedexDetailView::Moves))
+                } else {
+                    PageUiOutcome::Ignored
+                }
+            }
+            (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
+                if direction == PageKey::Left {
+                    self.focus = PageFocus::PokedexStats;
+                    return PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(
+                        PokedexDetailView::Overview,
+                    ));
+                }
+                if page.detail_view != PokedexDetailView::Moves {
+                    return PageUiOutcome::Ignored;
+                }
+                let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
+                    page.moves.len(),
+                    POKEDEX_VISIBLE_ITEMS,
+                    POKEDEX_MOVE_ITEM_HEIGHT,
+                );
+                scroll.select(index);
+                let changed = match direction {
+                    PageKey::Up => scroll.move_up(),
+                    PageKey::Down => scroll.move_down(),
+                    PageKey::Home => scroll.move_to_top(),
+                    PageKey::End => scroll.move_to_bottom(),
+                    _ => false,
+                };
+                if !changed {
+                    return PageUiOutcome::Ignored;
+                }
+                let next = scroll.selected_index();
+                self.focus = PageFocus::PokedexMoves(next);
+                PageUiOutcome::Intent(PageIntent::SelectPokedexMove(next))
             }
             (PageFocus::Shop(index), PageModel::Shop(_)) => {
                 let next = match direction {
@@ -365,7 +484,15 @@ fn default_focus(model: &PageModel) -> PageFocus {
             })
             .map(PageFocus::BagItem)
             .unwrap_or(PageFocus::BagCategory(0)),
-        PageModel::Pause(PausePageModel::Pokedex(_)) => PageFocus::Pokedex(0),
+        PageModel::Pause(PausePageModel::Pokedex(page)) => match page.detail_view {
+            PokedexDetailView::Overview => PageFocus::Pokedex(
+                page.entries
+                    .iter()
+                    .position(|entry| entry.number == page.selected.number)
+                    .map_or(0, |index| index),
+            ),
+            PokedexDetailView::Moves => PageFocus::PokedexMoves(page.selected_move),
+        },
         PageModel::Pause(PausePageModel::TrainerCard(_)) => PageFocus::TrainerCard,
         PageModel::Shop(_) => PageFocus::Shop(2),
         PageModel::SaveConfirm(_) => PageFocus::SaveConfirm,
@@ -379,6 +506,8 @@ fn page_key(key: &KeyEvent) -> Option<PageKey> {
         LogicalKey::Named(NamedKey::ArrowDown) => Some(PageKey::Down),
         LogicalKey::Named(NamedKey::ArrowLeft) => Some(PageKey::Left),
         LogicalKey::Named(NamedKey::ArrowRight) => Some(PageKey::Right),
+        LogicalKey::Named(NamedKey::Home) => Some(PageKey::Home),
+        LogicalKey::Named(NamedKey::End) => Some(PageKey::End),
         LogicalKey::Named(NamedKey::Enter) => Some(PageKey::Confirm),
         LogicalKey::Named(NamedKey::Escape) => Some(PageKey::Cancel),
         LogicalKey::Named(NamedKey::Tab) => Some(PageKey::OpenPause),
@@ -403,6 +532,8 @@ fn page_key(key: &KeyEvent) -> Option<PageKey> {
         {
             Some(PageKey::Right)
         }
+        _ if physical == Some(PhysicalKeyCode::Home) => Some(PageKey::Home),
+        _ if physical == Some(PhysicalKeyCode::End) => Some(PageKey::End),
         _ if physical == Some(PhysicalKeyCode::Enter) || character_is(key, "z") => {
             Some(PageKey::Confirm)
         }
@@ -416,6 +547,10 @@ fn page_key(key: &KeyEvent) -> Option<PageKey> {
         _ => None,
     }
 }
+
+const POKEDEX_VISIBLE_ITEMS: usize = 7;
+const POKEDEX_ITEM_HEIGHT: u32 = 52;
+const POKEDEX_MOVE_ITEM_HEIGHT: u32 = 44;
 
 fn character_is(key: &KeyEvent, expected: &str) -> bool {
     matches!(&key.logical, LogicalKey::Character(value) if value.eq_ignore_ascii_case(expected))

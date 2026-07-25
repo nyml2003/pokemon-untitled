@@ -63,7 +63,7 @@ fn png(width: u32, height: u32) -> Vec<u8> {
 fn manifest_expands_to_stable_resource_and_asset_key_requests() {
     let pokedex = PokedexData::embedded_gen3().unwrap();
     let requests = asset_requests(&manifest(), &pokedex, &world());
-    assert_eq!(requests.len(), 466);
+    assert_eq!(requests.len(), 852);
     assert_eq!(
         requests[0].asset_key.as_str(),
         "character/red/down/stand/00"
@@ -80,6 +80,10 @@ fn manifest_expands_to_stable_resource_and_asset_key_requests() {
     assert!(requests.iter().any(|request| {
         request.asset_key.as_str() == "ui/battle/move-category/status"
             && request.resource_key.as_str() == "ui/battle/move-category/status"
+    }));
+    assert!(requests.iter().any(|request| {
+        request.resource_key.as_str() == "pokedex-icon/1"
+            && request.asset_key.as_str() == "pokemon/0001/form/00/icon/00"
     }));
 }
 

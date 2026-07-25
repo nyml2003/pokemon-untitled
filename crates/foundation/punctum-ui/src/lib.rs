@@ -9,6 +9,7 @@ mod error;
 mod interaction;
 mod layout;
 mod model;
+mod scroll;
 mod tree;
 
 pub use error::{UiBuildError, UiLayoutError};
@@ -21,6 +22,7 @@ pub use model::{
     UiButtonStyle, UiColor, UiContent, UiContentId, UiId, UiKey, UiPixelOffset, UiRect, UiSize,
     UiStyle, UiTextSize,
 };
+pub use scroll::KeyboardSingleColumnFixedHeightScrollView;
 pub use tree::{UiNode, UiTree};
 
 #[cfg(test)]

@@ -14,6 +14,8 @@
 ## 公开 API
 
 调用方用 `UiStyle` 和 `UiContent` 构建 `UiNode` 树，再包装为 `UiTree`。
+
+`KeyboardSingleColumnFixedHeightScrollView` 提供固定 item 高度的单列虚拟窗口。调用方保存它的状态，使用上下键或顶底操作更新游标，再用 `render_range` 构建视口和 overscan 范围内的节点。它不读取键盘设备，也不持有页面业务状态。
 使用 `UiSize` 解析树，得到 `UiDrawCommand`、`UiHitRegion` 和带类型的 `UiActionHit`。
 `UiBuildError` 表示无效的树数据，`UiLayoutError` 表示无法满足最小尺寸的布局。
 
