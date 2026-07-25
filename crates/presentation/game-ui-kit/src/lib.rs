@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 
 use punctum_ui::{
-    Dimension, FlexDirection, UiBorderRadius, UiColor, UiContent, UiContentId, UiKey, UiNode,
-    UiPixelOffset, UiStyle,
+    Dimension, FlexDirection, UiBorderRadius, UiButtonStyle, UiColor, UiContent, UiContentId,
+    UiKey, UiNode, UiPixelOffset, UiStyle,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +28,46 @@ pub struct GameUiTheme {
     pub large_radius: UiBorderRadius,
     pub body_text_size: u32,
     pub title_text_size: u32,
+    pub button: GameButtonTheme,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GameButtonTheme {
+    pub hover_color: UiColor,
+    pub pressed_color: UiColor,
+    pub disabled_color: UiColor,
+    pub focus_color: UiColor,
+    pub ripple_color: UiColor,
+    pub focus_width: u32,
+    pub ripple_duration_ms: u32,
+}
+
+impl GameButtonTheme {
+    const fn style(self, selected: bool, disabled: bool) -> UiButtonStyle {
+        UiButtonStyle {
+            selected,
+            disabled,
+            hover_color: self.hover_color,
+            pressed_color: self.pressed_color,
+            disabled_color: self.disabled_color,
+            focus_color: self.focus_color,
+            ripple_color: self.ripple_color,
+            focus_width: self.focus_width,
+            ripple_duration_ms: self.ripple_duration_ms,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ButtonOptions {
+    pub selected: bool,
+    pub disabled: bool,
+}
+
+impl ButtonOptions {
+    pub const fn new(selected: bool, disabled: bool) -> Self {
+        Self { selected, disabled }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -188,18 +228,9 @@ pub fn selectable_list_item<Action>(
     action: Action,
     children: impl IntoIterator<Item = UiNode<Action>>,
 ) -> UiNode<Action> {
-    panel(
-        theme,
-        if selected {
-            PanelTone::Selected
-        } else {
-            PanelTone::Panel
-        },
-        style,
-        children,
-    )
-    .with_key(key)
-    .with_action(action)
+    button_surface(theme, style, ButtonOptions::new(selected, false), children)
+        .with_key(key)
+        .with_action(action)
 }
 
 /// A purely visual selectable surface. Pages attach their own business action
@@ -210,9 +241,28 @@ pub fn button<Action>(
     selected: bool,
     children: impl IntoIterator<Item = UiNode<Action>>,
 ) -> UiNode<Action> {
+    button_with_options(theme, style, ButtonOptions::new(selected, false), children)
+}
+
+pub fn button_with_options<Action>(
+    theme: &GameUiTheme,
+    style: UiStyle,
+    options: ButtonOptions,
+    children: impl IntoIterator<Item = UiNode<Action>>,
+) -> UiNode<Action> {
+    button_surface(theme, style, options, children)
+}
+
+fn button_surface<Action>(
+    theme: &GameUiTheme,
+    mut style: UiStyle,
+    options: ButtonOptions,
+    children: impl IntoIterator<Item = UiNode<Action>>,
+) -> UiNode<Action> {
+    style.clip = true;
     panel(
         theme,
-        if selected {
+        if options.selected {
             PanelTone::Selected
         } else {
             PanelTone::Panel
@@ -220,6 +270,7 @@ pub fn button<Action>(
         style,
         children,
     )
+    .with_button(theme.button.style(options.selected, options.disabled))
 }
 
 /// A visual row that owns the shared background of a tab control.

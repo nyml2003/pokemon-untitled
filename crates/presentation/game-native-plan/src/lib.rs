@@ -259,6 +259,43 @@ impl FramePlan {
                         });
                     }
                 }
+                UiDrawCommand::Outline {
+                    bounds,
+                    color,
+                    width,
+                    clip,
+                    ..
+                } => {
+                    if let Some(bounds) = ui_visible_bounds(*bounds, *clip) {
+                        images.extend(outline_images(
+                            bounds,
+                            white,
+                            *width,
+                            Rgba8::new(color.red, color.green, color.blue, color.alpha),
+                            z_index as i32,
+                        ));
+                    }
+                }
+                UiDrawCommand::Ripple {
+                    bounds,
+                    center,
+                    radius,
+                    color,
+                    clip,
+                } => {
+                    if let Some(bounds) = ui_visible_bounds(*bounds, *clip) {
+                        let center = ripple_center(*center, bounds)?;
+                        images.push(
+                            GpuPixelImage::new(
+                                bounds,
+                                white,
+                                Rgba8::new(color.red, color.green, color.blue, color.alpha),
+                                z_index as i32,
+                            )
+                            .with_circle(center, *radius),
+                        );
+                    }
+                }
             }
         }
         Ok(Self::single(
@@ -424,6 +461,42 @@ fn ui_visible_bounds(bounds: punctum_ui::UiRect, clip: punctum_ui::UiRect) -> Op
         .map(|rect| PixelRect::new(rect.x, rect.y, rect.width, rect.height))
 }
 
+fn ripple_center(
+    center: punctum_ui::UiPixelOffset,
+    bounds: PixelRect,
+) -> Result<PixelOffset, FramePlanError> {
+    let x = i64::from(center.x) - i64::from(bounds.x);
+    let y = i64::from(center.y) - i64::from(bounds.y);
+    Ok(PixelOffset::new(
+        i32::try_from(x).map_err(|_| FramePlanError::InvalidRippleCenter)?,
+        i32::try_from(y).map_err(|_| FramePlanError::InvalidRippleCenter)?,
+    ))
+}
+
+fn outline_images(
+    bounds: PixelRect,
+    resource: ResourceId,
+    width: u32,
+    tint: Rgba8,
+    z_index: i32,
+) -> Vec<GpuPixelImage> {
+    let width = width.min(bounds.width.min(bounds.height));
+    if width == 0 {
+        return Vec::new();
+    }
+    let right_x = bounds.x.saturating_add(bounds.width.saturating_sub(width));
+    let bottom_y = bounds.y.saturating_add(bounds.height.saturating_sub(width));
+    [
+        PixelRect::new(bounds.x, bounds.y, bounds.width, width),
+        PixelRect::new(bounds.x, bottom_y, bounds.width, width),
+        PixelRect::new(bounds.x, bounds.y, width, bounds.height),
+        PixelRect::new(right_x, bounds.y, width, bounds.height),
+    ]
+    .into_iter()
+    .map(|bounds| GpuPixelImage::new(bounds, resource, tint, z_index))
+    .collect()
+}
+
 #[derive(Debug)]
 pub enum FramePlanError {
     MissingSurface,
@@ -433,6 +506,7 @@ pub enum FramePlanError {
     },
     UnknownAsset(AssetKey),
     InvalidUiContent(String),
+    InvalidRippleCenter,
     Surface(SurfaceError),
     Gpu(GpuPlanError),
 }
@@ -449,6 +523,7 @@ impl fmt::Display for FramePlanError {
             Self::InvalidUiContent(content) => {
                 write!(formatter, "invalid UI content key {content}")
             }
+            Self::InvalidRippleCenter => formatter.write_str("UI ripple center is out of range"),
             Self::Surface(error) => write!(formatter, "cannot build product surface: {error}"),
             Self::Gpu(error) => write!(formatter, "cannot plan product frame: {error}"),
         }
@@ -463,7 +538,8 @@ impl Error for FramePlanError {
             Self::MissingSurface
             | Self::SurfaceSizeMismatch { .. }
             | Self::UnknownAsset(_)
-            | Self::InvalidUiContent(_) => None,
+            | Self::InvalidUiContent(_)
+            | Self::InvalidRippleCenter => None,
         }
     }
 }

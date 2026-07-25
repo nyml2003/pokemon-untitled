@@ -16,7 +16,8 @@ use game_page_model::{
 };
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction, WorldAnimation};
 use game_ui_kit::{
-    GameUiTheme, PanelTone, SpriteAppearance, TextTone, button as ui_button, column as ui_column,
+    ButtonOptions, GameButtonTheme, GameUiTheme, PanelTone, SpriteAppearance, TextTone,
+    button as ui_button, button_with_options as ui_button_with_options, column as ui_column,
     image as ui_image, modal as ui_modal, panel as ui_panel, row as ui_row, screen as ui_screen,
     selectable_list_item as ui_selectable_list_item, sprite as ui_sprite, text as ui_text,
 };
@@ -92,6 +93,15 @@ const POKEDEX_THEME: GameUiTheme = GameUiTheme {
     large_radius: punctum_ui::UiBorderRadius::all(16),
     body_text_size: 18,
     title_text_size: 28,
+    button: GameButtonTheme {
+        hover_color: UiColor::new(73, 211, 168, 42),
+        pressed_color: UiColor::new(73, 211, 168, 92),
+        disabled_color: UiColor::new(7, 13, 18, 128),
+        focus_color: UiColor::new(73, 211, 168, 220),
+        ripple_color: UiColor::new(154, 255, 219, 150),
+        focus_width: 1,
+        ripple_duration_ms: 160,
+    },
 };
 
 const BATTLE_THEME: GameUiTheme = GameUiTheme {
@@ -114,6 +124,15 @@ const BATTLE_THEME: GameUiTheme = GameUiTheme {
     large_radius: punctum_ui::UiBorderRadius::all(12),
     body_text_size: 18,
     title_text_size: 24,
+    button: GameButtonTheme {
+        hover_color: UiColor::new(255, 255, 255, 38),
+        pressed_color: UiColor::new(255, 255, 255, 86),
+        disabled_color: UiColor::new(8, 12, 17, 128),
+        focus_color: UiColor::new(73, 211, 168, 220),
+        ripple_color: UiColor::new(255, 255, 255, 130),
+        focus_width: 1,
+        ripple_duration_ms: 160,
+    },
 };
 
 const FOUNDATION_THEME: GameUiTheme = GameUiTheme {
@@ -136,6 +155,15 @@ const FOUNDATION_THEME: GameUiTheme = GameUiTheme {
     large_radius: punctum_ui::UiBorderRadius::all(8),
     body_text_size: 16,
     title_text_size: 24,
+    button: GameButtonTheme {
+        hover_color: UiColor::new(255, 210, 120, 38),
+        pressed_color: UiColor::new(255, 210, 120, 88),
+        disabled_color: UiColor::new(5, 10, 18, 140),
+        focus_color: UiColor::new(255, 210, 120, 230),
+        ripple_color: UiColor::new(255, 236, 175, 150),
+        focus_width: 1,
+        ripple_duration_ms: 160,
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1103,7 +1131,7 @@ fn page_action_button(
     } else {
         TextTone::Muted
     };
-    let node = ui_button(
+    let node = ui_button_with_options(
         &FOUNDATION_THEME,
         UiStyle {
             width: Dimension::Fill,
@@ -1118,7 +1146,7 @@ fn page_action_button(
             border_radius: FOUNDATION_THEME.small_radius,
             ..UiStyle::default()
         },
-        selected,
+        ButtonOptions::new(selected, action.is_none()),
         [ui_text(&FOUNDATION_THEME, tone, label, 15, Dimension::Fill)],
     )
     .with_key(UiKey::new(key)?);

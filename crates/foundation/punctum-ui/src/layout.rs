@@ -1,7 +1,7 @@
 use crate::{
-    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, Position, UiBorderRadius, UiColor,
-    UiContent, UiContentId, UiId, UiKey, UiLayoutError, UiPixelOffset, UiRect, UiSize,
-    tree::UiNode,
+    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, Position, UiBorderRadius,
+    UiButtonState, UiButtonStyle, UiColor, UiContent, UiContentId, UiId, UiInteractionSnapshot,
+    UiKey, UiLayoutError, UiPixelOffset, UiRect, UiRipple, UiSize, tree::UiNode,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,6 +27,20 @@ pub enum UiDrawCommand {
         font_size: u32,
         clip: UiRect,
     },
+    Outline {
+        bounds: UiRect,
+        color: UiColor,
+        radius: UiBorderRadius,
+        width: u32,
+        clip: UiRect,
+    },
+    Ripple {
+        bounds: UiRect,
+        center: UiPixelOffset,
+        radius: u32,
+        color: UiColor,
+        clip: UiRect,
+    },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UiHitRegion {
@@ -40,12 +54,27 @@ pub struct UiActionHit<Action> {
     pub action: Action,
     pub bounds: UiRect,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UiInteractionTarget {
+    pub id: UiId,
+    pub bounds: UiRect,
+    pub style: UiButtonStyle,
+    pub command_index: usize,
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UiFrame<Action = ()> {
     viewport: UiSize,
     commands: Vec<UiDrawCommand>,
     hits: Vec<UiHitRegion>,
     action_hits: Vec<UiActionHit<Action>>,
+    interaction_targets: Vec<UiInteractionTarget>,
+}
+
+struct ResolveBuffers<Action> {
+    commands: Vec<UiDrawCommand>,
+    hits: Vec<UiHitRegion>,
+    action_hits: Vec<UiActionHit<Action>>,
+    interaction_targets: Vec<UiInteractionTarget>,
 }
 impl<Action> UiFrame<Action> {
     pub const fn viewport(&self) -> UiSize {
@@ -60,6 +89,9 @@ impl<Action> UiFrame<Action> {
     pub fn action_hits(&self) -> &[UiActionHit<Action>] {
         &self.action_hits
     }
+    pub fn interaction_targets(&self) -> &[UiInteractionTarget] {
+        &self.interaction_targets
+    }
     /// 返回坐标命中的最上层动作及其自动分配的结构 ID。
     pub fn action_hit_at(&self, x: u32, y: u32) -> Option<&UiActionHit<Action>> {
         self.action_hits
@@ -72,6 +104,44 @@ impl<Action> UiFrame<Action> {
     pub fn hit_action(&self, x: u32, y: u32) -> Option<&Action> {
         self.action_hit_at(x, y).map(|region| &region.action)
     }
+    pub fn action_hit_by_id(&self, id: UiId) -> Option<&UiActionHit<Action>> {
+        self.action_hits.iter().rev().find(|hit| hit.id == id)
+    }
+
+    pub fn with_interaction(&self, interaction: &UiInteractionSnapshot) -> Self
+    where
+        Action: Clone,
+    {
+        let mut commands = Vec::with_capacity(self.commands.len());
+        for (index, command) in self.commands.iter().enumerate() {
+            for target in &self.interaction_targets {
+                if target.command_index == index {
+                    commands.extend(dynamic_commands(
+                        *target,
+                        interaction.button_state(target),
+                        &interaction.ripples,
+                    ));
+                }
+            }
+            commands.push(command.clone());
+        }
+        for target in &self.interaction_targets {
+            if target.command_index == self.commands.len() {
+                commands.extend(dynamic_commands(
+                    *target,
+                    interaction.button_state(target),
+                    &interaction.ripples,
+                ));
+            }
+        }
+        Self {
+            viewport: self.viewport,
+            commands,
+            hits: self.hits.clone(),
+            action_hits: self.action_hits.clone(),
+            interaction_targets: self.interaction_targets.clone(),
+        }
+    }
 }
 
 pub(crate) fn resolve_tree<Action: Clone>(
@@ -79,23 +149,19 @@ pub(crate) fn resolve_tree<Action: Clone>(
     viewport: UiSize,
 ) -> Result<UiFrame<Action>, UiLayoutError> {
     let root_bounds = UiRect::new(0, 0, viewport.width, viewport.height);
-    let mut commands = Vec::new();
-    let mut hits = Vec::new();
-    let mut action_hits = Vec::new();
-    resolve_node(
-        root,
-        root_bounds,
-        viewport,
-        root_bounds,
-        &mut commands,
-        &mut hits,
-        &mut action_hits,
-    )?;
+    let mut buffers = ResolveBuffers {
+        commands: Vec::new(),
+        hits: Vec::new(),
+        action_hits: Vec::new(),
+        interaction_targets: Vec::new(),
+    };
+    resolve_node(root, root_bounds, viewport, root_bounds, &mut buffers)?;
     Ok(UiFrame {
         viewport,
-        commands,
-        hits,
-        action_hits,
+        commands: buffers.commands,
+        hits: buffers.hits,
+        action_hits: buffers.action_hits,
+        interaction_targets: buffers.interaction_targets,
     })
 }
 fn resolve_node<Action: Clone>(
@@ -103,9 +169,7 @@ fn resolve_node<Action: Clone>(
     offered: UiRect,
     ratio_basis: UiSize,
     inherited_clip: UiRect,
-    commands: &mut Vec<UiDrawCommand>,
-    hits: &mut Vec<UiHitRegion>,
-    action_hits: &mut Vec<UiActionHit<Action>>,
+    buffers: &mut ResolveBuffers<Action>,
 ) -> Result<(), UiLayoutError> {
     let bounds = constrain(node, offered, ratio_basis)?;
     let clip = if node.style.clip {
@@ -118,7 +182,7 @@ fn resolve_node<Action: Clone>(
     }
     let radius = node.style.border_radius.clamped(bounds);
     if node.style.border.is_visible() {
-        commands.push(UiDrawCommand::Fill {
+        buffers.commands.push(UiDrawCommand::Fill {
             bounds,
             color: node.style.border.color,
             border_radius: radius,
@@ -129,13 +193,13 @@ fn resolve_node<Action: Clone>(
     let content_radius = radius.inset(node.style.border.widths).clamped(paint_bounds);
     match &node.content {
         UiContent::Empty => {}
-        UiContent::Fill(color) => commands.push(UiDrawCommand::Fill {
+        UiContent::Fill(color) => buffers.commands.push(UiDrawCommand::Fill {
             bounds: paint_bounds,
             color: *color,
             border_radius: content_radius,
             clip,
         }),
-        UiContent::Image(content) => commands.push(UiDrawCommand::Image {
+        UiContent::Image(content) => buffers.commands.push(UiDrawCommand::Image {
             bounds: paint_bounds,
             content: content.clone(),
             tint: UiColor::new(255, 255, 255, 255),
@@ -143,7 +207,7 @@ fn resolve_node<Action: Clone>(
             border_radius: content_radius,
             clip,
         }),
-        UiContent::ImageTinted { content, tint } => commands.push(UiDrawCommand::Image {
+        UiContent::ImageTinted { content, tint } => buffers.commands.push(UiDrawCommand::Image {
             bounds: paint_bounds,
             content: content.clone(),
             tint: *tint,
@@ -155,7 +219,7 @@ fn resolve_node<Action: Clone>(
             content,
             tint,
             pixel_offset,
-        } => commands.push(UiDrawCommand::Image {
+        } => buffers.commands.push(UiDrawCommand::Image {
             bounds: paint_bounds,
             content: content.clone(),
             tint: *tint,
@@ -167,7 +231,7 @@ fn resolve_node<Action: Clone>(
             content,
             color,
             font_size,
-        } => commands.push(UiDrawCommand::Text {
+        } => buffers.commands.push(UiDrawCommand::Text {
             bounds: paint_bounds,
             content: content.clone(),
             color: *color,
@@ -178,7 +242,7 @@ fn resolve_node<Action: Clone>(
             content,
             color,
             font_size,
-        } => commands.push(UiDrawCommand::Text {
+        } => buffers.commands.push(UiDrawCommand::Text {
             bounds: paint_bounds,
             content: content.clone(),
             color: *color,
@@ -187,28 +251,84 @@ fn resolve_node<Action: Clone>(
         }),
     }
     let hit_bounds = bounds.intersect(clip).unwrap_or_default();
-    if node.action.is_some() {
-        hits.push(UiHitRegion {
+    if let Some(button) = node.button {
+        buffers.interaction_targets.push(UiInteractionTarget {
+            id: node.id,
+            bounds: hit_bounds,
+            style: button,
+            command_index: buffers.commands.len(),
+        });
+    }
+    let disabled = node.button.is_some_and(|button| button.disabled);
+    if node.action.is_some() && !disabled {
+        buffers.hits.push(UiHitRegion {
             id: node.id,
             bounds: hit_bounds,
         });
     }
-    if let Some(action) = &node.action {
-        action_hits.push(UiActionHit {
+    if let Some(action) = &node.action
+        && !disabled
+    {
+        buffers.action_hits.push(UiActionHit {
             id: node.id,
             key: node.key.clone(),
             action: action.clone(),
             bounds: hit_bounds,
         });
     }
-    layout_children(
-        node,
-        inset(paint_bounds, node.style.padding),
-        clip,
-        commands,
-        hits,
-        action_hits,
-    )
+    layout_children(node, inset(paint_bounds, node.style.padding), clip, buffers)
+}
+
+fn dynamic_commands(
+    target: UiInteractionTarget,
+    state: UiButtonState,
+    ripples: &[UiRipple],
+) -> Vec<UiDrawCommand> {
+    let mut commands = Vec::new();
+    if state.disabled {
+        push_fill(&mut commands, target.bounds, target.style.disabled_color);
+    } else {
+        if state.hovered {
+            push_fill(&mut commands, target.bounds, target.style.hover_color);
+        }
+        if state.pressed {
+            push_fill(&mut commands, target.bounds, target.style.pressed_color);
+        }
+        if state.focused && target.style.focus_width != 0 {
+            commands.push(UiDrawCommand::Outline {
+                bounds: target.bounds,
+                color: target.style.focus_color,
+                radius: UiBorderRadius::all(0),
+                width: target.style.focus_width,
+                clip: target.bounds,
+            });
+        }
+        for ripple in ripples.iter().filter(|ripple| ripple.target == target.id) {
+            let radius = ripple.radius(target.bounds);
+            let left = ripple.origin.x.saturating_sub(radius as i32).max(0) as u32;
+            let top = ripple.origin.y.saturating_sub(radius as i32).max(0) as u32;
+            let diameter = radius.saturating_mul(2).max(1);
+            commands.push(UiDrawCommand::Ripple {
+                bounds: UiRect::new(left, top, diameter, diameter),
+                center: ripple.origin,
+                radius,
+                color: ripple.color,
+                clip: target.bounds,
+            });
+        }
+    }
+    commands
+}
+
+fn push_fill(commands: &mut Vec<UiDrawCommand>, bounds: UiRect, color: UiColor) {
+    if color.alpha != 0 && !bounds.is_empty() {
+        commands.push(UiDrawCommand::Fill {
+            bounds,
+            color,
+            border_radius: UiBorderRadius::default(),
+            clip: bounds,
+        });
+    }
 }
 
 fn inset(bounds: UiRect, insets: Insets) -> UiRect {
@@ -287,9 +407,7 @@ fn layout_children<Action: Clone>(
     node: &UiNode<Action>,
     content: UiRect,
     clip: UiRect,
-    commands: &mut Vec<UiDrawCommand>,
-    hits: &mut Vec<UiHitRegion>,
-    action_hits: &mut Vec<UiActionHit<Action>>,
+    buffers: &mut ResolveBuffers<Action>,
 ) -> Result<(), UiLayoutError> {
     let flow: Vec<_> = node
         .children
@@ -493,15 +611,7 @@ fn layout_children<Action: Clone>(
                 offered.height.min(main_available.saturating_sub(cursor)),
             )
         };
-        resolve_node(
-            child,
-            offered,
-            content.size(),
-            clip,
-            commands,
-            hits,
-            action_hits,
-        )?;
+        resolve_node(child, offered, content.size(), clip, buffers)?;
         if !stacked {
             cursor = cursor
                 .saturating_add(main)
@@ -526,15 +636,7 @@ fn layout_children<Action: Clone>(
             content.width.saturating_sub(left),
             content.height.saturating_sub(top),
         );
-        resolve_node(
-            child,
-            offered,
-            content.size(),
-            clip,
-            commands,
-            hits,
-            action_hits,
-        )?;
+        resolve_node(child, offered, content.size(), clip, buffers)?;
     }
     let _ = used;
     Ok(())

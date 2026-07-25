@@ -36,7 +36,7 @@ use map_render::AtomicTileCatalog;
 use narrative::load_narrative_scripts;
 use punctum_gpu::{PixelSize, Rgba8};
 use punctum_input::{KeyPhase, LogicalKey, NamedKey};
-use punctum_ui::{UiFrame, UiSize};
+use punctum_ui::{UiFrame, UiInteraction, UiInteractionTarget, UiSize};
 use sprites::load_game_assets;
 use winit::{
     application::ApplicationHandler,
@@ -68,7 +68,10 @@ struct CreatureGameApp {
     cursor: Option<PhysicalPosition<f64>>,
     pokedex_frame: Option<UiFrame<PokedexAction>>,
     foundation_frame: Option<UiFrame<FoundationPageAction>>,
+    interaction: UiInteraction,
+    interaction_targets: Vec<UiInteractionTarget>,
     last_real_instant: Instant,
+    last_ui_instant: Instant,
     next_world_tick: Instant,
     next_wakeup: Option<Instant>,
     window: Option<Arc<Window>>,
@@ -121,7 +124,10 @@ impl CreatureGameApp {
             cursor: None,
             pokedex_frame: None,
             foundation_frame: None,
+            interaction: UiInteraction::default(),
+            interaction_targets: Vec::new(),
             last_real_instant: now,
+            last_ui_instant: now,
             next_world_tick: now + WORLD_LOGIC_TICK,
             next_wakeup: None,
             window: None,
@@ -232,6 +238,7 @@ impl CreatureGameApp {
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        self.advance_ui(Instant::now());
         self.advance_presentation(Instant::now());
         let Some(surface_size) = self.runtime.as_ref().map(NativeTarget::surface_size) else {
             return;
@@ -262,6 +269,8 @@ impl CreatureGameApp {
                     return;
                 }
             };
+            self.prepare_interaction(frame.interaction_targets().to_vec());
+            let frame = frame.with_interaction(self.interaction.snapshot());
             self.foundation_frame = Some(frame.clone());
             let plan = match FramePlan::from_ui_frame(
                 &frame,
@@ -325,23 +334,21 @@ impl CreatureGameApp {
                 return;
             }
         };
-        let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
-            return;
-        };
-        self.pokedex_frame = match &projected.frame {
-            SceneFrame::Pokedex(frame) => Some(frame.clone()),
-            SceneFrame::PokedexWithUi { base, .. } => Some(base.clone()),
-            _ => None,
-        };
+        self.prepare_interaction(scene_interaction_targets(&projected.frame));
+        let interaction = self.interaction.snapshot().clone();
+        self.pokedex_frame = None;
         self.foundation_frame = None;
         let plan_result = match projected.frame {
             SceneFrame::Grid(view) => {
                 FramePlan::from_game_view(&view, &self.assets, viewport, GAME_TEXT_SCALE)
             }
             SceneFrame::Ui(frame) => {
+                let frame = frame.with_interaction(&interaction);
                 FramePlan::from_ui_frame(&frame, &self.assets, TextScale::new(1, 1, 16, 28))
             }
             SceneFrame::Pokedex(frame) => {
+                let frame = frame.with_interaction(&interaction);
+                self.pokedex_frame = Some(frame.clone());
                 FramePlan::from_ui_frame(&frame, &self.assets, TextScale::new(1, 1, 16, 28))
             }
             SceneFrame::GridWithUi { base, overlay } => FramePlan::from_game_view(
@@ -351,10 +358,13 @@ impl CreatureGameApp {
                 GAME_TEXT_SCALE,
             )
             .and_then(|base| {
+                let overlay = overlay.with_interaction(&interaction);
                 FramePlan::from_ui_frame(&overlay, &self.assets, TextScale::new(1, 1, 16, 28))
                     .map(|overlay| FramePlan::compose(base, overlay))
             }),
             SceneFrame::UiWithUi { base, overlay } => {
+                let base = base.with_interaction(&interaction);
+                let overlay = overlay.with_interaction(&interaction);
                 FramePlan::from_ui_frame(&base, &self.assets, TextScale::new(1, 1, 16, 28))
                     .and_then(|base| {
                         FramePlan::from_ui_frame(
@@ -366,6 +376,9 @@ impl CreatureGameApp {
                     })
             }
             SceneFrame::PokedexWithUi { base, overlay } => {
+                let base = base.with_interaction(&interaction);
+                self.pokedex_frame = Some(base.clone());
+                let overlay = overlay.with_interaction(&interaction);
                 FramePlan::from_ui_frame(&base, &self.assets, TextScale::new(1, 1, 16, 28))
                     .and_then(|base| {
                         FramePlan::from_ui_frame(
@@ -384,6 +397,9 @@ impl CreatureGameApp {
                 event_loop.exit();
                 return;
             }
+        };
+        let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
+            return;
         };
         let result = runtime.present(&plan);
         match result {
@@ -458,15 +474,63 @@ impl CreatureGameApp {
         self.apply_presentation_update(update);
     }
 
-    fn handle_pokedex_click(&mut self) {
+    fn prepare_interaction(&mut self, targets: Vec<UiInteractionTarget>) {
+        self.interaction_targets = targets;
+        self.interaction.reconcile(&self.interaction_targets);
+        self.sync_pointer();
+    }
+
+    fn sync_pointer(&mut self) {
         let Some(cursor) = self.cursor else {
             return;
         };
+        let Some((x, y)) = cursor_position(cursor) else {
+            return;
+        };
+        if self
+            .interaction
+            .pointer_move(&self.interaction_targets, x, y)
+        {
+            self.request_redraw();
+        }
+    }
+
+    fn handle_pointer_press(&mut self) {
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+        let Some((x, y)) = cursor_position(cursor) else {
+            return;
+        };
+        self.interaction.press(&self.interaction_targets, x, y);
+        self.request_redraw();
+    }
+
+    fn handle_pointer_release(&mut self) {
+        let Some(cursor) = self.cursor else {
+            self.interaction.pointer_leave();
+            return;
+        };
+        let Some((x, y)) = cursor_position(cursor) else {
+            return;
+        };
+        let Some(id) = self.interaction.release(&self.interaction_targets, x, y) else {
+            self.request_redraw();
+            return;
+        };
+        if self.foundation_page.is_some() {
+            self.handle_foundation_release(id);
+        } else {
+            self.handle_pokedex_release(id);
+        }
+    }
+
+    fn handle_pokedex_release(&mut self, id: punctum_ui::UiId) {
         let Some(action) = self
             .pokedex_frame
             .as_ref()
-            .and_then(|frame| frame.hit_action(cursor.x.max(0.0) as u32, cursor.y.max(0.0) as u32))
-            .copied()
+            .and_then(|frame| frame.action_hit_by_id(id))
+            .map(|hit| hit.action)
         else {
             return;
         };
@@ -476,15 +540,12 @@ impl CreatureGameApp {
         self.apply_presentation_update(update);
     }
 
-    fn handle_foundation_click(&mut self) {
-        let Some(cursor) = self.cursor else {
-            return;
-        };
+    fn handle_foundation_release(&mut self, id: punctum_ui::UiId) {
         let Some(action) = self
             .foundation_frame
             .as_ref()
-            .and_then(|frame| frame.hit_action(cursor.x.max(0.0) as u32, cursor.y.max(0.0) as u32))
-            .copied()
+            .and_then(|frame| frame.action_hit_by_id(id))
+            .map(|hit| hit.action)
         else {
             return;
         };
@@ -666,6 +727,14 @@ impl CreatureGameApp {
         self.apply_presentation_update(update);
     }
 
+    fn advance_ui(&mut self, now: Instant) {
+        let elapsed = now.saturating_duration_since(self.last_ui_instant);
+        self.last_ui_instant = now;
+        if self.interaction.advance(elapsed) {
+            self.request_redraw();
+        }
+    }
+
     fn world_clock_is_active(&self) -> bool {
         self.foundation_page.is_none()
             && !self.presentation.is_console_open()
@@ -754,6 +823,7 @@ impl ApplicationHandler for CreatureGameApp {
             }
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::Focused(false) => {
+                self.interaction.clear_transient();
                 self.advance_presentation(Instant::now());
                 let presentation = mem::take(&mut self.presentation);
                 let (presentation, update) = presentation.focus_lost();
@@ -761,19 +831,26 @@ impl ApplicationHandler for CreatureGameApp {
                 self.apply_presentation_update(update);
             }
             WindowEvent::KeyboardInput { event, .. } => self.handle_key(event),
-            WindowEvent::CursorMoved { position, .. } => self.cursor = Some(position),
-            WindowEvent::CursorLeft { .. } => self.cursor = None,
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = Some(position);
+                self.sync_pointer();
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.cursor = None;
+                if self.interaction.pointer_leave() {
+                    self.request_redraw();
+                }
+            }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } => {
-                if self.foundation_page.is_some() {
-                    self.handle_foundation_click();
-                } else {
-                    self.handle_pokedex_click();
-                }
-            }
+            } => self.handle_pointer_press(),
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            } => self.handle_pointer_release(),
             WindowEvent::Ime(event) => self.handle_ime_event(event),
             WindowEvent::RedrawRequested => self.redraw(event_loop),
             _ => {}
@@ -781,11 +858,16 @@ impl ApplicationHandler for CreatureGameApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        self.advance_ui(now);
         if self.foundation_page.is_some() {
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            if let Some(delay) = self.interaction.next_delay() {
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(now + delay));
+            } else {
+                event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            }
             return;
         }
-        let now = Instant::now();
         self.advance_presentation(now);
         self.advance_world_clock(now);
         let Some(game) = self.game() else {
@@ -798,17 +880,55 @@ impl ApplicationHandler for CreatureGameApp {
             .next_delay(&snapshot)
             .map(|delay| now + delay);
         let world_wakeup = self.world_clock_is_active().then_some(self.next_world_tick);
-        self.next_wakeup = match (presentation_wakeup, world_wakeup) {
-            (Some(presentation), Some(world)) => Some(presentation.min(world)),
-            (Some(deadline), None) | (None, Some(deadline)) => Some(deadline),
-            (None, None) => None,
-        };
+        let ui_wakeup = self.interaction.next_delay().map(|delay| now + delay);
+        self.next_wakeup = [presentation_wakeup, world_wakeup, ui_wakeup]
+            .into_iter()
+            .flatten()
+            .min();
         if let Some(deadline) = self.next_wakeup {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(deadline));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
     }
+}
+
+fn scene_interaction_targets(frame: &SceneFrame) -> Vec<UiInteractionTarget> {
+    let mut targets = Vec::new();
+    match frame {
+        SceneFrame::Grid(_) => {}
+        SceneFrame::Ui(frame) => {
+            targets.extend_from_slice(frame.interaction_targets());
+        }
+        SceneFrame::Pokedex(frame) => {
+            targets.extend_from_slice(frame.interaction_targets());
+        }
+        SceneFrame::GridWithUi { overlay, .. } => {
+            targets.extend_from_slice(overlay.interaction_targets());
+        }
+        SceneFrame::UiWithUi { base, overlay } => {
+            targets.extend_from_slice(base.interaction_targets());
+            targets.extend_from_slice(overlay.interaction_targets());
+        }
+        SceneFrame::PokedexWithUi { base, overlay } => {
+            targets.extend_from_slice(base.interaction_targets());
+            targets.extend_from_slice(overlay.interaction_targets());
+        }
+    }
+    targets
+}
+
+fn cursor_position(position: PhysicalPosition<f64>) -> Option<(u32, u32)> {
+    let x = coordinate(position.x)?;
+    let y = coordinate(position.y)?;
+    Some((x, y))
+}
+
+fn coordinate(value: f64) -> Option<u32> {
+    if !value.is_finite() || value.is_sign_negative() || value > f64::from(u32::MAX) {
+        return None;
+    }
+    Some(value as u32)
 }
 
 fn random_roster_seed() -> u64 {

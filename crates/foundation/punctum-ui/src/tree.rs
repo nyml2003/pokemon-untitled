@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    Dimension, Position, UiBuildError, UiContent, UiFrame, UiId, UiKey, UiLayoutError, UiSize,
-    UiStyle, UiTextSize, layout::resolve_tree,
+    Dimension, Position, UiBuildError, UiButtonStyle, UiContent, UiFrame, UiId, UiKey,
+    UiLayoutError, UiSize, UiStyle, UiTextSize, layout::resolve_tree,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -15,6 +15,7 @@ pub struct UiNode<Action = ()> {
     pub style: UiStyle,
     pub content: UiContent,
     pub children: Vec<UiNode<Action>>,
+    pub button: Option<UiButtonStyle>,
     automatic_id: bool,
 }
 impl<Action> UiNode<Action> {
@@ -27,6 +28,7 @@ impl<Action> UiNode<Action> {
             style: UiStyle::default(),
             content: UiContent::Empty,
             children: Vec::new(),
+            button: None,
             automatic_id: true,
         }
     }
@@ -49,6 +51,10 @@ impl<Action> UiNode<Action> {
     }
     pub fn with_children(mut self, children: impl IntoIterator<Item = UiNode<Action>>) -> Self {
         self.children = children.into_iter().collect();
+        self
+    }
+    pub fn with_button(mut self, button: UiButtonStyle) -> Self {
+        self.button = Some(button);
         self
     }
 }

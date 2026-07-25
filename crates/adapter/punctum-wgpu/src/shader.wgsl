@@ -31,6 +31,7 @@ struct VertexOutput {
     @location(2) local_pixel: vec2<f32>,
     @location(3) pixel_size: vec2<f32>,
     @location(4) corner_radii: vec4<f32>,
+    @interpolate(flat) @location(5) primitive: u32,
 }
 
 const QUAD: array<vec2<f32>, 6> = array<vec2<f32>, 6>(
@@ -60,10 +61,11 @@ fn vs_main(input: VertexInput, @builtin(vertex_index) vertex_index: u32) -> Vert
     var output: VertexOutput;
     output.position = vec4<f32>(ndc, 0.0, 1.0);
     output.uv = atlas_pixel / vec2<f32>(viewport.atlas_size);
-    output.tint = input.tint * f32(input.visible);
+    output.tint = input.tint;
     output.local_pixel = corner * vec2<f32>(input.grid_span * viewport.cell_size);
     output.pixel_size = vec2<f32>(input.grid_span * viewport.cell_size);
     output.corner_radii = vec4<f32>(input.corner_radii);
+    output.primitive = input.visible;
     return output;
 }
 
@@ -96,5 +98,15 @@ fn rounded_coverage(input: VertexOutput) -> f32 {
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let color = textureSample(atlas_texture, atlas_sampler, input.uv) * input.tint;
-    return vec4<f32>(color.rgb, color.a * rounded_coverage(input));
+    var coverage = rounded_coverage(input);
+    if input.primitive == 2u {
+        let center = input.corner_radii.xy;
+        let radius = input.corner_radii.z;
+        coverage = 1.0 - smoothstep(
+            radius - 0.5,
+            radius + 0.5,
+            distance(input.local_pixel, center),
+        );
+    }
+    return vec4<f32>(color.rgb, color.a * coverage);
 }

@@ -44,7 +44,11 @@ impl UiRect {
             .y
             .saturating_add(self.height)
             .min(other.y.saturating_add(other.height));
-        (left < right && top < bottom).then_some(Self::new(left, top, right - left, bottom - top))
+        if left >= right || top >= bottom {
+            None
+        } else {
+            Some(Self::new(left, top, right - left, bottom - top))
+        }
     }
     pub fn contains(self, x: u32, y: u32) -> bool {
         x >= self.x
@@ -60,6 +64,35 @@ pub struct UiColor {
     pub green: u8,
     pub blue: u8,
     pub alpha: u8,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiButtonStyle {
+    pub selected: bool,
+    pub disabled: bool,
+    pub hover_color: UiColor,
+    pub pressed_color: UiColor,
+    pub disabled_color: UiColor,
+    pub focus_color: UiColor,
+    pub ripple_color: UiColor,
+    pub focus_width: u32,
+    pub ripple_duration_ms: u32,
+}
+
+impl UiButtonStyle {
+    pub const fn new(selected: bool, disabled: bool) -> Self {
+        Self {
+            selected,
+            disabled,
+            hover_color: UiColor::new(0, 0, 0, 0),
+            pressed_color: UiColor::new(0, 0, 0, 0),
+            disabled_color: UiColor::new(0, 0, 0, 0),
+            focus_color: UiColor::new(0, 0, 0, 0),
+            ripple_color: UiColor::new(0, 0, 0, 0),
+            focus_width: 0,
+            ripple_duration_ms: 0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

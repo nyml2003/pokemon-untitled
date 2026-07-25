@@ -6,16 +6,20 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod interaction;
 mod layout;
 mod model;
 mod tree;
 
 pub use error::{UiBuildError, UiLayoutError};
-pub use layout::{UiActionHit, UiDrawCommand, UiFrame, UiHitRegion};
+pub use interaction::{
+    UiButtonState, UiInteraction, UiInteractionSnapshot, UiMotionPolicy, UiRipple,
+};
+pub use layout::{UiActionHit, UiDrawCommand, UiFrame, UiHitRegion, UiInteractionTarget};
 pub use model::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, Position, UiBorder, UiBorderRadius,
-    UiColor, UiContent, UiContentId, UiId, UiKey, UiPixelOffset, UiRect, UiSize, UiStyle,
-    UiTextSize,
+    UiButtonStyle, UiColor, UiContent, UiContentId, UiId, UiKey, UiPixelOffset, UiRect, UiSize,
+    UiStyle, UiTextSize,
 };
 pub use tree::{UiNode, UiTree};
 

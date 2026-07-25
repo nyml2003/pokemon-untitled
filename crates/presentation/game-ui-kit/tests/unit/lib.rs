@@ -1,6 +1,6 @@
-use punctum_ui::{UiBorderRadius, UiDrawCommand, UiSize, UiTree};
+use punctum_ui::{UiBorderRadius, UiColor, UiDrawCommand, UiSize, UiTree};
 
-use super::*;
+use super::{GameButtonTheme, GameUiTheme, *};
 
 const THEME: GameUiTheme = GameUiTheme {
     screen: UiColor::new(1, 2, 3, 255),
@@ -22,6 +22,15 @@ const THEME: GameUiTheme = GameUiTheme {
     large_radius: UiBorderRadius::all(6),
     body_text_size: 12,
     title_text_size: 18,
+    button: GameButtonTheme {
+        hover_color: UiColor::new(255, 255, 255, 32),
+        pressed_color: UiColor::new(255, 255, 255, 64),
+        disabled_color: UiColor::new(0, 0, 0, 64),
+        focus_color: UiColor::new(255, 255, 255, 192),
+        ripple_color: UiColor::new(255, 255, 255, 128),
+        focus_width: 1,
+        ripple_duration_ms: 160,
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

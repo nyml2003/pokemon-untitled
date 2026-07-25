@@ -297,6 +297,13 @@ pub struct GpuPixelImage {
     pub resource: ResourceId,
     pub tint: Rgba8,
     pub z_index: i32,
+    pub(crate) circle: Option<GpuPixelCircle>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuPixelCircle {
+    pub(crate) center: PixelOffset,
+    pub(crate) radius: u32,
 }
 
 impl GpuPixelImage {
@@ -308,6 +315,7 @@ impl GpuPixelImage {
             resource,
             tint,
             z_index,
+            circle: None,
         }
     }
 
@@ -319,6 +327,11 @@ impl GpuPixelImage {
     /// Corner radii are ordered top-left, top-right, bottom-right, bottom-left.
     pub const fn with_corner_radii(mut self, corner_radii: [u32; 4]) -> Self {
         self.corner_radii = corner_radii;
+        self
+    }
+
+    pub const fn with_circle(mut self, center: PixelOffset, radius: u32) -> Self {
+        self.circle = Some(GpuPixelCircle { center, radius });
         self
     }
 }

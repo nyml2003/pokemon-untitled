@@ -5,7 +5,7 @@
 
 #![forbid(unsafe_code)]
 
-use std::{error::Error, fmt, sync::Arc};
+use std::{error::Error, fmt, sync::Arc, time::Instant};
 
 use game_assets::{AssetKey, DecodedImage};
 use game_native_target::{
@@ -16,7 +16,7 @@ use game_page_model::{
 };
 use game_view::project_page_model_with_notice;
 use punctum_gpu::{PixelSize, Rgba8};
-use punctum_ui::{UiFrame, UiSize};
+use punctum_ui::{UiFrame, UiInteraction, UiInteractionTarget, UiSize};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
@@ -36,7 +36,10 @@ struct PageDemoApp {
     status: Option<String>,
     assets: NativeAssets,
     frame: Option<UiFrame<PageIntent>>,
+    interaction: UiInteraction,
+    interaction_targets: Vec<UiInteractionTarget>,
     cursor: Option<PhysicalPosition<f64>>,
+    last_ui_instant: Instant,
     window: Option<Arc<Window>>,
     runtime: Option<NativeTarget<'static>>,
 }
@@ -57,7 +60,10 @@ impl PageDemoApp {
             status: None,
             assets,
             frame: None,
+            interaction: UiInteraction::default(),
+            interaction_targets: Vec::new(),
             cursor: None,
+            last_ui_instant: Instant::now(),
             window: None,
             runtime: None,
         })
@@ -106,6 +112,7 @@ impl PageDemoApp {
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        self.advance_ui(Instant::now());
         let Some(surface_size) = self.runtime.as_ref().map(NativeTarget::surface_size) else {
             return;
         };
@@ -137,6 +144,10 @@ impl PageDemoApp {
                 return;
             }
         };
+        self.interaction_targets = frame.interaction_targets().to_vec();
+        self.interaction.reconcile(&self.interaction_targets);
+        self.sync_pointer();
+        let frame = frame.with_interaction(self.interaction.snapshot());
         let plan = match FramePlan::from_ui_frame(&frame, &self.assets, TEXT_SCALE) {
             Ok(plan) => plan,
             Err(error) => {
@@ -175,19 +186,51 @@ impl PageDemoApp {
         self.request_redraw();
     }
 
-    fn click(&mut self) {
+    fn sync_pointer(&mut self) {
         let Some(cursor) = self.cursor else {
             return;
         };
         let Some((x, y)) = cursor_position(cursor) else {
             return;
         };
+        if self
+            .interaction
+            .pointer_move(&self.interaction_targets, x, y)
+        {
+            self.request_redraw();
+        }
+    }
+
+    fn press(&mut self) {
+        let Some(cursor) = self.cursor else {
+            return;
+        };
+        let Some((x, y)) = cursor_position(cursor) else {
+            return;
+        };
+        self.interaction.press(&self.interaction_targets, x, y);
+        self.request_redraw();
+    }
+
+    fn release(&mut self) {
+        let Some(cursor) = self.cursor else {
+            self.interaction.pointer_leave();
+            return;
+        };
+        let Some((x, y)) = cursor_position(cursor) else {
+            return;
+        };
+        let Some(id) = self.interaction.release(&self.interaction_targets, x, y) else {
+            self.request_redraw();
+            return;
+        };
         let Some(intent) = self
             .frame
             .as_ref()
-            .and_then(|frame| frame.hit_action(x, y))
-            .cloned()
+            .and_then(|frame| frame.action_hit_by_id(id))
+            .map(|hit| hit.action.clone())
         else {
+            self.request_redraw();
             return;
         };
         match self.state.clone().transition(intent) {
@@ -199,6 +242,14 @@ impl PageDemoApp {
         }
         self.update_title();
         self.request_redraw();
+    }
+
+    fn advance_ui(&mut self, now: Instant) {
+        let elapsed = now.saturating_duration_since(self.last_ui_instant);
+        self.last_ui_instant = now;
+        if self.interaction.advance(elapsed) {
+            self.request_redraw();
+        }
     }
 }
 
@@ -230,14 +281,41 @@ impl ApplicationHandler for PageDemoApp {
                     self.resize(window.inner_size());
                 }
             }
-            WindowEvent::CursorMoved { position, .. } => self.cursor = Some(position),
-            WindowEvent::CursorLeft { .. } => self.cursor = None,
+            WindowEvent::CursorMoved { position, .. } => {
+                self.cursor = Some(position);
+                self.sync_pointer();
+            }
+            WindowEvent::CursorLeft { .. } => {
+                self.cursor = None;
+                if self.interaction.pointer_leave() {
+                    self.request_redraw();
+                }
+            }
             WindowEvent::MouseInput {
                 state: ElementState::Pressed,
                 button: MouseButton::Left,
                 ..
-            } => self.click(),
+            } => self.press(),
+            WindowEvent::MouseInput {
+                state: ElementState::Released,
+                button: MouseButton::Left,
+                ..
+            } => self.release(),
+            WindowEvent::Focused(false) => {
+                self.interaction.clear_transient();
+                self.request_redraw();
+            }
             _ => {}
+        }
+    }
+
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = Instant::now();
+        self.advance_ui(now);
+        if let Some(delay) = self.interaction.next_delay() {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(now + delay));
+        } else {
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);
         }
     }
 }

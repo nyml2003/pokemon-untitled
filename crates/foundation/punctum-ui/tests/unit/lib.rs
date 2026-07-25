@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::*;
 fn fill(_id: u32, style: UiStyle) -> UiNode {
     UiNode::auto()
@@ -72,6 +74,73 @@ fn clipping_and_topmost_hit_are_deterministic() {
     let frame = tree.resolve(UiSize::new(20, 20)).unwrap();
     assert_eq!(frame.action_hit_at(15, 15).map(|hit| hit.id), Some(UiId(2)));
     assert_eq!(frame.action_hit_at(25, 15), None);
+}
+
+#[test]
+fn button_states_are_orthogonal_and_ripple_is_transient() -> Result<(), Box<dyn std::error::Error>>
+{
+    let button = UiButtonStyle {
+        selected: true,
+        hover_color: UiColor::new(1, 2, 3, 40),
+        pressed_color: UiColor::new(4, 5, 6, 80),
+        focus_color: UiColor::new(7, 8, 9, 255),
+        ripple_color: UiColor::new(10, 11, 12, 160),
+        focus_width: 1,
+        ripple_duration_ms: 160,
+        ..UiButtonStyle::new(true, false)
+    };
+    let tree = UiTree::new(
+        UiNode::auto()
+            .with_style(UiStyle::fixed(40, 20))
+            .with_content(UiContent::Fill(UiColor::new(20, 20, 20, 255)))
+            .with_button(button)
+            .with_action(TestAction::Front),
+    )?;
+    let frame = tree.resolve(UiSize::new(40, 20))?;
+    let mut interaction = UiInteraction::default();
+    assert!(interaction.pointer_move(frame.interaction_targets(), 10, 10));
+    assert!(interaction.press(frame.interaction_targets(), 10, 10));
+    assert_eq!(interaction.snapshot().hovered, Some(UiId(0)));
+    assert_eq!(interaction.snapshot().pressed, Some(UiId(0)));
+    assert_eq!(interaction.snapshot().focused, Some(UiId(0)));
+    assert_eq!(interaction.snapshot().ripples.len(), 1);
+
+    let active = frame.with_interaction(interaction.snapshot());
+    assert!(
+        active
+            .commands()
+            .iter()
+            .any(|command| matches!(command, UiDrawCommand::Ripple { .. }))
+    );
+    assert_eq!(
+        interaction.release(frame.interaction_targets(), 40, 19),
+        None
+    );
+    assert_eq!(interaction.snapshot().pressed, None);
+    assert!(interaction.press(frame.interaction_targets(), 10, 10));
+    assert_eq!(
+        interaction.release(frame.interaction_targets(), 10, 10),
+        Some(UiId(0))
+    );
+    assert!(interaction.advance(Duration::from_millis(200)));
+    assert!(interaction.snapshot().ripples.is_empty());
+    Ok(())
+}
+
+#[test]
+fn disabled_button_is_visual_but_not_actionable() -> Result<(), Box<dyn std::error::Error>> {
+    let tree = UiTree::new(
+        UiNode::auto()
+            .with_style(UiStyle::fixed(40, 20))
+            .with_content(UiContent::Fill(UiColor::new(20, 20, 20, 255)))
+            .with_button(UiButtonStyle::new(false, true))
+            .with_action(TestAction::Front),
+    )?;
+    let frame = tree.resolve(UiSize::new(40, 20))?;
+    assert_eq!(frame.action_hits().len(), 0);
+    let mut interaction = UiInteraction::default();
+    assert!(!interaction.press(frame.interaction_targets(), 10, 10));
+    Ok(())
 }
 
 #[test]

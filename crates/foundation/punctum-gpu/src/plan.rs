@@ -151,14 +151,26 @@ pub fn plan_pixels(
                 bounds: image.bounds,
                 resource: image.resource,
             })?;
+        let (visible, corner_radii) = match image.circle {
+            Some(circle) => (
+                2,
+                [
+                    circle.center.x.max(0) as u32,
+                    circle.center.y.max(0) as u32,
+                    circle.radius,
+                    0,
+                ],
+            ),
+            None => (1, image.corner_radii),
+        };
         instances.push(InstanceData {
             grid_position: [image.bounds.x, image.bounds.y],
             grid_span: [image.bounds.width, image.bounds.height],
             pixel_offset: [image.pixel_offset.x, image.pixel_offset.y],
             atlas_rect: [rect.x, rect.y, rect.width, rect.height],
             tint: image.tint.to_array(),
-            visible: 1,
-            corner_radii: image.corner_radii,
+            visible,
+            corner_radii,
         });
     }
     let uploads = (!instances.is_empty())
