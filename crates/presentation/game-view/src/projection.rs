@@ -949,11 +949,11 @@ fn project_pause_pokedex(
                             &FOUNDATION_THEME,
                             PanelTone::Panel,
                             UiStyle {
-                                width: Dimension::Px(220),
+                                width: Dimension::Ratio { units: 1, base: 4 },
                                 height: Dimension::Fill,
                                 direction: FlexDirection::Column,
                                 gap: 4,
-                                padding: Insets::all(8),
+                                padding: Insets::all(6),
                                 clip: true,
                                 ..UiStyle::default()
                             },
@@ -969,7 +969,7 @@ fn project_pause_pokedex(
                                     UiStyle {
                                         width: Dimension::Fill,
                                         height: Dimension::Fill,
-                                        gap: 4,
+                                        gap: 2,
                                         ..UiStyle::default()
                                     },
                                     index_rows,
@@ -983,8 +983,8 @@ fn project_pause_pokedex(
                                 width: Dimension::Fill,
                                 height: Dimension::Fill,
                                 direction: FlexDirection::Column,
-                                gap: 14,
-                                padding: Insets::all(20),
+                                gap: 10,
+                                padding: Insets::all(12),
                                 ..UiStyle::default()
                             },
                             [
@@ -992,7 +992,7 @@ fn project_pause_pokedex(
                                     UiStyle {
                                         width: Dimension::Fill,
                                         height: Dimension::Fill,
-                                        gap: 24,
+                                        gap: 12,
                                         ..UiStyle::default()
                                     },
                                     [
@@ -1000,7 +1000,7 @@ fn project_pause_pokedex(
                                             &FOUNDATION_THEME,
                                             PanelTone::ImageBackdrop,
                                             UiStyle {
-                                                width: Dimension::Px(300),
+                                                width: Dimension::Ratio { units: 2, base: 5 },
                                                 height: Dimension::Px(300),
                                                 cross_align: CrossAlign::Center,
                                                 main_align: MainAlign::Center,
@@ -1018,7 +1018,7 @@ fn project_pause_pokedex(
                                             UiStyle {
                                                 width: Dimension::Fill,
                                                 height: Dimension::Fill,
-                                                gap: 10,
+                                                gap: 0,
                                                 ..UiStyle::default()
                                             },
                                             [
@@ -1167,7 +1167,7 @@ fn pokedex_index_row(
         &FOUNDATION_THEME,
         UiStyle {
             width: Dimension::Fill,
-            height: Dimension::Px(54),
+            height: Dimension::Fill,
             direction: FlexDirection::Row,
             gap: 8,
             padding: Insets::symmetric(6, 4),
@@ -1181,7 +1181,7 @@ fn pokedex_index_row(
         },
         ButtonOptions::new(selected, action.is_none()),
         [
-            pokedex_sprite_with_appearance(number.value(), 44, 44, appearance),
+            pokedex_sprite_with_appearance(number.value(), 36, 36, appearance),
             ui_text(
                 &FOUNDATION_THEME,
                 if selected {
@@ -1190,7 +1190,7 @@ fn pokedex_index_row(
                     TextTone::Default
                 },
                 format!("{:03}", number.value()),
-                16,
+                13,
                 Dimension::Fill,
             ),
         ],

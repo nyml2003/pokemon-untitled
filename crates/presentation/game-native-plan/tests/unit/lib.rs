@@ -1,9 +1,10 @@
-use game_assets::DecodedImage;
+use game_assets::{AssetKey, DecodedImage};
 use game_view::{GameView, LayerKind, TextLabel, TextRole, ViewCell, ViewImage, ViewLayer};
 use punctum_gpu::{PixelOffset, PixelSize, Rgba8, Viewport};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface};
 
 use super::*;
+use crate::assets::resource_id;
 
 #[test]
 fn text_bounds_and_product_scales_preserve_existing_layout_rules() {
@@ -62,7 +63,7 @@ fn assets() -> NativeAssets {
     .unwrap()
 }
 
-fn viewport() -> GridViewport {
+fn viewport() -> Viewport {
     Viewport::new(
         PixelSize::new(20, 20),
         PixelOffset::new(0, 0),
