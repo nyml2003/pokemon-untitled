@@ -19,6 +19,7 @@
 | [004 AI 地图生成](004-AI地图生成.md) | AI 怎样生成可编辑、可验证的地图？ | `map-project`、地图编辑器、`world-project` | 候选包 schema、校验器和人工审批流。 |
 | [005 AI NPC 与叙事生成](005-AI-NPC与叙事生成.md) | AI 怎样生成有状态、可运行的 NPC？ | `world-application`、`narrative-*`、训练师编辑器 | NPC 内容合同、事件效果白名单和语义测试。 |
 | [006 内容运行时、存档与交付](006-内容运行时存档与交付.md) | 怎样把各子系统接成可持续交付的产品？ | `game-foundation`、`game-ramus-adapter`、`game-host` | 内容包、迁移、审计、端到端验收闭环。 |
+| [007 玩家页面与导航合同](007-玩家页面与导航合同.md) | 玩家会看见哪些页面，怎样跳转与传参？ | `ProductSession`、`game-ui`、`game-view`、`game-host` | 冻结 P0 页面、跳转与参数合同。 |
 
 本文只负责导航、顺序和跨篇约束。具体类型、阶段与验收在专题中定义。未来文档不能被当作当前 API 文档；现状仍以 `Cargo.toml`、源码、测试和 `docs/v2/current/` 为准。
 

@@ -17,6 +17,8 @@ def main() -> int:
     operations = {
         "build_game_host": "game-host",
         "run_game_host": "game-host",
+        "build_game_page_demo": "game-page-demo",
+        "run_game_page_demo": "game-page-demo",
         "build_map_editor": "map-editor",
         "run_map_editor": "map-editor",
         "build_trainer_editor": "trainer-editor",
@@ -30,6 +32,11 @@ def main() -> int:
     command = ["cargo", "build" if operation.startswith("build_") else "run", "--bin", operations[operation]]
     if profile == "release":
         command.append("--release")
+    demo = request.get("demo")
+    if demo is not None:
+        if operation != "run_game_page_demo" or not isinstance(demo, str):
+            return 2
+        command.extend(["--", "--page-demo", demo])
     return subprocess.run(command, cwd=Path(windows_root), check=False).returncode
 
 

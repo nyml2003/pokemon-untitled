@@ -32,6 +32,7 @@ class WindowsNativeRunDispatcher:
                 "operation": request.operation.value,
                 "profile": request.profile.value,
                 "windows_root": str(request.mirror_root.windows_path),
+                "demo": request.demo,
             }
         )
         stage = "build.output" if request.operation.is_build else "run.output"

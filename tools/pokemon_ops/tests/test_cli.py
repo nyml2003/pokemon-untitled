@@ -74,6 +74,14 @@ class CliTests(unittest.TestCase):
         self.assertEqual(arguments.docs_command, "check")
         self.assertTrue(arguments.json_output)
 
+    def test_page_demo_run_accepts_only_registered_demo_ids(self) -> None:
+        arguments = build_parser().parse_args(
+            ["run", "game-page-demo", "--demo", "party-single-member"]
+        )
+
+        self.assertEqual(arguments.target, "game-page-demo")
+        self.assertEqual(arguments.demo, "party-single-member")
+
     def test_init_mirror_creates_git_clone_and_preserves_json_stdout(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

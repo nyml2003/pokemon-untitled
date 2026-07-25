@@ -1068,6 +1068,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "game-page-demo"
+version = "0.0.0"
+dependencies = [
+ "game-assets",
+ "game-native-target",
+ "game-page-model",
+ "game-view",
+ "punctum-gpu",
+ "punctum-ui",
+ "winit",
+]
+
+[[package]]
+name = "game-page-model"
+version = "0.0.0"
+dependencies = [
+ "game-data",
+ "game-foundation",
+ "game-session",
+]
+
+[[package]]
 name = "game-ramus-adapter"
 version = "0.0.0"
 dependencies = [
@@ -1136,6 +1158,7 @@ dependencies = [
  "game-assets",
  "game-data",
  "game-foundation",
+ "game-page-model",
  "game-ui",
  "game-ui-kit",
  "map-project",

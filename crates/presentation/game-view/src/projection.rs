@@ -10,6 +10,10 @@ use battle_session::{
 use game_assets::AssetKey;
 use game_data::PokedexData;
 use game_foundation::{Direction as FoundationDirection, GameState, ThinSliceContent};
+use game_page_model::{
+    BagPageModel, PageIntent, PageModel, PartyPageModel, PausePage, PausePageModel,
+    PokedexPageModel, SaveUnavailableReason, TrainerCardPageModel,
+};
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction, WorldAnimation};
 use game_ui_kit::{
     GameUiTheme, PanelTone, SpriteAppearance, TextTone, button as ui_button, column as ui_column,
@@ -409,6 +413,679 @@ pub fn project_foundation(
             body,
         ],
     ))
+}
+
+/// 将渲染无关的页面模型投影为不含地图或资源图像的 UI tree。
+pub fn project_page_model(model: &PageModel) -> Result<UiTree<PageIntent>, UiBuildError> {
+    project_page_model_with_notice(model, None)
+}
+
+/// 将页面模型与适配层提供的短反馈投影为不含地图或资源图像的 UI tree。
+pub fn project_page_model_with_notice(
+    model: &PageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    match model {
+        PageModel::World(world) => project_page_world(world, notice),
+        PageModel::Pause(pause) => project_page_pause(pause, notice),
+        PageModel::Shop(shop) => project_page_shop(shop, notice),
+        PageModel::SaveConfirm(save) => project_page_save_confirm(save, notice),
+    }
+}
+
+fn project_page_world(
+    world: &game_page_model::WorldPageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("小镇状态", None)?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 8,
+                    padding: Insets::all(10),
+                    ..UiStyle::default()
+                },
+                [
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        "页面 Demo：不绘制地图",
+                        15,
+                        Dimension::Fill,
+                    ),
+                    page_notice(notice),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(50),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_info_card("地点", world.location.as_str()),
+                            page_info_card("队伍", world.party_count.to_string()),
+                            page_info_card("金钱", world.money.amount().to_string()),
+                        ],
+                    ),
+                    page_info_card(
+                        "安全点",
+                        if world.save_available {
+                            "现在可以保存"
+                        } else {
+                            "战斗中无法保存"
+                        },
+                    ),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(40),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_action_button(
+                                "菜单",
+                                "page-world-pause",
+                                false,
+                                Some(PageIntent::OpenPause),
+                            )?,
+                            page_action_button(
+                                if world.save_available {
+                                    "保存"
+                                } else {
+                                    "保存不可用"
+                                },
+                                "page-world-save",
+                                false,
+                                world.save_available.then_some(PageIntent::OpenSaveConfirm),
+                            )?,
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    ))
+}
+
+fn project_page_pause(
+    pause: &PausePageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    match pause {
+        PausePageModel::Menu => project_pause_menu(notice),
+        PausePageModel::Party(party) => project_pause_party(party, notice),
+        PausePageModel::Bag(bag) => project_pause_bag(bag, notice),
+        PausePageModel::Pokedex(pokedex) => project_pause_pokedex(pokedex, notice),
+        PausePageModel::TrainerCard(card) => project_pause_trainer_card(card, notice),
+    }
+}
+
+fn project_pause_menu(notice: Option<&str>) -> Result<UiTree<PageIntent>, UiBuildError> {
+    let entries = [
+        ("队伍", PausePage::Party),
+        ("背包", PausePage::Bag),
+        ("图鉴", PausePage::Pokedex),
+        ("训练家卡", PausePage::TrainerCard),
+    ]
+    .into_iter()
+    .map(|(label, page)| {
+        page_action_button(
+            label,
+            match page {
+                PausePage::Menu => "page-pause-menu",
+                PausePage::Party => "page-pause-party",
+                PausePage::Bag => "page-pause-bag",
+                PausePage::Pokedex => "page-pause-pokedex",
+                PausePage::TrainerCard => "page-pause-trainer-card",
+            },
+            false,
+            Some(PageIntent::SelectPausePage(page)),
+        )
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("暂停菜单", Some(PageIntent::Close))?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 6,
+                    padding: Insets::all(10),
+                    ..UiStyle::default()
+                },
+                std::iter::once(ui_text(
+                    &FOUNDATION_THEME,
+                    TextTone::Muted,
+                    "任务面板不保留世界状态副本",
+                    15,
+                    Dimension::Fill,
+                ))
+                .chain(std::iter::once(page_notice(notice)))
+                .chain(entries),
+            ),
+        ],
+    ))
+}
+
+fn project_pause_party(
+    party: &PartyPageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    let selected = party
+        .selected
+        .as_ref()
+        .and_then(|id| party.members.iter().find(|member| &member.id == id));
+    let summary = selected.map_or_else(
+        || page_info_card("当前", "尚未选择"),
+        |member| page_info_card("当前", member.species.as_str()),
+    );
+    let details = selected.map_or_else(
+        || page_info_card("状态", "选择成员查看状态"),
+        |member| {
+            page_info_card(
+                "状态",
+                format!(
+                    "HP {}/{}  PP {}/{}  EXP {}",
+                    member.current_hp,
+                    member.max_hp,
+                    member.current_pp,
+                    member.max_pp,
+                    member.experience
+                ),
+            )
+        },
+    );
+    let members = party
+        .members
+        .iter()
+        .map(|member| {
+            page_action_button(
+                format!(
+                    "{}  HP {}/{}",
+                    member.species, member.current_hp, member.max_hp
+                ),
+                format!("page-party-{}", member.id.as_str()),
+                party.selected.as_ref() == Some(&member.id),
+                Some(PageIntent::SelectPartyMember(member.id.clone())),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("队伍", Some(PageIntent::Close))?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 6,
+                    padding: Insets::all(10),
+                    ..UiStyle::default()
+                },
+                std::iter::once(page_notice(notice))
+                    .chain(std::iter::once(ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(42),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_info_card("成员", party.members.len().to_string()),
+                            summary,
+                        ],
+                    )))
+                    .chain(std::iter::once(details))
+                    .chain(members),
+            ),
+        ],
+    ))
+}
+
+fn project_pause_bag(
+    bag: &BagPageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    let selected = bag
+        .selected
+        .as_ref()
+        .and_then(|id| bag.entries.iter().find(|entry| &entry.item == id));
+    let selected_detail = selected.map_or_else(
+        || page_info_card("物品", "尚未选择"),
+        |entry| {
+            page_info_card(
+                "物品",
+                format!(
+                    "{:?}  {}/{}",
+                    entry.category, entry.quantity, entry.stack_limit
+                ),
+            )
+        },
+    );
+    let entries = bag
+        .entries
+        .iter()
+        .map(|entry| {
+            page_action_button(
+                format!("{}  x{}", entry.item.as_str(), entry.quantity),
+                format!("page-bag-{}", entry.item.as_str()),
+                bag.selected.as_ref() == Some(&entry.item),
+                Some(PageIntent::SelectBagItem(entry.item.clone())),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("背包", Some(PageIntent::Close))?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 6,
+                    padding: Insets::all(10),
+                    ..UiStyle::default()
+                },
+                std::iter::once(page_notice(notice))
+                    .chain(std::iter::once(ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(42),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_info_card("金钱", bag.money.amount().to_string()),
+                            page_info_card("容量", format!("{}/{}", bag.slots_used, bag.capacity)),
+                        ],
+                    )))
+                    .chain(std::iter::once(selected_detail))
+                    .chain(entries),
+            ),
+        ],
+    ))
+}
+
+fn project_pause_pokedex(
+    pokedex: &PokedexPageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    let previous = pokedex.previous.map(PageIntent::SelectPokedexEntry);
+    let next = pokedex.next.map(PageIntent::SelectPokedexEntry);
+    let name = pokedex.selected.name.as_deref().unwrap_or("???");
+    let types = if pokedex.selected.types.is_empty() {
+        String::from("未记录")
+    } else {
+        pokedex.selected.types.join(" / ")
+    };
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("图鉴", Some(PageIntent::Close))?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 6,
+                    padding: Insets::all(10),
+                    ..UiStyle::default()
+                },
+                [
+                    page_notice(notice),
+                    page_info_card(
+                        "发现",
+                        format!("{}/{}", pokedex.known_count, pokedex.total_count),
+                    ),
+                    page_info_card("编号", pokedex.selected.number.value().to_string()),
+                    page_info_card("名称", name),
+                    page_info_card("属性", types),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        if pokedex.selected.known {
+                            "已知来自当前队伍拥有事实"
+                        } else {
+                            "尚未拥有，不展示条目事实"
+                        },
+                        14,
+                        Dimension::Fill,
+                    ),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(40),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_action_button("上一只", "page-pokedex-previous", false, previous)?,
+                            page_action_button("下一只", "page-pokedex-next", false, next)?,
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    ))
+}
+
+fn project_pause_trainer_card(
+    card: &TrainerCardPageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("训练家卡", Some(PageIntent::Close))?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 6,
+                    padding: Insets::all(10),
+                    ..UiStyle::default()
+                },
+                [
+                    page_notice(notice),
+                    page_info_card("地点", card.location.as_str()),
+                    page_info_card("金钱", card.money.amount().to_string()),
+                    page_info_card("同行", format!("{} / 6", card.party_count)),
+                    page_info_card(
+                        "训练家",
+                        format!("{}/{} 已击败", card.defeated_trainers, card.total_trainers),
+                    ),
+                ],
+            ),
+        ],
+    ))
+}
+
+fn project_page_shop(
+    shop: &game_page_model::ShopPageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    let detail = shop.selected_item.as_ref();
+    let item_label = detail.map_or("尚未选择物品", |item| item.item.as_str());
+    let quantity = detail.map_or(1, |item| item.quantity);
+    let previous = quantity
+        .checked_sub(1)
+        .filter(|next| *next > 0)
+        .map(PageIntent::SetShopQuantity);
+    let next = quantity.checked_add(1).map(PageIntent::SetShopQuantity);
+    let purchase = detail
+        .filter(|item| item.affordable)
+        .map(|_| PageIntent::ConfirmShopPurchase);
+    let purchase_label = if detail.is_some_and(|item| item.affordable) {
+        "确认购买"
+    } else {
+        "无法购买"
+    };
+    let price = detail.map_or(String::from("--"), |item| {
+        item.total_price.amount().to_string()
+    });
+    let owned = detail.map_or(String::from("--"), |item| item.owned_quantity.to_string());
+    let purchase_hint = match detail {
+        Some(item) if item.affordable => "余额和容量将在提交后从新快照刷新",
+        Some(_) => "余额不足，确认操作已禁用",
+        None => "选择物品后才能确认购买",
+    };
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("小镇商店", Some(PageIntent::Close))?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 6,
+                    padding: Insets::all(10),
+                    ..UiStyle::default()
+                },
+                [
+                    page_notice(notice),
+                    page_info_card("商品", item_label),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(42),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_info_card("余额", shop.money.amount().to_string()),
+                            page_info_card("价格", price),
+                            page_info_card("持有", owned),
+                            page_info_card(
+                                "容量",
+                                format!(
+                                    "{}/{}",
+                                    shop.inventory_slots_used, shop.inventory_capacity
+                                ),
+                            ),
+                        ],
+                    ),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(38),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_action_button("-", "page-shop-less", false, previous)?,
+                            page_info_card("数量", quantity.to_string()),
+                            page_action_button("+", "page-shop-more", false, next)?,
+                        ],
+                    ),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        purchase_hint,
+                        14,
+                        Dimension::Fill,
+                    ),
+                    page_action_button(purchase_label, "page-shop-confirm", false, purchase)?,
+                ],
+            ),
+        ],
+    ))
+}
+
+fn project_page_save_confirm(
+    save: &game_page_model::SaveConfirmPageModel,
+    notice: Option<&str>,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
+    let message = match save.unavailable_reason {
+        None => "此处是安全点，确认后由存档 adapter 写入。",
+        Some(SaveUnavailableReason::BattleActive) => "战斗进行中，不能保存。",
+    };
+    UiTree::new(ui_screen(
+        &FOUNDATION_THEME,
+        [
+            page_header("保存游戏", Some(PageIntent::Close))?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Screen,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    gap: 8,
+                    padding: Insets::all(10),
+                    main_align: MainAlign::Center,
+                    ..UiStyle::default()
+                },
+                [
+                    page_notice(notice),
+                    ui_text(
+                        &FOUNDATION_THEME,
+                        if save.available {
+                            TextTone::Default
+                        } else {
+                            TextTone::Muted
+                        },
+                        message,
+                        18,
+                        Dimension::Fill,
+                    ),
+                    ui_row(
+                        UiStyle {
+                            width: Dimension::Fill,
+                            height: Dimension::Px(42),
+                            gap: 6,
+                            ..UiStyle::default()
+                        },
+                        [
+                            page_action_button(
+                                "取消",
+                                "page-save-cancel",
+                                false,
+                                Some(PageIntent::Close),
+                            )?,
+                            page_action_button(
+                                "确认保存",
+                                "page-save-confirm",
+                                false,
+                                save.available.then_some(PageIntent::ConfirmSave),
+                            )?,
+                        ],
+                    ),
+                ],
+            ),
+        ],
+    ))
+}
+
+fn page_notice(notice: Option<&str>) -> UiNode<PageIntent> {
+    match notice {
+        Some(notice) => ui_text(
+            &FOUNDATION_THEME,
+            TextTone::Muted,
+            notice,
+            14,
+            Dimension::Fill,
+        ),
+        None => UiNode::auto().with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(0),
+            ..UiStyle::default()
+        }),
+    }
+}
+
+fn page_header(title: &str, close: Option<PageIntent>) -> Result<UiNode<PageIntent>, UiBuildError> {
+    let mut children = vec![ui_text(
+        &FOUNDATION_THEME,
+        TextTone::Default,
+        title,
+        22,
+        Dimension::Fill,
+    )];
+    if let Some(action) = close {
+        children.push(page_action_button(
+            "返回",
+            "page-close",
+            false,
+            Some(action),
+        )?);
+    }
+    Ok(ui_panel(
+        &FOUNDATION_THEME,
+        PanelTone::Header,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(46),
+            direction: FlexDirection::Row,
+            main_align: MainAlign::SpaceBetween,
+            cross_align: CrossAlign::Center,
+            gap: 8,
+            padding: Insets::symmetric(10, 8),
+            ..UiStyle::default()
+        },
+        children,
+    ))
+}
+
+fn page_info_card(label: impl Into<String>, value: impl Into<String>) -> UiNode<PageIntent> {
+    ui_panel(
+        &FOUNDATION_THEME,
+        PanelTone::Panel,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            gap: 2,
+            padding: Insets::all(5),
+            border_radius: FOUNDATION_THEME.small_radius,
+            ..UiStyle::default()
+        },
+        [
+            ui_text(
+                &FOUNDATION_THEME,
+                TextTone::Muted,
+                label,
+                12,
+                Dimension::Fill,
+            ),
+            ui_text(
+                &FOUNDATION_THEME,
+                TextTone::Default,
+                value,
+                15,
+                Dimension::Fill,
+            ),
+        ],
+    )
+}
+
+fn page_action_button(
+    label: impl Into<String>,
+    key: impl Into<String>,
+    selected: bool,
+    action: Option<PageIntent>,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
+    let label = label.into();
+    let key = key.into();
+    let tone = if action.is_some() {
+        TextTone::Default
+    } else {
+        TextTone::Muted
+    };
+    let node = ui_button(
+        &FOUNDATION_THEME,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            border_radius: FOUNDATION_THEME.small_radius,
+            ..UiStyle::default()
+        },
+        selected,
+        [ui_text(&FOUNDATION_THEME, tone, label, 15, Dimension::Fill)],
+    )
+    .with_key(UiKey::new(key)?);
+    Ok(match action {
+        Some(action) => node.with_action(action),
+        None => node,
+    })
 }
 
 fn foundation_tab(

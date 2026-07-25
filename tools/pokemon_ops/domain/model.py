@@ -19,6 +19,8 @@ class BuildProfile(StrEnum):
 class NativeOperation(StrEnum):
     BUILD_GAME_HOST = "build_game_host"
     RUN_GAME_HOST = "run_game_host"
+    BUILD_GAME_PAGE_DEMO = "build_game_page_demo"
+    RUN_GAME_PAGE_DEMO = "run_game_page_demo"
     BUILD_MAP_EDITOR = "build_map_editor"
     RUN_MAP_EDITOR = "run_map_editor"
     BUILD_TRAINER_EDITOR = "build_trainer_editor"
@@ -95,6 +97,7 @@ class NativeRunRequest:
     operation: NativeOperation
     profile: BuildProfile
     mirror_root: MirrorRoot
+    demo: str | None = None
 
 
 @dataclass(frozen=True)

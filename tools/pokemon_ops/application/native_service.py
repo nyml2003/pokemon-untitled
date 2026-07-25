@@ -17,6 +17,7 @@ class NativeService:
         operation: NativeOperation,
         profile: BuildProfile,
         progress: ProgressReporter | None = None,
+        demo: str | None = None,
     ) -> Result[tuple[GitSyncReport, int]]:
         synced = self._sync_service.sync(config, progress=progress)
         if not synced.is_ok:
@@ -26,7 +27,12 @@ class NativeService:
         if progress is not None:
             progress.report(ProgressEvent(ProgressEventType.PROGRESS, stage, f"{action} {operation.target} on Windows; native output follows"))
         dispatched = self._dispatcher.dispatch(
-            NativeRunRequest(operation=operation, profile=profile, mirror_root=config.mirror_root),
+            NativeRunRequest(
+                operation=operation,
+                profile=profile,
+                mirror_root=config.mirror_root,
+                demo=demo,
+            ),
             progress=progress,
         )
         if not dispatched.is_ok:

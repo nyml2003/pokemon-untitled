@@ -49,9 +49,11 @@ class RecordingSyncService:
 class RecordingDispatcher:
     def __init__(self) -> None:
         self.called = False
+        self.request: object | None = None
 
     def dispatch(self, request: object, progress: object = None) -> Result[int]:
         self.called = True
+        self.request = request
         return Result.ok(0)
 
 
@@ -157,3 +159,21 @@ class OperationTests(unittest.TestCase):
 
             self.assertTrue(result.is_ok)
             self.assertTrue(any(event.stage == "run.start" for event in progress.events))
+
+    def test_native_operation_preserves_a_registered_page_demo_id(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = config_for(root)
+            dispatcher = RecordingDispatcher()
+            service = NativeService(RecordingSyncService(), dispatcher)  # type: ignore[arg-type]
+
+            result = service.execute(
+                config,
+                NativeOperation.RUN_GAME_PAGE_DEMO,
+                BuildProfile.DEBUG,
+                demo="shop-potion-preview",
+            )
+
+            self.assertTrue(result.is_ok)
+            self.assertIsNotNone(dispatcher.request)
+            self.assertEqual(getattr(dispatcher.request, "demo", None), "shop-potion-preview")

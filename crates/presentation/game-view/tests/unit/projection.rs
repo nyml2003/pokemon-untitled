@@ -8,6 +8,7 @@ use battle_session::{
 };
 use game_data::PokedexData;
 use game_foundation::{GameState, ThinSliceContent};
+use game_page_model::{PageIntent, PageModel, page_demos};
 use map_project::{
     AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection, MapProject,
     MapProjectId, TilePosition,
@@ -25,8 +26,72 @@ use super::{
     BattleSpriteResources, FoundationPage, FoundationPageAction, LayerKind, TextRole, ViewCell,
     ViewLayer, compose_world, move_category_icon_asset, pill_ui_asset, pokemon_icon_asset,
     project_battle, project_battle_ui, project_console, project_console_ui, project_foundation,
-    project_pokedex, project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
+    project_page_model, project_page_model_with_notice, project_pokedex, project_world,
+    rounded_ui_asset, type_icon_asset, world_character_asset,
 };
+
+#[test]
+fn page_demos_resolve_to_ui_without_map_or_resource_images()
+-> Result<(), Box<dyn std::error::Error>> {
+    for demo in page_demos() {
+        let model = demo.model()?;
+        let tree = project_page_model(&model)?;
+        for viewport in [
+            punctum_ui::UiSize::new(960, 720),
+            punctum_ui::UiSize::new(640, 480),
+            punctum_ui::UiSize::new(320, 240),
+        ] {
+            let frame = tree.resolve(viewport)?;
+            assert!(
+                frame
+                    .commands()
+                    .iter()
+                    .all(|command| !matches!(command, punctum_ui::UiDrawCommand::Image { .. }))
+            );
+        }
+        let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
+        assert!(expected_page_action(
+            &model,
+            frame.action_hits().iter().map(|hit| &hit.action)
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn page_notice_stays_in_the_rendering_adapter_boundary() -> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos().first().ok_or("page demo catalog is empty")?;
+    let model = demo.model()?;
+    let frame = project_page_model_with_notice(&model, Some("购买请求等待产品层处理"))?
+        .resolve(punctum_ui::UiSize::new(960, 720))?;
+    assert!(frame.commands().iter().any(|command| matches!(
+        command,
+        punctum_ui::UiDrawCommand::Text { content, .. } if content == "购买请求等待产品层处理"
+    )));
+    assert!(
+        frame
+            .commands()
+            .iter()
+            .all(|command| !matches!(command, punctum_ui::UiDrawCommand::Image { .. }))
+    );
+    Ok(())
+}
+
+fn expected_page_action<'a>(
+    model: &PageModel,
+    mut actions: impl Iterator<Item = &'a PageIntent>,
+) -> bool {
+    match model {
+        PageModel::World(_) => actions.any(|action| matches!(action, PageIntent::OpenPause)),
+        PageModel::Pause(_) => actions.any(|action| matches!(action, PageIntent::Close)),
+        PageModel::Shop(_) => {
+            actions.any(|action| matches!(action, PageIntent::ConfirmShopPurchase))
+        }
+        PageModel::SaveConfirm(_) => {
+            actions.any(|action| matches!(action, PageIntent::ConfirmSave))
+        }
+    }
+}
 
 #[test]
 fn foundation_pages_project_state_and_expose_typed_actions() {

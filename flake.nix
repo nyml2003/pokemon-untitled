@@ -20,7 +20,10 @@
       wslgRuntimeLibraries = with pkgs; [
         libxkbcommon
         wayland
+        vulkan-loader
+        mesa
       ];
+      wslgVulkanIcd = "${pkgs.mesa}/share/vulkan/icd.d/lvp_icd.x86_64.json";
       fontConfig = pkgs.makeFontsConf {
         fontDirectories = [ pkgs.noto-fonts-cjk-sans ];
       };
@@ -60,6 +63,7 @@
         shellHook = ''
           if [ "''${WSL2_GUI_APPS_ENABLED:-}" = "1" ]; then
             export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath wslgRuntimeLibraries}"
+            export VK_DRIVER_FILES="${wslgVulkanIcd}"
           fi
           export CC=clang
           export CXX=clang++

@@ -23,6 +23,7 @@ from tools.pokemon_ops.domain.model import BuildProfile, NativeOperation, TestSu
 
 NATIVE_OPERATIONS: dict[str, tuple[NativeOperation, NativeOperation]] = {
     "game-host": (NativeOperation.BUILD_GAME_HOST, NativeOperation.RUN_GAME_HOST),
+    "game-page-demo": (NativeOperation.BUILD_GAME_PAGE_DEMO, NativeOperation.RUN_GAME_PAGE_DEMO),
     "map-editor": (NativeOperation.BUILD_MAP_EDITOR, NativeOperation.RUN_MAP_EDITOR),
     "pokemon-editor": (NativeOperation.BUILD_POKEMON_EDITOR, NativeOperation.RUN_POKEMON_EDITOR),
     "trainer-editor": (NativeOperation.BUILD_TRAINER_EDITOR, NativeOperation.RUN_TRAINER_EDITOR),
@@ -58,11 +59,36 @@ def build_parser() -> argparse.ArgumentParser:
     sync_parser = commands.add_parser("sync")
     command_parsers.append(sync_parser)
 
-    for name in ("build", "run"):
-        native_parser = commands.add_parser(name)
-        command_parsers.append(native_parser)
-        native_parser.add_argument("target", choices=sorted(NATIVE_OPERATIONS))
-        native_parser.add_argument("--profile", choices=[profile.value for profile in BuildProfile], default=BuildProfile.DEBUG.value)
+    build_parser = commands.add_parser("build")
+    command_parsers.append(build_parser)
+    build_parser.add_argument("target", choices=sorted(NATIVE_OPERATIONS))
+    build_parser.add_argument(
+        "--profile",
+        choices=[profile.value for profile in BuildProfile],
+        default=BuildProfile.DEBUG.value,
+    )
+
+    run_parser = commands.add_parser("run")
+    command_parsers.append(run_parser)
+    run_parser.add_argument("target", choices=sorted(NATIVE_OPERATIONS))
+    run_parser.add_argument(
+        "--profile",
+        choices=[profile.value for profile in BuildProfile],
+        default=BuildProfile.DEBUG.value,
+    )
+    run_parser.add_argument(
+        "--demo",
+        choices=[
+            "world-starting-town",
+            "world-pause-menu",
+            "party-single-member",
+            "bag-potion-list",
+            "pokedex-seen-and-unseen",
+            "trainer-card-starting-town",
+            "shop-potion-preview",
+            "save-confirm-available",
+        ],
+    )
     for command_parser in command_parsers:
         command_parser.add_argument("--json", action="store_true", dest="json_output", default=argparse.SUPPRESS)
     return parser
@@ -186,5 +212,17 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
 
     build_operation, run_operation = NATIVE_OPERATIONS[args.target]
     operation = build_operation if args.command == "build" else run_operation
+    demo = getattr(args, "demo", None)
+    if demo is not None and args.target != "game-page-demo":
+        parser.error("--demo is only available for game-page-demo")
     native = NativeService(sync_service, WindowsNativeRunDispatcher(config))
-    return _emit(native.execute(config, operation, BuildProfile(args.profile), progress), args.json_output)
+    return _emit(
+        native.execute(
+            config,
+            operation,
+            BuildProfile(args.profile),
+            progress,
+            demo=demo,
+        ),
+        args.json_output,
+    )

@@ -30,6 +30,7 @@ members = [
     "crates/presentation/map-assets",
     "crates/presentation/game-ui",
     "crates/presentation/game-ui-kit",
+    "crates/presentation/game-page-model",
     "crates/presentation/game-view",
     "crates/presentation/game-scene-view",
     "crates/presentation/game-native-plan",
@@ -48,6 +49,7 @@ members = [
     "crates/adapter/punctum-crossterm",
     "crates/adapter/punctum-wgpu",
     "crates/runtime/game-host",
+    "crates/runtime/game-page-demo",
     "crates/runtime/map-editor",
     "crates/runtime/map-editor-cli",
     "crates/runtime/pokemon-editor",
@@ -96,6 +98,7 @@ map-editor-view = { path = "crates/presentation/map-editor-view" }
 game-assets = { path = "crates/presentation/game-assets" }
 game-ui = { path = "crates/presentation/game-ui" }
 game-ui-kit = { path = "crates/presentation/game-ui-kit" }
+game-page-model = { path = "crates/presentation/game-page-model" }
 game-view = { path = "crates/presentation/game-view" }
 game-scene-view = { path = "crates/presentation/game-scene-view" }
 game-native-plan = { path = "crates/presentation/game-native-plan" }

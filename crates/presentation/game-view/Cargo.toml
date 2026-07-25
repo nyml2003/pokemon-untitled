@@ -10,6 +10,7 @@ battle-session = { workspace = true }
 game-assets = { workspace = true }
 game-data = { workspace = true }
 game-foundation = { workspace = true }
+game-page-model = { workspace = true }
 game-ui = { workspace = true }
 game-ui-kit = { workspace = true }
 punctum-gpu = { workspace = true }
