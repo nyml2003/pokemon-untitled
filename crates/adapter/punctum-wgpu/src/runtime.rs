@@ -1,9 +1,9 @@
 use std::{error::Error, fmt};
 
 use punctum_gpu::{
-    GpuAtlas, GpuCell, GpuClip, GpuPlanError, INSTANCE_STRIDE, PixelSize, Rgba8, SubmissionMode,
-    SubmissionPlan, UNIFORM_SIZE, Viewport, encode_instances, encode_uniform, plan_patch,
-    plan_surface,
+    GpuAtlas, GpuCell, GpuClip, GpuPlanError, INSTANCE_STRIDE, PixelSize, RADAR_INSTANCE_STRIDE,
+    Rgba8, SubmissionMode, SubmissionPlan, UNIFORM_SIZE, Viewport, encode_instances,
+    encode_radar_instances, encode_uniform, plan_patch, plan_surface,
 };
 use punctum_grid::{GridSize, Patch, Surface};
 
@@ -94,8 +94,13 @@ pub struct GpuRuntime<'window> {
     max_instances: u32,
     instance_buffer: wgpu::Buffer,
     instance_capacity: u32,
+    radar_buffer: wgpu::Buffer,
+    radar_capacity: u32,
     grid_size: Option<GridSize>,
     uniform_buffer: wgpu::Buffer,
+    atlas_view: wgpu::TextureView,
+    sampler: wgpu::Sampler,
+    bind_group_layout: wgpu::BindGroupLayout,
     bind_group: wgpu::BindGroup,
     pipeline: wgpu::RenderPipeline,
     clear_color: wgpu::Color,
@@ -157,25 +162,16 @@ impl<'window> GpuRuntime<'window> {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let radar_buffer = create_radar_buffer(&device, 1);
         let bind_group_layout = create_bind_group_layout(&device);
-        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("punctum-gpu bind group"),
-            layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&atlas_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
-                },
-            ],
-        });
+        let bind_group = create_bind_group(
+            &device,
+            &bind_group_layout,
+            &uniform_buffer,
+            &atlas_view,
+            &sampler,
+            &radar_buffer,
+        );
         let pipeline = create_pipeline(&device, config.format, &bind_group_layout);
         let instance_buffer = create_instance_buffer(&device, 1);
         let max_instances =
@@ -193,8 +189,13 @@ impl<'window> GpuRuntime<'window> {
             max_instances,
             instance_buffer,
             instance_capacity: 1,
+            radar_buffer,
+            radar_capacity: 1,
             grid_size: None,
             uniform_buffer,
+            atlas_view,
+            sampler,
+            bind_group_layout,
             bind_group,
             pipeline,
             clear_color: color_to_wgpu(clear_color),
@@ -382,6 +383,17 @@ impl<'window> GpuRuntime<'window> {
                 &encode_instances(&upload.instances),
             );
         }
+        if !plan.radar_uploads.is_empty() {
+            self.ensure_radar_capacity(plan.instance_count)?;
+            for upload in &plan.radar_uploads {
+                let offset = u64::from(upload.first_slot) * RADAR_INSTANCE_STRIDE;
+                self.queue.write_buffer(
+                    &self.radar_buffer,
+                    offset,
+                    &encode_radar_instances(&upload.instances),
+                );
+            }
+        }
         Ok(())
     }
 
@@ -398,6 +410,30 @@ impl<'window> GpuRuntime<'window> {
 
         self.instance_buffer = create_instance_buffer(&self.device, count);
         self.instance_capacity = count;
+        Ok(())
+    }
+
+    fn ensure_radar_capacity(&mut self, count: u32) -> Result<(), GpuRuntimeError> {
+        if count <= self.radar_capacity {
+            return Ok(());
+        }
+
+        let required = u64::from(count) * RADAR_INSTANCE_STRIDE;
+        let maximum = self.device.limits().max_buffer_size;
+        if required > maximum {
+            return Err(GpuRuntimeError::RadarBufferTooLarge { required, maximum });
+        }
+
+        self.radar_buffer = create_radar_buffer(&self.device, count);
+        self.radar_capacity = count;
+        self.bind_group = create_bind_group(
+            &self.device,
+            &self.bind_group_layout,
+            &self.uniform_buffer,
+            &self.atlas_view,
+            &self.sampler,
+            &self.radar_buffer,
+        );
         Ok(())
     }
 
@@ -544,6 +580,48 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: wgpu::BufferSize::new(RADAR_INSTANCE_STRIDE),
+                },
+                count: None,
+            },
+        ],
+    })
+}
+
+fn create_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    uniform_buffer: &wgpu::Buffer,
+    atlas_view: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+    radar_buffer: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("punctum-gpu bind group"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(atlas_view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: radar_buffer.as_entire_binding(),
+            },
         ],
     })
 }
@@ -640,6 +718,15 @@ fn create_instance_buffer(device: &wgpu::Device, count: u32) -> wgpu::Buffer {
     })
 }
 
+fn create_radar_buffer(device: &wgpu::Device, count: u32) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("punctum-gpu radar instance buffer"),
+        size: u64::from(count.max(1)) * RADAR_INSTANCE_STRIDE,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
 fn color_to_wgpu(color: Rgba8) -> wgpu::Color {
     const SCALE: f64 = 1.0 / 255.0;
     wgpu::Color {
@@ -666,6 +753,10 @@ pub enum GpuRuntimeError {
         patch: GridSize,
     },
     InstanceBufferTooLarge {
+        required: u64,
+        maximum: u64,
+    },
+    RadarBufferTooLarge {
         required: u64,
         maximum: u64,
     },
@@ -702,6 +793,10 @@ impl fmt::Display for GpuRuntimeError {
             Self::InstanceBufferTooLarge { required, maximum } => write!(
                 formatter,
                 "GPU instance buffer requires {required} bytes, device supports {maximum}"
+            ),
+            Self::RadarBufferTooLarge { required, maximum } => write!(
+                formatter,
+                "GPU radar buffer requires {required} bytes, device supports {maximum}"
             ),
             Self::SurfaceValidation => {
                 formatter.write_str("GPU surface acquisition validation failed")

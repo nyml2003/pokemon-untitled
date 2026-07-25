@@ -288,6 +288,57 @@ pub struct GpuImage {
     pub z_index: i32,
 }
 
+/// Compact data consumed by the radar-chart fragment shader.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RadarInstanceData {
+    pub(crate) values: [u32; 6],
+    pub(crate) max: u32,
+    pub(crate) rings: u32,
+    pub(crate) grid_color: [u32; 4],
+    pub(crate) axis_color: [u32; 4],
+    pub(crate) fill_color: [u32; 4],
+    pub(crate) edge_color: [u32; 4],
+    pub(crate) point_color: [u32; 4],
+    pub(crate) bounds: [u32; 4],
+}
+
+impl RadarInstanceData {
+    pub const fn new(values: [u16; 6], max: u16, rings: u8, colors: [Rgba8; 5]) -> Self {
+        Self {
+            values: [
+                values[0] as u32,
+                values[1] as u32,
+                values[2] as u32,
+                values[3] as u32,
+                values[4] as u32,
+                values[5] as u32,
+            ],
+            max: max as u32,
+            rings: rings as u32,
+            grid_color: color_words(colors[0]),
+            axis_color: color_words(colors[1]),
+            fill_color: color_words(colors[2]),
+            edge_color: color_words(colors[3]),
+            point_color: color_words(colors[4]),
+            bounds: [0; 4],
+        }
+    }
+
+    pub const fn with_bounds(mut self, bounds: PixelRect) -> Self {
+        self.bounds = [bounds.x, bounds.y, bounds.width, bounds.height];
+        self
+    }
+}
+
+const fn color_words(color: Rgba8) -> [u32; 4] {
+    [
+        color.red as u32,
+        color.green as u32,
+        color.blue as u32,
+        color.alpha as u32,
+    ]
+}
+
 /// A textured rectangle positioned directly in target pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GpuPixelImage {
@@ -298,6 +349,7 @@ pub struct GpuPixelImage {
     pub tint: Rgba8,
     pub z_index: i32,
     pub(crate) circle: Option<GpuPixelCircle>,
+    pub(crate) radar: Option<RadarInstanceData>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -316,6 +368,7 @@ impl GpuPixelImage {
             tint,
             z_index,
             circle: None,
+            radar: None,
         }
     }
 
@@ -332,6 +385,11 @@ impl GpuPixelImage {
 
     pub const fn with_circle(mut self, center: PixelOffset, radius: u32) -> Self {
         self.circle = Some(GpuPixelCircle { center, radius });
+        self
+    }
+
+    pub const fn with_radar(mut self, radar: RadarInstanceData) -> Self {
+        self.radar = Some(radar);
         self
     }
 }

@@ -1,7 +1,7 @@
 use punctum_gpu::{
     GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPixelImage, GpuPlanError, GpuResource, InstanceData,
-    PixelOffset, PixelRect, PixelSize, ResourceId, Rgba8, SubmissionMode, Viewport, plan_composite,
-    plan_patch, plan_pixels, plan_surface,
+    PixelOffset, PixelRect, PixelSize, RadarInstanceData, ResourceId, Rgba8, SubmissionMode,
+    Viewport, plan_composite, plan_patch, plan_pixels, plan_surface,
 };
 use punctum_grid::{GridPos, GridRect, GridSize, Surface, diff};
 
@@ -31,6 +31,50 @@ fn sprite(id: u32, tint: Rgba8) -> GpuCell {
         resource: ResourceId(id),
         tint,
     }
+}
+
+#[test]
+fn radar_image_uses_one_sorted_instance_and_matching_storage_slot() {
+    let radar = RadarInstanceData::new(
+        [120, 80, 90, 60, 140, 100],
+        256,
+        4,
+        [
+            Rgba8::new(10, 20, 30, 255),
+            Rgba8::new(40, 50, 60, 255),
+            Rgba8::new(70, 80, 90, 128),
+            Rgba8::new(100, 110, 120, 255),
+            Rgba8::new(130, 140, 150, 255),
+        ],
+    );
+    let images = [
+        GpuPixelImage::new(
+            PixelRect::new(4, 4, 8, 8),
+            ResourceId(1),
+            Rgba8::new(255, 255, 255, 255),
+            10,
+        ),
+        GpuPixelImage::new(
+            PixelRect::new(10, 10, 20, 20),
+            ResourceId(1),
+            Rgba8::new(255, 255, 255, 255),
+            0,
+        )
+        .with_radar(radar),
+    ];
+
+    let plan = plan_pixels(&images, &atlas(), u32::MAX, PixelSize::new(40, 40)).unwrap();
+
+    assert_eq!(plan.instance_count, 2);
+    assert_eq!(plan.uploads[0].instances.len(), 2);
+    assert_eq!(plan.uploads[0].instances[0].visible, 3);
+    assert_eq!(plan.uploads[0].instances[1].visible, 1);
+    assert_eq!(plan.radar_uploads.len(), 1);
+    assert_eq!(plan.radar_uploads[0].first_slot, 0);
+    assert_eq!(
+        plan.radar_uploads[0].instances,
+        vec![radar, Default::default()]
+    );
 }
 
 #[test]

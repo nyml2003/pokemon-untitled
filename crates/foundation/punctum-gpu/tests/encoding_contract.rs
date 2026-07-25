@@ -1,6 +1,7 @@
 use punctum_gpu::{
-    INSTANCE_STRIDE, InstanceData, PixelOffset, PixelSize, UNIFORM_SIZE, Viewport,
-    encode_instances, encode_uniform,
+    INSTANCE_STRIDE, InstanceData, PixelOffset, PixelSize, RADAR_INSTANCE_STRIDE,
+    RadarInstanceData, Rgba8, UNIFORM_SIZE, Viewport, encode_instances, encode_radar_instances,
+    encode_uniform,
 };
 
 #[test]
@@ -40,4 +41,31 @@ fn uniform_encoding_preserves_signed_origin_bits() {
     assert_eq!(bytes.len(), UNIFORM_SIZE as usize);
     assert_eq!(&bytes[8..12], &(-2_i32).to_le_bytes());
     assert_eq!(&bytes[28..32], &32_u32.to_le_bytes());
+}
+
+#[test]
+fn radar_encoding_matches_the_declared_storage_stride() {
+    let radar = RadarInstanceData::new(
+        [1, 2, 3, 4, 5, 6],
+        256,
+        4,
+        [
+            Rgba8::new(1, 2, 3, 4),
+            Rgba8::new(5, 6, 7, 8),
+            Rgba8::new(9, 10, 11, 12),
+            Rgba8::new(13, 14, 15, 16),
+            Rgba8::new(17, 18, 19, 20),
+        ],
+    );
+    let bytes = encode_radar_instances(&[radar]);
+
+    assert_eq!(bytes.len(), RADAR_INSTANCE_STRIDE as usize);
+    assert_eq!(&bytes[0..4], &1_u32.to_le_bytes());
+    assert_eq!(&bytes[20..24], &6_u32.to_le_bytes());
+    assert_eq!(&bytes[24..28], &256_u32.to_le_bytes());
+    assert_eq!(&bytes[32..36], &1_u32.to_le_bytes());
+    assert_eq!(&bytes[96..100], &17_u32.to_le_bytes());
+    assert_eq!(&bytes[108..112], &20_u32.to_le_bytes());
+    assert_eq!(&bytes[112..116], &0_u32.to_le_bytes());
+    assert_eq!(&bytes[124..128], &0_u32.to_le_bytes());
 }

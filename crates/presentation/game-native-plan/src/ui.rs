@@ -8,7 +8,7 @@ use punctum_ui::{UiDrawCommand, UiFrame, UiRect};
 use crate::{
     NativeAssets, NativeTextLabel,
     error::FramePlanError,
-    radar::{RadarPlan, radar_images},
+    radar::{RadarPlan, radar_image},
 };
 
 pub(crate) fn plan_ui_frame<Action>(
@@ -52,7 +52,7 @@ pub(crate) fn plan_ui_frame<Action>(
                 clip,
             } => {
                 if let Some(visible) = ui_visible_bounds(*bounds, *clip) {
-                    let (chart_images, chart_text) = radar_images(RadarPlan {
+                    let (chart_image, chart_text) = radar_image(RadarPlan {
                         bounds: *bounds,
                         clip: visible,
                         resource: white,
@@ -69,7 +69,7 @@ pub(crate) fn plan_ui_frame<Action>(
                         label_font_size: *label_font_size,
                         z_index: z_index as i32,
                     });
-                    images.extend(chart_images);
+                    images.push(chart_image);
                     labels.extend(chart_text);
                 }
             }

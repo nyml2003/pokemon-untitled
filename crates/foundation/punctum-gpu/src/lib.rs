@@ -6,12 +6,14 @@ mod encoding;
 mod model;
 mod plan;
 
-pub use encoding::{UNIFORM_SIZE, encode_instances, encode_uniform};
+pub use encoding::{
+    RADAR_INSTANCE_STRIDE, UNIFORM_SIZE, encode_instances, encode_radar_instances, encode_uniform,
+};
 pub use model::{
     GpuAtlas, GpuAtlasError, GpuCell, GpuClip, GpuImage, GpuPixelImage, GpuResource, PixelOffset,
-    PixelRect, PixelSize, ResourceId, Rgba8, Viewport, ViewportError,
+    PixelRect, PixelSize, RadarInstanceData, ResourceId, Rgba8, Viewport, ViewportError,
 };
 pub use plan::{
-    GpuPlanError, INSTANCE_STRIDE, InstanceData, InstanceUpload, SubmissionMode, SubmissionPlan,
-    plan_composite, plan_patch, plan_pixels, plan_surface,
+    GpuPlanError, INSTANCE_STRIDE, InstanceData, InstanceUpload, RadarUpload, SubmissionMode,
+    SubmissionPlan, plan_composite, plan_patch, plan_pixels, plan_surface,
 };

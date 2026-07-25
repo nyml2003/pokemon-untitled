@@ -4,7 +4,7 @@ use punctum_grid::{GridPos, GridRect, GridSize, Patch, PatchKind, Surface};
 
 use crate::{
     GpuAtlas, GpuCell, GpuClip, GpuImage, GpuPixelImage, PixelOffset, PixelRect, PixelSize,
-    ResourceId, Viewport,
+    RadarInstanceData, ResourceId, Viewport,
 };
 
 pub const INSTANCE_STRIDE: u64 = 64;
@@ -107,6 +107,7 @@ pub fn plan_composite(
         scissor: plan_scissor(size, viewport, clip),
         instance_count,
         uploads,
+        radar_uploads: Vec::new(),
     })
 }
 
@@ -138,6 +139,8 @@ pub fn plan_pixels(
     let mut ordered: Vec<_> = images.iter().enumerate().collect();
     ordered.sort_by_key(|(index, image)| (image.z_index, *index));
     let mut instances = Vec::with_capacity(images.len());
+    let mut radar_instances = vec![RadarInstanceData::default(); images.len()];
+    let mut has_radar = false;
     for (_, image) in ordered {
         if image.bounds.size().is_empty() || !pixel_rect_fits(image.bounds, target_size) {
             return Err(GpuPlanError::PixelImageOutOfBounds {
@@ -151,6 +154,7 @@ pub fn plan_pixels(
                 bounds: image.bounds,
                 resource: image.resource,
             })?;
+        let slot = instances.len();
         let (visible, corner_radii) = match image.circle {
             Some(circle) => (
                 2,
@@ -161,7 +165,14 @@ pub fn plan_pixels(
                     0,
                 ],
             ),
-            None => (1, image.corner_radii),
+            None => match image.radar {
+                Some(radar) => {
+                    radar_instances[slot] = radar;
+                    has_radar = true;
+                    (3, image.corner_radii)
+                }
+                None => (1, image.corner_radii),
+            },
         };
         instances.push(InstanceData {
             grid_position: [image.bounds.x, image.bounds.y],
@@ -180,6 +191,13 @@ pub fn plan_pixels(
         })
         .into_iter()
         .collect();
+    let radar_uploads = has_radar
+        .then_some(RadarUpload {
+            first_slot: 0,
+            instances: radar_instances,
+        })
+        .into_iter()
+        .collect();
     Ok(SubmissionPlan {
         grid_size,
         mode: SubmissionMode::Replace,
@@ -192,6 +210,7 @@ pub fn plan_pixels(
         )),
         instance_count,
         uploads,
+        radar_uploads,
     })
 }
 
@@ -202,6 +221,12 @@ pub struct InstanceUpload {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RadarUpload {
+    pub first_slot: u32,
+    pub instances: Vec<RadarInstanceData>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SubmissionPlan {
     pub grid_size: GridSize,
     pub mode: SubmissionMode,
@@ -209,6 +234,7 @@ pub struct SubmissionPlan {
     pub scissor: Option<PixelRect>,
     pub instance_count: u32,
     pub uploads: Vec<InstanceUpload>,
+    pub radar_uploads: Vec<RadarUpload>,
 }
 
 pub fn plan_surface(
@@ -246,6 +272,7 @@ pub fn plan_surface(
         scissor: plan_scissor(size, viewport, clip),
         instance_count,
         uploads,
+        radar_uploads: Vec::new(),
     })
 }
 
@@ -284,6 +311,7 @@ pub fn plan_patch(
         scissor: plan_scissor(size, viewport, clip),
         instance_count,
         uploads,
+        radar_uploads: Vec::new(),
     })
 }
 
