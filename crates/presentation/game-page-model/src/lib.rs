@@ -47,6 +47,22 @@ pub enum PausePage {
     TrainerCard,
 }
 
+/// 背包页面使用的稳定分类值。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BagFilter {
+    All,
+    Category(ItemCategory),
+}
+
+impl BagFilter {
+    pub fn matches(self, category: ItemCategory) -> bool {
+        match self {
+            Self::All => true,
+            Self::Category(expected) => expected == category,
+        }
+    }
+}
+
 /// 已验证位于 Gen3 全国图鉴范围内的号码。
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NationalDexNumber(u16);
@@ -104,9 +120,17 @@ impl Error for NationalDexError {}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PauseRoute {
     Menu,
-    Party { selected: Option<CreatureId> },
-    Bag { selected: Option<ItemId> },
-    Pokedex { selected: NationalDexNumber },
+    Party {
+        selected: Option<CreatureId>,
+    },
+    Bag {
+        category: BagFilter,
+        selected: Option<ItemId>,
+    },
+    Pokedex {
+        selected: NationalDexNumber,
+        stats_view: PokedexStatsView,
+    },
     TrainerCard,
 }
 
@@ -125,9 +149,13 @@ impl PauseRoute {
         match page {
             PausePage::Menu => Self::Menu,
             PausePage::Party => Self::Party { selected: None },
-            PausePage::Bag => Self::Bag { selected: None },
+            PausePage::Bag => Self::Bag {
+                category: BagFilter::All,
+                selected: None,
+            },
             PausePage::Pokedex => Self::Pokedex {
                 selected: NationalDexNumber::first(),
+                stats_view: PokedexStatsView::Bars,
             },
             PausePage::TrainerCard => Self::TrainerCard,
         }
@@ -165,8 +193,10 @@ pub enum PageIntent {
     OpenPause,
     SelectPausePage(PausePage),
     SelectPartyMember(CreatureId),
+    SelectBagCategory(BagFilter),
     SelectBagItem(ItemId),
     SelectPokedexEntry(NationalDexNumber),
+    TogglePokedexStatsView,
     OpenShop { shop: ShopId },
     SelectShopItem(ItemId),
     SetShopQuantity(u16),
@@ -269,7 +299,16 @@ impl PageState {
             }
             (
                 PlayerRoute::Pause {
-                    route: PauseRoute::Bag { selected },
+                    route: PauseRoute::Bag { category, .. },
+                },
+                PageIntent::SelectBagCategory(next),
+            ) => {
+                *category = next;
+                Ok((self, None))
+            }
+            (
+                PlayerRoute::Pause {
+                    route: PauseRoute::Bag { selected, .. },
                 },
                 PageIntent::SelectBagItem(next),
             ) => {
@@ -278,11 +317,20 @@ impl PageState {
             }
             (
                 PlayerRoute::Pause {
-                    route: PauseRoute::Pokedex { selected },
+                    route: PauseRoute::Pokedex { selected, .. },
                 },
                 PageIntent::SelectPokedexEntry(next),
             ) => {
                 *selected = next;
+                Ok((self, None))
+            }
+            (
+                PlayerRoute::Pause {
+                    route: PauseRoute::Pokedex { stats_view, .. },
+                },
+                PageIntent::TogglePokedexStatsView,
+            ) => {
+                *stats_view = stats_view.toggled();
                 Ok((self, None))
             }
             (
@@ -388,6 +436,7 @@ pub struct PartyMemberModel {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BagPageModel {
+    pub category: BagFilter,
     pub selected: Option<ItemId>,
     pub entries: Vec<BagItemModel>,
     pub money: Money,
@@ -406,6 +455,8 @@ pub struct BagItemModel {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PokedexPageModel {
     pub selected: PokedexEntryModel,
+    pub entries: Vec<PokedexEntryModel>,
+    pub stats_view: PokedexStatsView,
     pub previous: Option<NationalDexNumber>,
     pub next: Option<NationalDexNumber>,
     pub known_count: usize,
@@ -416,8 +467,40 @@ pub struct PokedexPageModel {
 pub struct PokedexEntryModel {
     pub number: NationalDexNumber,
     pub name: Option<String>,
+    pub stats: Option<PokedexStatsModel>,
     pub types: Vec<String>,
     pub known: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PokedexStatsModel {
+    pub hp: u16,
+    pub attack: u16,
+    pub defense: u16,
+    pub special_attack: u16,
+    pub special_defense: u16,
+    pub speed: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PokedexStatsView {
+    Bars,
+    Hexagon,
+}
+
+impl PokedexStatsView {
+    pub const fn toggled(self) -> Self {
+        match self {
+            Self::Bars => Self::Hexagon,
+            Self::Hexagon => Self::Bars,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PokedexDisplayMode {
+    ProductFacts,
+    DemoAllOpen,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -530,6 +613,28 @@ pub fn project_page(
     snapshot: &ProductSnapshot,
     route: &PlayerRoute,
 ) -> Result<PageModel, PageModelError> {
+    project_page_with_pokedex_mode(content, snapshot, route, PokedexDisplayMode::ProductFacts)
+}
+
+/// 使用 demo 上下文投影页面，允许 demo 保留独立的图鉴展示状态。
+pub fn project_demo_page(
+    context: &PageDemoContext,
+    route: &PlayerRoute,
+) -> Result<PageModel, PageModelError> {
+    project_page_with_pokedex_mode(
+        &context.content,
+        &context.snapshot,
+        route,
+        context.pokedex_display_mode,
+    )
+}
+
+fn project_page_with_pokedex_mode(
+    content: &ThinSliceContent,
+    snapshot: &ProductSnapshot,
+    route: &PlayerRoute,
+    pokedex_display_mode: PokedexDisplayMode,
+) -> Result<PageModel, PageModelError> {
     let state = snapshot.state();
     match route {
         PlayerRoute::World => Ok(PageModel::World(WorldPageModel {
@@ -538,7 +643,9 @@ pub fn project_page(
             money: state.money(),
             save_available: snapshot.save_available(),
         })),
-        PlayerRoute::Pause { route } => project_pause_page(content, snapshot, route),
+        PlayerRoute::Pause { route } => {
+            project_pause_page(content, snapshot, route, pokedex_display_mode)
+        }
         PlayerRoute::Shop {
             shop,
             selected_item,
@@ -571,6 +678,7 @@ fn project_pause_page(
     content: &ThinSliceContent,
     snapshot: &ProductSnapshot,
     route: &PauseRoute,
+    pokedex_display_mode: PokedexDisplayMode,
 ) -> Result<PageModel, PageModelError> {
     let state = snapshot.state();
     let pause = match route {
@@ -578,12 +686,19 @@ fn project_pause_page(
         PauseRoute::Party { selected } => {
             PausePageModel::Party(party_page_model(content, snapshot, selected)?)
         }
-        PauseRoute::Bag { selected } => {
-            PausePageModel::Bag(bag_page_model(content, snapshot, selected)?)
+        PauseRoute::Bag { category, selected } => {
+            PausePageModel::Bag(bag_page_model(content, snapshot, *category, selected)?)
         }
-        PauseRoute::Pokedex { selected } => {
-            PausePageModel::Pokedex(pokedex_page_model(content, snapshot, *selected)?)
-        }
+        PauseRoute::Pokedex {
+            selected,
+            stats_view,
+        } => PausePageModel::Pokedex(pokedex_page_model(
+            content,
+            snapshot,
+            *selected,
+            *stats_view,
+            pokedex_display_mode,
+        )?),
         PauseRoute::TrainerCard => PausePageModel::TrainerCard(TrainerCardPageModel {
             location: state.map().as_str().to_owned(),
             money: state.money(),
@@ -633,10 +748,11 @@ fn party_page_model(
 fn bag_page_model(
     content: &ThinSliceContent,
     snapshot: &ProductSnapshot,
+    category: BagFilter,
     selected: &Option<ItemId>,
 ) -> Result<BagPageModel, PageModelError> {
     let state = snapshot.state();
-    let entries = state
+    let all_entries = state
         .inventory()
         .entries()
         .iter()
@@ -653,12 +769,19 @@ fn bag_page_model(
         })
         .collect::<Result<Vec<_>, PageModelError>>()?;
     if let Some(selected) = selected
-        && !entries.iter().any(|entry| &entry.item == selected)
+        && !all_entries.iter().any(|entry| &entry.item == selected)
     {
         return Err(PageModelError::BagSelectionMissing(selected.clone()));
     }
+    let entries = all_entries
+        .into_iter()
+        .filter(|entry| category.matches(entry.category))
+        .collect::<Vec<_>>();
     Ok(BagPageModel {
-        selected: selected.clone(),
+        category,
+        selected: selected
+            .clone()
+            .filter(|selected| entries.iter().any(|entry| &entry.item == selected)),
         entries,
         money: state.money(),
         slots_used: state.inventory().entries().len(),
@@ -670,40 +793,69 @@ fn pokedex_page_model(
     content: &ThinSliceContent,
     snapshot: &ProductSnapshot,
     selected: NationalDexNumber,
+    stats_view: PokedexStatsView,
+    display_mode: PokedexDisplayMode,
 ) -> Result<PokedexPageModel, PageModelError> {
     let pokedex = PokedexData::embedded_gen3().map_err(PageModelError::Pokedex)?;
     let known_species = party_species(content, snapshot)?;
-    let entry = pokedex
+    let entries = pokedex
         .entries()
         .iter()
-        .find(|entry| entry.national_dex == selected.value())
+        .map(|entry| {
+            let product_known = known_species.contains(entry.english_name.as_str());
+            let known = match display_mode {
+                PokedexDisplayMode::ProductFacts => product_known,
+                PokedexDisplayMode::DemoAllOpen => demo_pokedex_known(entry.national_dex),
+            };
+            let number = NationalDexNumber::new(entry.national_dex)
+                .map_err(|_| PageModelError::PokedexEntryMissing(selected))?;
+            Ok(PokedexEntryModel {
+                number,
+                name: known.then(|| entry.localized_name.clone()),
+                stats: known.then_some(PokedexStatsModel {
+                    hp: entry.base_stats.hp,
+                    attack: entry.base_stats.attack,
+                    defense: entry.base_stats.defense,
+                    special_attack: entry.base_stats.special_attack,
+                    special_defense: entry.base_stats.special_defense,
+                    speed: entry.base_stats.speed,
+                }),
+                types: if known {
+                    entry
+                        .types
+                        .iter()
+                        .map(|entry_type| entry_type.name.clone())
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                known,
+            })
+        })
+        .collect::<Result<Vec<_>, PageModelError>>()?;
+    let selected_entry = entries
+        .iter()
+        .find(|entry| entry.number == selected)
+        .cloned()
         .ok_or(PageModelError::PokedexEntryMissing(selected))?;
-    let known = known_species.contains(entry.english_name.as_str());
-    let known_count = pokedex
-        .entries()
-        .iter()
-        .filter(|entry| known_species.contains(entry.english_name.as_str()))
-        .count();
+    let known_count = entries.iter().filter(|entry| entry.known).count();
     Ok(PokedexPageModel {
-        selected: PokedexEntryModel {
-            number: selected,
-            name: known.then(|| entry.localized_name.clone()),
-            types: if known {
-                entry
-                    .types
-                    .iter()
-                    .map(|entry_type| entry_type.name.clone())
-                    .collect()
-            } else {
-                Vec::new()
-            },
-            known,
-        },
+        selected: selected_entry,
+        entries,
+        stats_view,
         previous: selected.previous(),
         next: selected.next(),
         known_count,
         total_count: pokedex.entries().len(),
     })
+}
+
+fn demo_pokedex_known(number: u16) -> bool {
+    match number {
+        1 | 4 | 7 | 11 | 15 | 19 => false,
+        2..=20 => true,
+        _ => true,
+    }
 }
 
 /// 队伍拥有事实是目前唯一可验证的图鉴已知来源，不伪造独立图鉴进度。
@@ -799,12 +951,18 @@ impl PageDemo {
     pub fn model(self) -> Result<PageModel, PageDemoError> {
         let context = self.context()?;
         let route = self.initial_state()?.route().clone();
-        project_page(&context.content, &context.snapshot, &route).map_err(PageDemoError::Model)
+        project_demo_page(&context, &route).map_err(PageDemoError::Model)
     }
 }
 
 const WORLD_STARTING_TOWN: PageDemo = PageDemo::new(
     PageDemoId::new("world-starting-town"),
+    PlayerPage::World,
+    PageDemoContext::standard,
+    world_route,
+);
+const WORLD_STARTING_DOWN: PageDemo = PageDemo::new(
+    PageDemoId::new("world-starting-down"),
     PlayerPage::World,
     PageDemoContext::standard,
     world_route,
@@ -830,7 +988,7 @@ const BAG_POTION_LIST: PageDemo = PageDemo::new(
 const POKEDEX_SEEN_AND_UNSEEN: PageDemo = PageDemo::new(
     PageDemoId::new("pokedex-seen-and-unseen"),
     PlayerPage::Pause,
-    PageDemoContext::gift_received,
+    PageDemoContext::pokedex_demo,
     pokedex_route,
 );
 const TRAINER_CARD_STARTING_TOWN: PageDemo = PageDemo::new(
@@ -873,6 +1031,7 @@ fn party_route() -> Result<PlayerRoute, PageDemoError> {
 fn bag_route() -> Result<PlayerRoute, PageDemoError> {
     Ok(PlayerRoute::Pause {
         route: PauseRoute::Bag {
+            category: BagFilter::All,
             selected: Some(ItemId::new("potion").map_err(PageDemoError::Id)?),
         },
     })
@@ -882,6 +1041,7 @@ fn pokedex_route() -> Result<PlayerRoute, PageDemoError> {
     Ok(PlayerRoute::Pause {
         route: PauseRoute::Pokedex {
             selected: NationalDexNumber::new(252).map_err(PageDemoError::Dex)?,
+            stats_view: PokedexStatsView::Bars,
         },
     })
 }
@@ -906,8 +1066,9 @@ fn save_confirm_route() -> Result<PlayerRoute, PageDemoError> {
     Ok(PlayerRoute::SaveConfirm)
 }
 
-const PAGE_DEMOS: [PageDemo; 8] = [
+const PAGE_DEMOS: [PageDemo; 9] = [
     WORLD_STARTING_TOWN,
+    WORLD_STARTING_DOWN,
     WORLD_PAUSE_MENU,
     PARTY_SINGLE_MEMBER,
     BAG_POTION_LIST,
@@ -938,6 +1099,7 @@ pub fn demo_named(value: &str) -> Option<PageDemo> {
 pub struct PageDemoContext {
     content: ThinSliceContent,
     snapshot: ProductSnapshot,
+    pokedex_display_mode: PokedexDisplayMode,
 }
 
 impl PageDemoContext {
@@ -948,6 +1110,7 @@ impl PageDemoContext {
         Ok(Self {
             content,
             snapshot: session.snapshot(),
+            pokedex_display_mode: PokedexDisplayMode::ProductFacts,
         })
     }
 
@@ -963,6 +1126,18 @@ impl PageDemoContext {
         Ok(Self {
             content,
             snapshot: session.snapshot(),
+            pokedex_display_mode: PokedexDisplayMode::ProductFacts,
+        })
+    }
+
+    pub fn pokedex_demo() -> Result<Self, PageDemoError> {
+        let data = CurrentDataSet::embedded().map_err(PageDemoError::Data)?;
+        let content = ThinSliceContent::standard().map_err(PageDemoError::Content)?;
+        let session = ProductSession::new(data, content.clone()).map_err(PageDemoError::Product)?;
+        Ok(Self {
+            content,
+            snapshot: session.snapshot(),
+            pokedex_display_mode: PokedexDisplayMode::DemoAllOpen,
         })
     }
 

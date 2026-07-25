@@ -4,8 +4,9 @@ use battle_application::{
 };
 use battle_session::{BattleCoordinator, BattleSession, OpponentPolicy};
 use game_data::CurrentDataSet;
+use game_page_model::{PageIntent, PageModel, PausePageModel, demo_named};
 use game_session::{GameCommand, GameSession};
-use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey};
+use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
 use world_application::Direction;
 
 use super::*;
@@ -17,6 +18,89 @@ fn key(name: NamedKey, phase: KeyPhase) -> KeyEvent {
         modifiers: Modifiers::default(),
         phase,
     }
+}
+
+fn physical_key(code: PhysicalKeyCode, name: &str, phase: KeyPhase) -> KeyEvent {
+    KeyEvent {
+        physical: Some(code),
+        logical: LogicalKey::Character(name.to_owned()),
+        modifiers: Modifiers::default(),
+        phase,
+    }
+}
+
+#[test]
+fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
+-> Result<(), Box<dyn std::error::Error>> {
+    let world = demo_named("world-starting-town")
+        .ok_or("world demo is missing")?
+        .model()?;
+    let mut ui = PageUiState::default();
+    assert_eq!(
+        ui.handle_key(&key(NamedKey::Tab, KeyPhase::Press), &world),
+        PageUiOutcome::Intent(PageIntent::OpenPause)
+    );
+    assert_eq!(
+        ui.handle_key(&key(NamedKey::Function(5), KeyPhase::Press), &world),
+        PageUiOutcome::Intent(PageIntent::OpenSaveConfirm)
+    );
+
+    let pause = demo_named("world-pause-menu")
+        .ok_or("pause demo is missing")?
+        .model()?;
+    assert_eq!(
+        ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pause),
+        PageUiOutcome::Updated
+    );
+    assert_eq!(ui.focus(), PageFocus::PauseMenu(1));
+    assert_eq!(
+        ui.handle_key(
+            &physical_key(PhysicalKeyCode::KeyZ, "z", KeyPhase::Press),
+            &pause,
+        ),
+        PageUiOutcome::Intent(PageIntent::SelectPausePage(game_page_model::PausePage::Bag))
+    );
+
+    let bag = demo_named("bag-potion-list")
+        .ok_or("bag demo is missing")?
+        .model()?;
+    assert!(matches!(bag, PageModel::Pause(PausePageModel::Bag(_))));
+    assert_eq!(
+        ui.handle_key(
+            &physical_key(PhysicalKeyCode::KeyE, "e", KeyPhase::Press),
+            &bag
+        ),
+        PageUiOutcome::Intent(PageIntent::SelectBagCategory(
+            game_page_model::BagFilter::Category(game_foundation::ItemCategory::Medicine)
+        ))
+    );
+    assert_eq!(
+        ui.handle_key(
+            &physical_key(PhysicalKeyCode::KeyX, "x", KeyPhase::Press),
+            &bag
+        ),
+        PageUiOutcome::Intent(PageIntent::Close)
+    );
+
+    let pokedex = demo_named("pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?
+        .model()?;
+    let mut pokedex_ui = PageUiState::default();
+    assert!(matches!(
+        pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
+    ));
+    assert_eq!(pokedex_ui.focus(), PageFocus::Pokedex(1));
+    assert_eq!(
+        pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert_eq!(pokedex_ui.focus(), PageFocus::Pokedex(2));
+    assert_eq!(
+        pokedex_ui.handle_key(&key(NamedKey::Enter, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)
+    );
+    Ok(())
 }
 
 fn battle_game() -> GameSession {

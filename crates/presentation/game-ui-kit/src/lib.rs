@@ -3,8 +3,8 @@
 #![forbid(unsafe_code)]
 
 use punctum_ui::{
-    Dimension, FlexDirection, UiBorderRadius, UiButtonStyle, UiColor, UiContent, UiContentId,
-    UiKey, UiNode, UiPixelOffset, UiStyle,
+    CrossAlign, Dimension, FlexDirection, UiBorderRadius, UiButtonStyle, UiColor, UiContent,
+    UiContentId, UiKey, UiNode, UiPixelOffset, UiStyle,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,6 +122,154 @@ pub enum SpriteAppearance {
         tint: UiColor,
         pixel_offset: UiPixelOffset,
     },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatChartValues {
+    pub hp: u16,
+    pub attack: u16,
+    pub defense: u16,
+    pub special_attack: u16,
+    pub special_defense: u16,
+    pub speed: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StatChartView {
+    Bars,
+    Hexagon,
+}
+
+/// Builds the shared six-stat component used by pages that show base stats.
+pub fn stat_chart<Action>(
+    theme: &GameUiTheme,
+    view: StatChartView,
+    values: Option<StatChartValues>,
+) -> UiNode<Action> {
+    match view {
+        StatChartView::Bars => stat_bars(theme, values),
+        StatChartView::Hexagon => stat_hexagon(theme, values),
+    }
+}
+
+fn stat_bars<Action>(theme: &GameUiTheme, values: Option<StatChartValues>) -> UiNode<Action> {
+    let rows = values.map_or_else(
+        || vec![text(theme, TextTone::MutedInk, "--", 14, Dimension::Fill)],
+        |values| {
+            [
+                ("HP", values.hp),
+                ("ATK", values.attack),
+                ("DEF", values.defense),
+                ("SPA", values.special_attack),
+                ("SPD", values.special_defense),
+                ("SPE", values.speed),
+            ]
+            .into_iter()
+            .map(|(label, value)| stat_bar(theme, label, value))
+            .collect()
+        },
+    );
+    column(
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            gap: 4,
+            ..UiStyle::default()
+        },
+        rows,
+    )
+}
+
+fn stat_bar<Action>(theme: &GameUiTheme, label: &str, value: u16) -> UiNode<Action> {
+    let value = value.min(256);
+    row(
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(18),
+            gap: 6,
+            cross_align: CrossAlign::Center,
+            ..UiStyle::default()
+        },
+        [
+            text(theme, TextTone::MutedInk, label, 12, Dimension::Px(32)),
+            UiNode::auto()
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(8),
+                    border_radius: theme.small_radius,
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Fill(theme.panel))
+                .with_children([UiNode::auto()
+                    .with_style(UiStyle {
+                        width: Dimension::Ratio {
+                            units: u32::from(value),
+                            base: 256,
+                        },
+                        height: Dimension::Fill,
+                        border_radius: theme.small_radius,
+                        ..UiStyle::default()
+                    })
+                    .with_content(UiContent::Fill(theme.selected))]),
+            text(
+                theme,
+                TextTone::MutedInk,
+                value.to_string(),
+                12,
+                Dimension::Px(32),
+            ),
+        ],
+    )
+}
+
+fn stat_hexagon<Action>(theme: &GameUiTheme, values: Option<StatChartValues>) -> UiNode<Action> {
+    let values = values.unwrap_or(StatChartValues {
+        hp: 0,
+        attack: 0,
+        defense: 0,
+        special_attack: 0,
+        special_defense: 0,
+        speed: 0,
+    });
+    UiNode::auto()
+        .with_content(UiContent::RadarChart {
+            values: [
+                values.hp,
+                values.attack,
+                values.defense,
+                values.special_attack,
+                values.special_defense,
+                values.speed,
+            ],
+            max: 256,
+            rings: 5,
+            grid_color: theme.panel,
+            axis_color: theme.muted_ink,
+            fill_color: UiColor::new(
+                theme.selected.red,
+                theme.selected.green,
+                theme.selected.blue,
+                96,
+            ),
+            edge_color: theme.selected,
+            point_color: theme.selected_text,
+            label_color: theme.muted_ink,
+            labels: [
+                String::from("HP"),
+                String::from("ATK"),
+                String::from("DEF"),
+                String::from("SPA"),
+                String::from("SPD"),
+                String::from("SPE"),
+            ],
+            label_font_size: 11,
+        })
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            clip: true,
+            ..UiStyle::default()
+        })
 }
 
 pub fn screen<Action>(

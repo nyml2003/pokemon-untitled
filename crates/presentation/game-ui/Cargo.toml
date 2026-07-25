@@ -10,6 +10,8 @@ battle-application = { workspace = true }
 battle-ramus-adapter = { workspace = true }
 battle-session = { workspace = true }
 game-session = { workspace = true }
+game-foundation = { workspace = true }
+game-page-model = { workspace = true }
 nucleo-matcher = "0.3.1"
 punctum-gpu = { workspace = true }
 punctum-grid = { workspace = true }

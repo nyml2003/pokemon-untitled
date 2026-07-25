@@ -11,15 +11,17 @@ use game_assets::AssetKey;
 use game_data::PokedexData;
 use game_foundation::{Direction as FoundationDirection, GameState, ThinSliceContent};
 use game_page_model::{
-    BagPageModel, PageIntent, PageModel, PartyPageModel, PausePage, PausePageModel,
-    PokedexPageModel, SaveUnavailableReason, TrainerCardPageModel,
+    BagPageModel, NationalDexNumber, PageIntent, PageModel, PartyPageModel, PausePage,
+    PausePageModel, PokedexPageModel, PokedexStatsView, SaveUnavailableReason,
+    TrainerCardPageModel,
 };
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction, WorldAnimation};
 use game_ui_kit::{
-    ButtonOptions, GameButtonTheme, GameUiTheme, PanelTone, SpriteAppearance, TextTone,
-    button as ui_button, button_with_options as ui_button_with_options, column as ui_column,
-    image as ui_image, modal as ui_modal, panel as ui_panel, row as ui_row, screen as ui_screen,
-    selectable_list_item as ui_selectable_list_item, sprite as ui_sprite, text as ui_text,
+    ButtonOptions, GameButtonTheme, GameUiTheme, PanelTone, SpriteAppearance, StatChartValues,
+    StatChartView, TextTone, button as ui_button, button_with_options as ui_button_with_options,
+    column as ui_column, image as ui_image, modal as ui_modal, panel as ui_panel, row as ui_row,
+    screen as ui_screen, selectable_list_item as ui_selectable_list_item, sprite as ui_sprite,
+    stat_chart, text as ui_text,
 };
 use punctum_gpu::{PixelOffset, Rgba8};
 use punctum_grid::{GridPos, GridRect, GridSize, Surface, SurfaceError};
@@ -443,12 +445,12 @@ pub fn project_foundation(
     ))
 }
 
-/// 将渲染无关的页面模型投影为不含地图或资源图像的 UI tree。
+/// 将渲染无关的页面模型投影为玩家页面 UI tree。
 pub fn project_page_model(model: &PageModel) -> Result<UiTree<PageIntent>, UiBuildError> {
     project_page_model_with_notice(model, None)
 }
 
-/// 将页面模型与适配层提供的短反馈投影为不含地图或资源图像的 UI tree。
+/// 将页面模型与适配层提供的短反馈投影为玩家页面 UI tree。
 pub fn project_page_model_with_notice(
     model: &PageModel,
     notice: Option<&str>,
@@ -462,81 +464,63 @@ pub fn project_page_model_with_notice(
 }
 
 fn project_page_world(
-    world: &game_page_model::WorldPageModel,
+    _: &game_page_model::WorldPageModel,
     notice: Option<&str>,
 ) -> Result<UiTree<PageIntent>, UiBuildError> {
-    UiTree::new(ui_screen(
-        &FOUNDATION_THEME,
+    UiTree::new(ui_column(
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            gap: 0,
+            ..UiStyle::default()
+        },
         [
-            page_header("小镇状态", None)?,
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Header,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(260),
+                    ..UiStyle::default()
+                },
+                [],
+            ),
+            ui_panel(
+                &FOUNDATION_THEME,
+                PanelTone::Card,
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(32),
+                    ..UiStyle::default()
+                },
+                [],
+            ),
             ui_panel(
                 &FOUNDATION_THEME,
                 PanelTone::Panel,
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
-                    gap: 8,
-                    padding: Insets::all(10),
                     ..UiStyle::default()
                 },
-                [
-                    ui_text(
-                        &FOUNDATION_THEME,
-                        TextTone::Muted,
-                        "旅程状态 / STARTING TOWN",
-                        15,
-                        Dimension::Fill,
-                    ),
-                    page_notice(notice),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(56),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_info_card("地点", world.location.as_str()),
-                            page_info_card("队伍", world.party_count.to_string()),
-                            page_info_card("金钱", world.money.amount().to_string()),
-                        ],
-                    ),
-                    page_info_card(
-                        "安全点",
-                        if world.save_available {
-                            "现在可以保存"
-                        } else {
-                            "战斗中无法保存"
-                        },
-                    ),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(40),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_action_button(
-                                "菜单",
-                                "page-world-pause",
-                                false,
-                                Some(PageIntent::OpenPause),
-                            )?,
-                            page_action_button(
-                                if world.save_available {
-                                    "保存"
-                                } else {
-                                    "保存不可用"
-                                },
-                                "page-world-save",
-                                false,
-                                world.save_available.then_some(PageIntent::OpenSaveConfirm),
-                            )?,
-                        ],
-                    ),
-                ],
+                [ui_row(
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Fill,
+                        main_align: MainAlign::Center,
+                        cross_align: CrossAlign::Center,
+                        ..UiStyle::default()
+                    },
+                    [
+                        world_tree_image(),
+                        ui_image(
+                            UiContentId::from_resource_key(page_world_player_asset().as_str()),
+                            UiStyle::fixed(96, 96),
+                        ),
+                    ],
+                )],
             ),
+            page_notice(notice),
         ],
     ))
 }
@@ -555,73 +539,64 @@ fn project_page_pause(
 }
 
 fn project_pause_menu(notice: Option<&str>) -> Result<UiTree<PageIntent>, UiBuildError> {
-    let party = page_action_button(
-        "队伍",
-        "page-pause-party",
-        false,
-        Some(PageIntent::SelectPausePage(PausePage::Party)),
-    )?;
-    let bag = page_action_button(
-        "背包",
-        "page-pause-bag",
-        false,
-        Some(PageIntent::SelectPausePage(PausePage::Bag)),
-    )?;
-    let pokedex = page_action_button(
-        "图鉴",
-        "page-pause-pokedex",
-        false,
-        Some(PageIntent::SelectPausePage(PausePage::Pokedex)),
-    )?;
-    let trainer_card = page_action_button(
-        "训练家卡",
-        "page-pause-trainer-card",
-        false,
-        Some(PageIntent::SelectPausePage(PausePage::TrainerCard)),
-    )?;
-    UiTree::new(ui_screen(
+    let entries = [
+        page_slot(
+            "队",
+            "page-pause-party",
+            false,
+            Some(PageIntent::SelectPausePage(PausePage::Party)),
+            Dimension::Fill,
+            Dimension::Px(150),
+        )?,
+        page_slot(
+            "包",
+            "page-pause-bag",
+            false,
+            Some(PageIntent::SelectPausePage(PausePage::Bag)),
+            Dimension::Fill,
+            Dimension::Px(150),
+        )?,
+        page_slot(
+            "鉴",
+            "page-pause-pokedex",
+            false,
+            Some(PageIntent::SelectPausePage(PausePage::Pokedex)),
+            Dimension::Fill,
+            Dimension::Px(150),
+        )?,
+        page_slot(
+            "卡",
+            "page-pause-trainer-card",
+            false,
+            Some(PageIntent::SelectPausePage(PausePage::TrainerCard)),
+            Dimension::Fill,
+            Dimension::Px(150),
+        )?,
+    ];
+    UiTree::new(ui_panel(
         &FOUNDATION_THEME,
+        PanelTone::Screen,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            gap: 16,
+            padding: Insets::all(32),
+            ..UiStyle::default()
+        },
         [
-            page_header("暂停菜单", Some(PageIntent::Close))?,
-            ui_panel(
-                &FOUNDATION_THEME,
-                PanelTone::Panel,
+            ui_row(
                 UiStyle {
                     width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 6,
-                    padding: Insets::all(10),
+                    height: Dimension::Px(150),
+                    gap: 12,
                     ..UiStyle::default()
                 },
-                [
-                    ui_text(
-                        &FOUNDATION_THEME,
-                        TextTone::Muted,
-                        "PLAYER MENU / 选择要查看的页面",
-                        15,
-                        Dimension::Fill,
-                    ),
-                    page_notice(notice),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(58),
-                            gap: FOUNDATION_THEME.small_spacing,
-                            ..UiStyle::default()
-                        },
-                        [party, bag],
-                    ),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(58),
-                            gap: FOUNDATION_THEME.small_spacing,
-                            ..UiStyle::default()
-                        },
-                        [pokedex, trainer_card],
-                    ),
-                ],
+                entries,
             ),
+            page_notice(notice),
         ],
     ))
 }
@@ -634,17 +609,31 @@ fn project_pause_party(
         .selected
         .as_ref()
         .and_then(|id| party.members.iter().find(|member| &member.id == id));
-    let summary = selected.map_or_else(
-        || page_info_card("当前", "尚未选择"),
-        |member| page_info_card("当前", member.species.as_str()),
-    );
-    let details = selected.map_or_else(
-        || page_info_card("状态", "选择成员查看状态"),
-        |member| {
-            page_info_card(
-                "状态",
+    let members = party
+        .members
+        .iter()
+        .map(|member| {
+            page_slot_with_image(
                 format!(
-                    "HP {}/{}  PP {}/{}  EXP {}",
+                    "{}\nHP {}/{}",
+                    member.species, member.current_hp, member.max_hp
+                ),
+                format!("page-party-{}", member.id.as_str()),
+                party.selected.as_ref() == Some(&member.id),
+                Some(PageIntent::SelectPartyMember(member.id.clone())),
+                Dimension::Fill,
+                Dimension::Px(132),
+                page_party_pokemon_asset(&member.species),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let detail = selected.map_or_else(
+        || page_detail("队伍", "选择一个槽位"),
+        |member| {
+            page_detail(
+                member.species.as_str(),
+                format!(
+                    "HP {}/{}    PP {}/{}    EXP {}",
                     member.current_hp,
                     member.max_hp,
                     member.current_pp,
@@ -654,52 +643,32 @@ fn project_pause_party(
             )
         },
     );
-    let members = party
-        .members
-        .iter()
-        .map(|member| {
-            page_action_button(
-                format!(
-                    "{}  HP {}/{}",
-                    member.species, member.current_hp, member.max_hp
-                ),
-                format!("page-party-{}", member.id.as_str()),
-                party.selected.as_ref() == Some(&member.id),
-                Some(PageIntent::SelectPartyMember(member.id.clone())),
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
-        [
-            page_header("队伍", Some(PageIntent::Close))?,
-            ui_panel(
-                &FOUNDATION_THEME,
-                PanelTone::Panel,
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 6,
-                    padding: Insets::all(10),
-                    ..UiStyle::default()
-                },
-                std::iter::once(page_notice(notice))
-                    .chain(std::iter::once(ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(56),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_info_card("成员", party.members.len().to_string()),
-                            summary,
-                        ],
-                    )))
-                    .chain(std::iter::once(details))
-                    .chain(members),
-            ),
-        ],
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Screen,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                gap: 16,
+                padding: Insets::all(24),
+                ..UiStyle::default()
+            },
+            [
+                ui_row(
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Px(132),
+                        gap: 10,
+                        ..UiStyle::default()
+                    },
+                    members,
+                ),
+                detail,
+                page_notice(notice),
+            ],
+        )],
     ))
 }
 
@@ -711,61 +680,136 @@ fn project_pause_bag(
         .selected
         .as_ref()
         .and_then(|id| bag.entries.iter().find(|entry| &entry.item == id));
+    let categories = [
+        (
+            "全",
+            "page-bag-category-all",
+            game_page_model::BagFilter::All,
+        ),
+        (
+            "药",
+            "page-bag-category-medicine",
+            game_page_model::BagFilter::Category(game_foundation::ItemCategory::Medicine),
+        ),
+        (
+            "键",
+            "page-bag-category-key",
+            game_page_model::BagFilter::Category(game_foundation::ItemCategory::Key),
+        ),
+        (
+            "杂",
+            "page-bag-category-general",
+            game_page_model::BagFilter::Category(game_foundation::ItemCategory::General),
+        ),
+    ]
+    .into_iter()
+    .map(|(label, key, category)| {
+        page_slot(
+            label,
+            key,
+            bag.category == category,
+            Some(PageIntent::SelectBagCategory(category)),
+            Dimension::Fill,
+            Dimension::Px(58),
+        )
+    })
+    .collect::<Result<Vec<_>, _>>()?;
+    let mut entries = bag
+        .entries
+        .iter()
+        .map(|entry| {
+            page_slot(
+                format!("{}\nx{}", entry.item.as_str(), entry.quantity),
+                format!("page-bag-{}", entry.item.as_str()),
+                bag.selected.as_ref() == Some(&entry.item),
+                Some(PageIntent::SelectBagItem(entry.item.clone())),
+                Dimension::Fill,
+                Dimension::Px(96),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    while entries.len() < 10 {
+        let index = entries.len();
+        entries.push(page_slot(
+            "",
+            format!("page-bag-empty-{index}"),
+            false,
+            None,
+            Dimension::Fill,
+            Dimension::Px(96),
+        )?);
+    }
+    let rows = entries
+        .chunks(5)
+        .map(|row| {
+            ui_row(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Px(96),
+                    gap: 10,
+                    ..UiStyle::default()
+                },
+                row.iter().cloned(),
+            )
+        })
+        .collect::<Vec<_>>();
     let selected_detail = selected.map_or_else(
-        || page_info_card("物品", "尚未选择"),
-        |entry| {
-            page_info_card(
-                "物品",
+        || {
+            page_detail(
+                "背包",
                 format!(
-                    "{:?}  {}/{}",
+                    "容量 {}/{}    金钱 {}",
+                    bag.slots_used,
+                    bag.capacity,
+                    bag.money.amount()
+                ),
+            )
+        },
+        |entry| {
+            page_detail(
+                entry.item.as_str(),
+                format!(
+                    "{:?}    数量 {}/{}",
                     entry.category, entry.quantity, entry.stack_limit
                 ),
             )
         },
     );
-    let entries = bag
-        .entries
-        .iter()
-        .map(|entry| {
-            page_action_button(
-                format!("{}  x{}", entry.item.as_str(), entry.quantity),
-                format!("page-bag-{}", entry.item.as_str()),
-                bag.selected.as_ref() == Some(&entry.item),
-                Some(PageIntent::SelectBagItem(entry.item.clone())),
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
-        [
-            page_header("背包", Some(PageIntent::Close))?,
-            ui_panel(
-                &FOUNDATION_THEME,
-                PanelTone::Panel,
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 6,
-                    padding: Insets::all(10),
-                    ..UiStyle::default()
-                },
-                std::iter::once(page_notice(notice))
-                    .chain(std::iter::once(ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(56),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_info_card("金钱", bag.money.amount().to_string()),
-                            page_info_card("容量", format!("{}/{}", bag.slots_used, bag.capacity)),
-                        ],
-                    )))
-                    .chain(std::iter::once(selected_detail))
-                    .chain(entries),
-            ),
-        ],
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Screen,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                gap: 12,
+                padding: Insets::all(24),
+                ..UiStyle::default()
+            },
+            [
+                ui_row(
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Px(58),
+                        gap: 10,
+                        ..UiStyle::default()
+                    },
+                    categories,
+                ),
+                ui_column(
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Px(202),
+                        gap: 10,
+                        ..UiStyle::default()
+                    },
+                    rows,
+                ),
+                selected_detail,
+                page_notice(notice),
+            ],
+        )],
     ))
 }
 
@@ -773,64 +817,469 @@ fn project_pause_pokedex(
     pokedex: &PokedexPageModel,
     notice: Option<&str>,
 ) -> Result<UiTree<PageIntent>, UiBuildError> {
-    let previous = pokedex.previous.map(PageIntent::SelectPokedexEntry);
-    let next = pokedex.next.map(PageIntent::SelectPokedexEntry);
+    let selected_number = pokedex.selected.number;
+    let index_rows = (-3_i16..=3)
+        .filter_map(|offset| {
+            let value = if offset.is_negative() {
+                selected_number.value().checked_sub(offset.unsigned_abs())
+            } else {
+                selected_number.value().checked_add(offset.unsigned_abs())
+            }?;
+            NationalDexNumber::new(value).ok()
+        })
+        .map(|number| {
+            let known = pokedex
+                .entries
+                .iter()
+                .find(|entry| entry.number == number)
+                .is_some_and(|entry| entry.known);
+            let (key, action) = if number == pokedex.previous.unwrap_or(selected_number)
+                && number != selected_number
+            {
+                (
+                    String::from("page-pokedex-previous"),
+                    pokedex.previous.map(PageIntent::SelectPokedexEntry),
+                )
+            } else if number == pokedex.next.unwrap_or(selected_number) && number != selected_number
+            {
+                (
+                    String::from("page-pokedex-next"),
+                    pokedex.next.map(PageIntent::SelectPokedexEntry),
+                )
+            } else {
+                (format!("page-pokedex-index-{}", number.value()), None)
+            };
+            pokedex_index_row(number, number == selected_number, known, key, action)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
     let name = pokedex.selected.name.as_deref().unwrap_or("???");
-    let types = if pokedex.selected.types.is_empty() {
-        String::from("未记录")
+    let type_icons = pokedex
+        .selected
+        .types
+        .iter()
+        .filter_map(|name| pokedex_type_asset(name))
+        .map(|asset| {
+            ui_image(
+                UiContentId::from_resource_key(asset.as_str()),
+                // 属性 PNG 是 32x16，保持 2:1 比例，避免被 UI 拉宽。
+                UiStyle::fixed(64, 32),
+            )
+        })
+        .collect::<Vec<_>>();
+    let type_summary = if pokedex.selected.types.is_empty() {
+        "属性数据未记录"
     } else {
-        pokedex.selected.types.join(" / ")
+        "属性数据已收录"
     };
+    let status = if pokedex.selected.known {
+        "已发现 / 已记录"
+    } else {
+        "未发现 / 仅保留轮廓"
+    };
+    let stat_values = pokedex.selected.stats.map(|stats| StatChartValues {
+        hp: stats.hp,
+        attack: stats.attack,
+        defense: stats.defense,
+        special_attack: stats.special_attack,
+        special_defense: stats.special_defense,
+        speed: stats.speed,
+    });
+    let stats_content = stat_chart(
+        &FOUNDATION_THEME,
+        match pokedex.stats_view {
+            PokedexStatsView::Bars => StatChartView::Bars,
+            PokedexStatsView::Hexagon => StatChartView::Hexagon,
+        },
+        stat_values,
+    );
+    let stats_toggle = pokedex_stats_toggle(pokedex.stats_view)?;
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Screen,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                direction: FlexDirection::Column,
+                gap: 12,
+                padding: Insets::all(20),
+                ..UiStyle::default()
+            },
+            [
+                ui_row(
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Px(46),
+                        main_align: MainAlign::SpaceBetween,
+                        cross_align: CrossAlign::Center,
+                        ..UiStyle::default()
+                    },
+                    [
+                        ui_text(
+                            &FOUNDATION_THEME,
+                            TextTone::Default,
+                            "图鉴 / FIELD GUIDE",
+                            22,
+                            Dimension::Fill,
+                        ),
+                        ui_text(
+                            &FOUNDATION_THEME,
+                            TextTone::Muted,
+                            format!(
+                                "{:03}  ·  {}/{}",
+                                selected_number.value(),
+                                pokedex.known_count,
+                                pokedex.total_count
+                            ),
+                            16,
+                            Dimension::Px(180),
+                        ),
+                    ],
+                ),
+                ui_row(
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Fill,
+                        gap: 16,
+                        ..UiStyle::default()
+                    },
+                    [
+                        ui_panel(
+                            &FOUNDATION_THEME,
+                            PanelTone::Panel,
+                            UiStyle {
+                                width: Dimension::Px(220),
+                                height: Dimension::Fill,
+                                direction: FlexDirection::Column,
+                                gap: 4,
+                                padding: Insets::all(8),
+                                clip: true,
+                                ..UiStyle::default()
+                            },
+                            [
+                                ui_text(
+                                    &FOUNDATION_THEME,
+                                    TextTone::Muted,
+                                    "INDEX",
+                                    13,
+                                    Dimension::Fill,
+                                ),
+                                ui_column(
+                                    UiStyle {
+                                        width: Dimension::Fill,
+                                        height: Dimension::Fill,
+                                        gap: 4,
+                                        ..UiStyle::default()
+                                    },
+                                    index_rows,
+                                ),
+                            ],
+                        ),
+                        ui_panel(
+                            &FOUNDATION_THEME,
+                            PanelTone::Card,
+                            UiStyle {
+                                width: Dimension::Fill,
+                                height: Dimension::Fill,
+                                direction: FlexDirection::Column,
+                                gap: 14,
+                                padding: Insets::all(20),
+                                ..UiStyle::default()
+                            },
+                            [
+                                ui_row(
+                                    UiStyle {
+                                        width: Dimension::Fill,
+                                        height: Dimension::Fill,
+                                        gap: 24,
+                                        ..UiStyle::default()
+                                    },
+                                    [
+                                        ui_panel(
+                                            &FOUNDATION_THEME,
+                                            PanelTone::ImageBackdrop,
+                                            UiStyle {
+                                                width: Dimension::Px(300),
+                                                height: Dimension::Px(300),
+                                                cross_align: CrossAlign::Center,
+                                                main_align: MainAlign::Center,
+                                                clip: true,
+                                                ..UiStyle::default()
+                                            },
+                                            [pokedex_sprite(
+                                                selected_number.value(),
+                                                280,
+                                                280,
+                                                pokedex.selected.known,
+                                            )],
+                                        ),
+                                        ui_column(
+                                            UiStyle {
+                                                width: Dimension::Fill,
+                                                height: Dimension::Fill,
+                                                gap: 10,
+                                                ..UiStyle::default()
+                                            },
+                                            [
+                                                ui_text(
+                                                    &FOUNDATION_THEME,
+                                                    TextTone::MutedInk,
+                                                    format!("NO.{:03}", selected_number.value()),
+                                                    18,
+                                                    Dimension::Fill,
+                                                ),
+                                                ui_text(
+                                                    &FOUNDATION_THEME,
+                                                    TextTone::Ink,
+                                                    name,
+                                                    36,
+                                                    Dimension::Fill,
+                                                ),
+                                                ui_text(
+                                                    &FOUNDATION_THEME,
+                                                    TextTone::MutedInk,
+                                                    status,
+                                                    16,
+                                                    Dimension::Fill,
+                                                ),
+                                                ui_row(
+                                                    UiStyle {
+                                                        width: Dimension::Fill,
+                                                        height: Dimension::Px(32),
+                                                        gap: 8,
+                                                        ..UiStyle::default()
+                                                    },
+                                                    [
+                                                        ui_row(
+                                                            UiStyle {
+                                                                width: Dimension::Fill,
+                                                                height: Dimension::Px(32),
+                                                                gap: 8,
+                                                                ..UiStyle::default()
+                                                            },
+                                                            if type_icons.is_empty() {
+                                                                vec![ui_text(
+                                                                    &FOUNDATION_THEME,
+                                                                    TextTone::MutedInk,
+                                                                    type_summary,
+                                                                    15,
+                                                                    Dimension::Fill,
+                                                                )]
+                                                            } else {
+                                                                type_icons
+                                                            },
+                                                        ),
+                                                        stats_toggle,
+                                                    ],
+                                                ),
+                                                ui_text(
+                                                    &FOUNDATION_THEME,
+                                                    TextTone::MutedInk,
+                                                    "BASE STATS",
+                                                    13,
+                                                    Dimension::Fill,
+                                                ),
+                                                stats_content,
+                                            ],
+                                        ),
+                                    ],
+                                ),
+                                ui_panel(
+                                    &FOUNDATION_THEME,
+                                    PanelTone::Panel,
+                                    UiStyle {
+                                        width: Dimension::Fill,
+                                        height: Dimension::Px(58),
+                                        direction: FlexDirection::Row,
+                                        main_align: MainAlign::SpaceBetween,
+                                        cross_align: CrossAlign::Center,
+                                        padding: Insets::symmetric(12, 8),
+                                        ..UiStyle::default()
+                                    },
+                                    [
+                                        ui_text(
+                                            &FOUNDATION_THEME,
+                                            TextTone::Muted,
+                                            "记录进度",
+                                            15,
+                                            Dimension::Px(90),
+                                        ),
+                                        UiNode::auto()
+                                            .with_style(UiStyle {
+                                                width: Dimension::Fill,
+                                                height: Dimension::Px(10),
+                                                border_radius: FOUNDATION_THEME.small_radius,
+                                                ..UiStyle::default()
+                                            })
+                                            .with_content(UiContent::Fill(UiColor::new(
+                                                76, 112, 139, 255,
+                                            )))
+                                            .with_children([UiNode::auto()
+                                                .with_style(UiStyle {
+                                                    width: Dimension::Ratio {
+                                                        units: pokedex.known_count as u32,
+                                                        base: pokedex.total_count.max(1) as u32,
+                                                    },
+                                                    height: Dimension::Fill,
+                                                    border_radius: FOUNDATION_THEME.small_radius,
+                                                    ..UiStyle::default()
+                                                })
+                                                .with_content(UiContent::Fill(
+                                                    FOUNDATION_THEME.selected,
+                                                ))]),
+                                        ui_text(
+                                            &FOUNDATION_THEME,
+                                            TextTone::MutedInk,
+                                            format!(
+                                                "{}/{}",
+                                                pokedex.known_count, pokedex.total_count
+                                            ),
+                                            15,
+                                            Dimension::Px(72),
+                                        ),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
+                page_notice(notice),
+            ],
+        )],
+    ))
+}
+
+fn pokedex_index_row(
+    number: NationalDexNumber,
+    selected: bool,
+    known: bool,
+    key: impl Into<String>,
+    action: Option<PageIntent>,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
+    let key = key.into();
+    let appearance = if known {
+        SpriteAppearance::Plain
+    } else {
+        SpriteAppearance::Tinted(UiColor::new(28, 34, 45, 255))
+    };
+    let node = ui_button_with_options(
+        &FOUNDATION_THEME,
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(54),
+            direction: FlexDirection::Row,
+            gap: 8,
+            padding: Insets::symmetric(6, 4),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: UiColor::new(76, 112, 139, 255),
+            },
+            border_radius: FOUNDATION_THEME.small_radius,
+            cross_align: CrossAlign::Center,
+            ..UiStyle::default()
+        },
+        ButtonOptions::new(selected, action.is_none()),
         [
-            page_header("图鉴", Some(PageIntent::Close))?,
-            ui_panel(
+            pokedex_sprite_with_appearance(number.value(), 44, 44, appearance),
+            ui_text(
                 &FOUNDATION_THEME,
-                PanelTone::Panel,
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 6,
-                    padding: Insets::all(10),
-                    ..UiStyle::default()
+                if selected {
+                    TextTone::Selected
+                } else {
+                    TextTone::Default
                 },
-                [
-                    page_notice(notice),
-                    page_info_card(
-                        "发现",
-                        format!("{}/{}", pokedex.known_count, pokedex.total_count),
-                    ),
-                    page_info_card("编号", pokedex.selected.number.value().to_string()),
-                    page_info_card("名称", name),
-                    page_info_card("属性", types),
-                    ui_text(
-                        &FOUNDATION_THEME,
-                        TextTone::Muted,
-                        if pokedex.selected.known {
-                            "资料来源：当前队伍"
-                        } else {
-                            "资料尚未解锁"
-                        },
-                        14,
-                        Dimension::Fill,
-                    ),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(40),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_action_button("上一只", "page-pokedex-previous", false, previous)?,
-                            page_action_button("下一只", "page-pokedex-next", false, next)?,
-                        ],
-                    ),
-                ],
+                format!("{:03}", number.value()),
+                16,
+                Dimension::Fill,
             ),
         ],
-    ))
+    )
+    .with_key(UiKey::new(key)?);
+    Ok(match action {
+        Some(action) => node.with_action(action),
+        None => node,
+    })
+}
+
+fn pokedex_stats_toggle(view: PokedexStatsView) -> Result<UiNode<PageIntent>, UiBuildError> {
+    let label = match view {
+        PokedexStatsView::Bars => "BAR",
+        PokedexStatsView::Hexagon => "HEX",
+    };
+    Ok(ui_button_with_options(
+        &FOUNDATION_THEME,
+        UiStyle {
+            width: Dimension::Px(72),
+            height: Dimension::Px(28),
+            padding: Insets::symmetric(8, 4),
+            border_radius: FOUNDATION_THEME.small_radius,
+            ..UiStyle::default()
+        },
+        ButtonOptions::new(matches!(view, PokedexStatsView::Hexagon), false),
+        [ui_text(
+            &FOUNDATION_THEME,
+            TextTone::Selected,
+            label,
+            12,
+            Dimension::Fill,
+        )],
+    )
+    .with_key(UiKey::new("page-pokedex-stats-toggle")?)
+    .with_action(PageIntent::TogglePokedexStatsView))
+}
+
+fn pokedex_sprite(number: u16, width: u32, height: u32, known: bool) -> UiNode<PageIntent> {
+    pokedex_sprite_with_appearance(
+        number,
+        width,
+        height,
+        if known {
+            SpriteAppearance::Plain
+        } else {
+            SpriteAppearance::Tinted(UiColor::new(28, 34, 45, 255))
+        },
+    )
+}
+
+fn pokedex_sprite_with_appearance(
+    number: u16,
+    width: u32,
+    height: u32,
+    appearance: SpriteAppearance,
+) -> UiNode<PageIntent> {
+    match page_pokedex_pokemon_asset(number) {
+        Some(asset) => ui_sprite(
+            UiContentId::from_resource_key(asset.as_str()),
+            UiStyle::fixed(width, height),
+            appearance,
+        ),
+        None => UiNode::auto().with_style(UiStyle::fixed(width, height)),
+    }
+}
+
+fn pokedex_type_asset(name: &str) -> Option<AssetKey> {
+    let pokemon_type = match name {
+        "一般" | "Normal" => PokemonType::Normal,
+        "格斗" | "Fighting" => PokemonType::Fighting,
+        "飞行" | "Flying" => PokemonType::Flying,
+        "毒" | "Poison" => PokemonType::Poison,
+        "地面" | "Ground" => PokemonType::Ground,
+        "岩石" | "Rock" => PokemonType::Rock,
+        "虫" | "Bug" => PokemonType::Bug,
+        "幽灵" | "Ghost" => PokemonType::Ghost,
+        "钢" | "Steel" => PokemonType::Steel,
+        "火" | "Fire" => PokemonType::Fire,
+        "水" | "Water" => PokemonType::Water,
+        "草" | "Grass" => PokemonType::Grass,
+        "电" | "Electric" => PokemonType::Electric,
+        "超能力" | "Psychic" => PokemonType::Psychic,
+        "冰" | "Ice" => PokemonType::Ice,
+        "龙" | "Dragon" => PokemonType::Dragon,
+        "恶" | "Dark" => PokemonType::Dark,
+        _ => return None,
+    };
+    Some(type_icon_asset(pokemon_type))
 }
 
 fn project_pause_trainer_card(
@@ -839,30 +1288,41 @@ fn project_pause_trainer_card(
 ) -> Result<UiTree<PageIntent>, UiBuildError> {
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
-        [
-            page_header("训练家卡", Some(PageIntent::Close))?,
-            ui_panel(
-                &FOUNDATION_THEME,
-                PanelTone::Panel,
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 6,
-                    padding: Insets::all(10),
-                    ..UiStyle::default()
-                },
-                [
-                    page_notice(notice),
-                    page_info_card("地点", card.location.as_str()),
-                    page_info_card("金钱", card.money.amount().to_string()),
-                    page_info_card("同行", format!("{} / 6", card.party_count)),
-                    page_info_card(
-                        "训练家",
-                        format!("{}/{} 已击败", card.defeated_trainers, card.total_trainers),
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Screen,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                direction: FlexDirection::Column,
+                main_align: MainAlign::Center,
+                cross_align: CrossAlign::Center,
+                gap: 12,
+                padding: Insets::all(24),
+                ..UiStyle::default()
+            },
+            [
+                page_slot(
+                    "卡",
+                    "page-trainer-card-placeholder",
+                    true,
+                    None,
+                    Dimension::Px(180),
+                    Dimension::Px(180),
+                )?,
+                page_detail(
+                    card.location.as_str(),
+                    format!(
+                        "金钱 {}    同行 {}/6    训练家 {}/{}",
+                        card.money.amount(),
+                        card.party_count,
+                        card.defeated_trainers,
+                        card.total_trainers
                     ),
-                ],
-            ),
-        ],
+                ),
+                page_notice(notice),
+            ],
+        )],
     ))
 }
 
@@ -881,11 +1341,6 @@ fn project_page_shop(
     let purchase = detail
         .filter(|item| item.affordable)
         .map(|_| PageIntent::ConfirmShopPurchase);
-    let purchase_label = if detail.is_some_and(|item| item.affordable) {
-        "确认购买"
-    } else {
-        "无法购买"
-    };
     let price = detail.map_or(String::from("--"), |item| {
         item.total_price.amount().to_string()
     });
@@ -895,67 +1350,88 @@ fn project_page_shop(
         Some(_) => "余额不足，无法购买",
         None => "选择物品后确认购买",
     };
+    let less = page_slot(
+        "-",
+        "page-shop-less",
+        false,
+        previous,
+        Dimension::Fill,
+        Dimension::Px(64),
+    )?;
+    let more = page_slot(
+        "+",
+        "page-shop-more",
+        false,
+        next,
+        Dimension::Fill,
+        Dimension::Px(64),
+    )?;
+    let confirm = page_slot(
+        if detail.is_some_and(|item| item.affordable) {
+            "买"
+        } else {
+            "x"
+        },
+        "page-shop-confirm",
+        false,
+        purchase,
+        Dimension::Px(120),
+        Dimension::Px(64),
+    )?;
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
-        [
-            page_header("小镇商店", Some(PageIntent::Close))?,
-            ui_panel(
-                &FOUNDATION_THEME,
-                PanelTone::Panel,
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 6,
-                    padding: Insets::all(10),
-                    ..UiStyle::default()
-                },
-                [
-                    page_notice(notice),
-                    page_info_card("商品", item_label),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(56),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_info_card("余额", shop.money.amount().to_string()),
-                            page_info_card("价格", price),
-                            page_info_card("持有", owned),
-                            page_info_card(
-                                "容量",
-                                format!(
-                                    "{}/{}",
-                                    shop.inventory_slots_used, shop.inventory_capacity
-                                ),
-                            ),
-                        ],
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Screen,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                gap: 16,
+                padding: Insets::all(24),
+                main_align: MainAlign::Center,
+                cross_align: CrossAlign::Center,
+                ..UiStyle::default()
+            },
+            [
+                page_slot(
+                    item_label,
+                    "page-shop-item",
+                    true,
+                    None,
+                    Dimension::Px(220),
+                    Dimension::Px(120),
+                )?,
+                page_detail(
+                    format!("{}  x{}", item_label, quantity),
+                    format!(
+                        "余额 {}    价格 {}    持有 {}    容量 {}/{}",
+                        shop.money.amount(),
+                        price,
+                        owned,
+                        shop.inventory_slots_used,
+                        shop.inventory_capacity
                     ),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(56),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_action_button("-", "page-shop-less", false, previous)?,
-                            page_info_card("数量", quantity.to_string()),
-                            page_action_button("+", "page-shop-more", false, next)?,
-                        ],
-                    ),
-                    ui_text(
-                        &FOUNDATION_THEME,
-                        TextTone::Muted,
-                        purchase_hint,
-                        14,
-                        Dimension::Fill,
-                    ),
-                    page_action_button(purchase_label, "page-shop-confirm", false, purchase)?,
-                ],
-            ),
-        ],
+                ),
+                ui_row(
+                    UiStyle {
+                        width: Dimension::Px(260),
+                        height: Dimension::Px(64),
+                        gap: 10,
+                        ..UiStyle::default()
+                    },
+                    [less, page_detail("数量", quantity.to_string()), more],
+                ),
+                ui_text(
+                    &FOUNDATION_THEME,
+                    TextTone::Muted,
+                    purchase_hint,
+                    14,
+                    Dimension::Px(260),
+                ),
+                confirm,
+                page_notice(notice),
+            ],
+        )],
     ))
 }
 
@@ -969,57 +1445,39 @@ fn project_page_save_confirm(
     };
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
-        [
-            page_header("保存游戏", Some(PageIntent::Close))?,
-            ui_panel(
-                &FOUNDATION_THEME,
-                PanelTone::Panel,
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 8,
-                    padding: Insets::all(10),
-                    main_align: MainAlign::Center,
-                    ..UiStyle::default()
-                },
-                [
-                    page_notice(notice),
-                    ui_text(
-                        &FOUNDATION_THEME,
-                        if save.available {
-                            TextTone::Default
-                        } else {
-                            TextTone::Muted
-                        },
-                        message,
-                        18,
-                        Dimension::Fill,
-                    ),
-                    ui_row(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Px(42),
-                            gap: 6,
-                            ..UiStyle::default()
-                        },
-                        [
-                            page_action_button(
-                                "取消",
-                                "page-save-cancel",
-                                false,
-                                Some(PageIntent::Close),
-                            )?,
-                            page_action_button(
-                                "确认保存",
-                                "page-save-confirm",
-                                false,
-                                save.available.then_some(PageIntent::ConfirmSave),
-                            )?,
-                        ],
-                    ),
-                ],
-            ),
-        ],
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Screen,
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                gap: 16,
+                padding: Insets::all(24),
+                main_align: MainAlign::Center,
+                cross_align: CrossAlign::Center,
+                ..UiStyle::default()
+            },
+            [
+                page_slot(
+                    "存",
+                    "page-save-state",
+                    save.available,
+                    None,
+                    Dimension::Px(160),
+                    Dimension::Px(120),
+                )?,
+                page_detail("存档", message),
+                page_slot(
+                    if save.available { "存" } else { "x" },
+                    "page-save-confirm",
+                    false,
+                    save.available.then_some(PageIntent::ConfirmSave),
+                    Dimension::Px(120),
+                    Dimension::Px(64),
+                )?,
+                page_notice(notice),
+            ],
+        )],
     ))
 }
 
@@ -1051,56 +1509,18 @@ fn page_notice(notice: Option<&str>) -> UiNode<PageIntent> {
     }
 }
 
-fn page_header(title: &str, close: Option<PageIntent>) -> Result<UiNode<PageIntent>, UiBuildError> {
-    let mut children = vec![ui_text(
+fn page_detail(label: impl Into<String>, value: impl Into<String>) -> UiNode<PageIntent> {
+    ui_panel(
         &FOUNDATION_THEME,
-        TextTone::Default,
-        title,
-        22,
-        Dimension::Fill,
-    )];
-    if let Some(action) = close {
-        children.push(page_action_button(
-            "返回",
-            "page-close",
-            false,
-            Some(action),
-        )?);
-    }
-    Ok(ui_panel(
-        &FOUNDATION_THEME,
-        PanelTone::Header,
+        PanelTone::Panel,
         UiStyle {
             width: Dimension::Fill,
-            height: Dimension::Px(54),
-            direction: FlexDirection::Row,
-            main_align: MainAlign::SpaceBetween,
-            cross_align: CrossAlign::Center,
-            gap: FOUNDATION_THEME.small_spacing,
+            height: Dimension::Px(64),
+            gap: 4,
             padding: Insets::symmetric(12, 8),
             border: punctum_ui::UiBorder {
                 widths: Insets::all(1),
-                color: UiColor::new(50, 97, 145, 255),
-            },
-            border_radius: FOUNDATION_THEME.medium_radius,
-            ..UiStyle::default()
-        },
-        children,
-    ))
-}
-
-fn page_info_card(label: impl Into<String>, value: impl Into<String>) -> UiNode<PageIntent> {
-    ui_panel(
-        &FOUNDATION_THEME,
-        PanelTone::Card,
-        UiStyle {
-            width: Dimension::Fill,
-            height: Dimension::Px(56),
-            gap: 3,
-            padding: Insets::symmetric(8, 5),
-            border: punctum_ui::UiBorder {
-                widths: Insets::all(1),
-                color: UiColor::new(216, 196, 142, 255),
+                color: UiColor::new(76, 112, 139, 255),
             },
             border_radius: FOUNDATION_THEME.small_radius,
             ..UiStyle::default()
@@ -1108,21 +1528,41 @@ fn page_info_card(label: impl Into<String>, value: impl Into<String>) -> UiNode<
         [
             ui_text(
                 &FOUNDATION_THEME,
-                TextTone::MutedInk,
+                TextTone::Default,
                 label,
-                12,
+                16,
                 Dimension::Fill,
             ),
-            ui_text(&FOUNDATION_THEME, TextTone::Ink, value, 15, Dimension::Fill),
+            ui_text(
+                &FOUNDATION_THEME,
+                TextTone::Muted,
+                value,
+                14,
+                Dimension::Fill,
+            ),
         ],
     )
 }
 
-fn page_action_button(
+fn page_slot(
     label: impl Into<String>,
     key: impl Into<String>,
     selected: bool,
     action: Option<PageIntent>,
+    width: Dimension,
+    height: Dimension,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
+    page_slot_with_image(label, key, selected, action, width, height, None)
+}
+
+fn page_slot_with_image(
+    label: impl Into<String>,
+    key: impl Into<String>,
+    selected: bool,
+    action: Option<PageIntent>,
+    width: Dimension,
+    height: Dimension,
+    image: Option<AssetKey>,
 ) -> Result<UiNode<PageIntent>, UiBuildError> {
     let label = label.into();
     let key = key.into();
@@ -1131,29 +1571,93 @@ fn page_action_button(
     } else {
         TextTone::Muted
     };
+    let mut children = Vec::with_capacity(2);
+    if let Some(image) = image {
+        children.push(ui_image(
+            UiContentId::from_resource_key(image.as_str()),
+            UiStyle::fixed(72, 72),
+        ));
+    }
+    children.push(ui_text(&FOUNDATION_THEME, tone, label, 18, Dimension::Fill));
     let node = ui_button_with_options(
         &FOUNDATION_THEME,
         UiStyle {
-            width: Dimension::Fill,
-            height: Dimension::Fill,
+            width,
+            height,
             main_align: MainAlign::Center,
             cross_align: CrossAlign::Center,
-            padding: Insets::symmetric(8, 4),
+            padding: Insets::symmetric(10, 6),
             border: punctum_ui::UiBorder {
                 widths: Insets::all(1),
-                color: UiColor::new(50, 78, 111, 255),
+                color: UiColor::new(76, 112, 139, 255),
             },
             border_radius: FOUNDATION_THEME.small_radius,
             ..UiStyle::default()
         },
         ButtonOptions::new(selected, action.is_none()),
-        [ui_text(&FOUNDATION_THEME, tone, label, 15, Dimension::Fill)],
+        children,
     )
     .with_key(UiKey::new(key)?);
     Ok(match action {
         Some(action) => node.with_action(action),
         None => node,
     })
+}
+
+/// 页面 demo 使用的世界角色资源槽位。
+pub fn page_world_player_asset() -> AssetKey {
+    AssetKey::from_resource_template("page/world/player".into())
+}
+
+/// 页面 demo 使用的地图装饰 tile 资源槽位。
+pub fn page_world_tile_asset(tile: u16) -> AssetKey {
+    AssetKey::from_resource_template(format!("page/world/tile/{tile:04}"))
+}
+
+fn world_tree_image() -> UiNode<PageIntent> {
+    let rows = [[8_u16, 9], [10, 11], [12, 13]]
+        .into_iter()
+        .map(|row| {
+            ui_row(
+                UiStyle {
+                    width: Dimension::Px(128),
+                    height: Dimension::Px(64),
+                    ..UiStyle::default()
+                },
+                row.into_iter().map(|tile| {
+                    ui_image(
+                        UiContentId::from_resource_key(page_world_tile_asset(tile).as_str()),
+                        UiStyle::fixed(64, 64),
+                    )
+                }),
+            )
+        })
+        .collect::<Vec<_>>();
+    ui_column(
+        UiStyle {
+            width: Dimension::Px(128),
+            height: Dimension::Px(192),
+            ..UiStyle::default()
+        },
+        rows,
+    )
+}
+
+/// 将当前页面 demo 中已有的队伍物种映射到可替换的资源槽位。
+pub fn page_party_pokemon_asset(species: &str) -> Option<AssetKey> {
+    match species {
+        "Treecko" => Some(AssetKey::from_resource_template(
+            "page/party/treecko".into(),
+        )),
+        _ => None,
+    }
+}
+
+/// 返回已有图鉴立绘对应的页面资源槽位。
+pub fn page_pokedex_pokemon_asset(number: u16) -> Option<AssetKey> {
+    (1..=386)
+        .contains(&number)
+        .then(|| AssetKey::from_resource_template(format!("pokedex/{number}")))
 }
 
 fn foundation_tab(

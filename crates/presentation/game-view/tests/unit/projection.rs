@@ -8,7 +8,7 @@ use battle_session::{
 };
 use game_data::PokedexData;
 use game_foundation::{GameState, ThinSliceContent};
-use game_page_model::{PageIntent, PageModel, page_demos};
+use game_page_model::{PageIntent, PageModel, PausePageModel, page_demos};
 use map_project::{
     AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection, MapProject,
     MapProjectId, TilePosition,
@@ -24,15 +24,15 @@ use game_ui::{
 
 use super::{
     BattleSpriteResources, FoundationPage, FoundationPageAction, LayerKind, TextRole, ViewCell,
-    ViewLayer, compose_world, move_category_icon_asset, pill_ui_asset, pokemon_icon_asset,
+    ViewLayer, compose_world, move_category_icon_asset, page_party_pokemon_asset,
+    page_pokedex_pokemon_asset, page_world_player_asset, pill_ui_asset, pokemon_icon_asset,
     project_battle, project_battle_ui, project_console, project_console_ui, project_foundation,
     project_page_model, project_page_model_with_notice, project_pokedex, project_world,
     rounded_ui_asset, type_icon_asset, world_character_asset,
 };
 
 #[test]
-fn page_demos_resolve_to_ui_without_map_or_resource_images()
--> Result<(), Box<dyn std::error::Error>> {
+fn page_demos_resolve_to_ui_with_optional_page_images() -> Result<(), Box<dyn std::error::Error>> {
     for demo in page_demos() {
         let model = demo.model()?;
         let tree = project_page_model(&model)?;
@@ -42,18 +42,57 @@ fn page_demos_resolve_to_ui_without_map_or_resource_images()
             punctum_ui::UiSize::new(320, 240),
         ] {
             let frame = tree.resolve(viewport)?;
+            assert!(frame.commands().iter().all(|command| {
+                !matches!(
+                    command,
+                    punctum_ui::UiDrawCommand::Image { content, .. }
+                        if content.as_str().is_empty()
+                )
+            }));
+        }
+        let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
+        let images = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                punctum_ui::UiDrawCommand::Image { content, .. } => Some(content.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        match &model {
+            PageModel::World(_) => {
+                assert!(images.contains(&page_world_player_asset().as_str()));
+            }
+            PageModel::Pause(PausePageModel::Party(party)) => {
+                if let Some(asset) = party
+                    .members
+                    .first()
+                    .and_then(|member| page_party_pokemon_asset(&member.species))
+                {
+                    assert!(images.contains(&asset.as_str()));
+                }
+            }
+            PageModel::Pause(PausePageModel::Pokedex(pokedex)) => {
+                if let Some(asset) = page_pokedex_pokemon_asset(pokedex.selected.number.value()) {
+                    assert!(images.contains(&asset.as_str()));
+                }
+            }
+            _ => {}
+        }
+        if matches!(model, PageModel::World(_)) {
+            assert!(frame.action_hits().is_empty());
             assert!(
                 frame
                     .commands()
                     .iter()
-                    .all(|command| !matches!(command, punctum_ui::UiDrawCommand::Image { .. }))
+                    .any(|command| matches!(command, punctum_ui::UiDrawCommand::Fill { .. }))
             );
+        } else {
+            assert!(expected_page_action(
+                &model,
+                frame.action_hits().iter().map(|hit| &hit.action)
+            ));
         }
-        let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
-        assert!(expected_page_action(
-            &model,
-            frame.action_hits().iter().map(|hit| &hit.action)
-        ));
     }
     Ok(())
 }
@@ -68,12 +107,6 @@ fn page_notice_stays_in_the_rendering_adapter_boundary() -> Result<(), Box<dyn s
         command,
         punctum_ui::UiDrawCommand::Text { content, .. } if content == "购买请求等待产品层处理"
     )));
-    assert!(
-        frame
-            .commands()
-            .iter()
-            .all(|command| !matches!(command, punctum_ui::UiDrawCommand::Image { .. }))
-    );
     Ok(())
 }
 
@@ -82,8 +115,23 @@ fn expected_page_action<'a>(
     mut actions: impl Iterator<Item = &'a PageIntent>,
 ) -> bool {
     match model {
-        PageModel::World(_) => actions.any(|action| matches!(action, PageIntent::OpenPause)),
-        PageModel::Pause(_) => actions.any(|action| matches!(action, PageIntent::Close)),
+        PageModel::World(_) => false,
+        PageModel::Pause(PausePageModel::Menu) => {
+            actions.any(|action| matches!(action, PageIntent::SelectPausePage(_)))
+        }
+        PageModel::Pause(PausePageModel::Party(_)) => {
+            actions.any(|action| matches!(action, PageIntent::SelectPartyMember(_)))
+        }
+        PageModel::Pause(PausePageModel::Bag(_)) => actions.any(|action| {
+            matches!(
+                action,
+                PageIntent::SelectBagCategory(_) | PageIntent::SelectBagItem(_)
+            )
+        }),
+        PageModel::Pause(PausePageModel::Pokedex(_)) => {
+            actions.any(|action| matches!(action, PageIntent::SelectPokedexEntry(_)))
+        }
+        PageModel::Pause(PausePageModel::TrainerCard(_)) => true,
         PageModel::Shop(_) => {
             actions.any(|action| matches!(action, PageIntent::ConfirmShopPurchase))
         }
@@ -91,6 +139,21 @@ fn expected_page_action<'a>(
             actions.any(|action| matches!(action, PageIntent::ConfirmSave))
         }
     }
+}
+
+#[test]
+fn player_pages_do_not_emit_legacy_headers_or_return_buttons()
+-> Result<(), Box<dyn std::error::Error>> {
+    for demo in page_demos() {
+        let model = demo.model()?;
+        let frame = project_page_model(&model)?.resolve(punctum_ui::UiSize::new(960, 720))?;
+        assert!(!frame.commands().iter().any(|command| matches!(
+            command,
+            punctum_ui::UiDrawCommand::Text { content, .. }
+                if content == "返回" || content == "暂停菜单"
+        )));
+    }
+    Ok(())
 }
 
 #[test]

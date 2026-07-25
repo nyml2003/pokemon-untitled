@@ -1,4 +1,5 @@
 use punctum_ui::{UiBorderRadius, UiColor, UiDrawCommand, UiSize, UiTree};
+use std::error::Error;
 
 use super::{GameButtonTheme, GameUiTheme, *};
 
@@ -119,4 +120,22 @@ fn button_tab_bar_and_modal_use_their_theme_surfaces() {
     assert!(colors.contains(&THEME.selected));
     assert!(colors.contains(&THEME.panel));
     assert!(colors.contains(&THEME.card));
+}
+
+#[test]
+fn stat_chart_resolves_bars_and_hexagon_views() -> Result<(), Box<dyn Error>> {
+    let values = StatChartValues {
+        hp: 45,
+        attack: 49,
+        defense: 49,
+        special_attack: 65,
+        special_defense: 65,
+        speed: 45,
+    };
+    for view in [StatChartView::Bars, StatChartView::Hexagon] {
+        let tree = UiTree::new(stat_chart::<()>(&THEME, view, Some(values)))?;
+        let frame = tree.resolve(UiSize::new(280, 180))?;
+        assert!(!frame.commands().is_empty());
+    }
+    Ok(())
 }

@@ -383,6 +383,19 @@ impl UiStyle {
 pub enum UiContent {
     Empty,
     Fill(UiColor),
+    RadarChart {
+        values: [u16; 6],
+        max: u16,
+        rings: u8,
+        grid_color: UiColor,
+        axis_color: UiColor,
+        fill_color: UiColor,
+        edge_color: UiColor,
+        point_color: UiColor,
+        label_color: UiColor,
+        labels: [String; 6],
+        label_font_size: u32,
+    },
     Image(UiContentId),
     ImageTinted {
         content: UiContentId,

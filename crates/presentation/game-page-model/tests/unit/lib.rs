@@ -1,9 +1,9 @@
 use std::collections::BTreeSet;
 
 use super::{
-    NationalDexNumber, PageDemoContext, PageDemoId, PageEffect, PageIntent, PageModel, PageState,
-    PausePage, PausePageModel, PauseRoute, PlayerPage, PlayerRoute, demo_for, demo_named,
-    page_demos, project_page,
+    BagFilter, NationalDexNumber, PageDemoContext, PageDemoId, PageEffect, PageIntent, PageModel,
+    PageState, PausePage, PausePageModel, PauseRoute, PlayerPage, PlayerRoute, PokedexStatsView,
+    demo_for, demo_named, page_demos, project_page,
 };
 use game_foundation::{CreatureId, GameIdError, ItemId, ShopId};
 use game_session::ProductCommand;
@@ -58,7 +58,10 @@ fn pause_shop_and_save_reducers_only_emit_typed_requests() -> Result<(), Box<dyn
     assert_eq!(
         state.route(),
         &PlayerRoute::Pause {
-            route: PauseRoute::Bag { selected: None }
+            route: PauseRoute::Bag {
+                category: BagFilter::All,
+                selected: None,
+            }
         }
     );
     let (state, _) = state.transition(PageIntent::SelectBagItem(potion.clone()))?;
@@ -66,6 +69,7 @@ fn pause_shop_and_save_reducers_only_emit_typed_requests() -> Result<(), Box<dyn
         state.route(),
         &PlayerRoute::Pause {
             route: PauseRoute::Bag {
+                category: BagFilter::All,
                 selected: Some(potion.clone()),
             },
         }
@@ -124,7 +128,53 @@ fn gift_backed_pause_pages_read_product_facts() -> Result<(), Box<dyn std::error
     };
     assert!(pokedex.selected.known);
     assert_eq!(pokedex.selected.number.value(), 252);
+    assert_eq!(pokedex.entries.len(), 386);
+    assert_eq!(pokedex.known_count, 380);
+    assert!(!pokedex.entries[0].known);
+    assert!(pokedex.entries[1].known);
+    assert!(!pokedex.entries[3].known);
+    assert!(pokedex.entries[19].known);
+    assert!(pokedex.entries[20].known);
+    assert!(pokedex.entries[251].known);
+    assert_eq!(pokedex.stats_view, PokedexStatsView::Bars);
     assert_eq!(pokedex.previous.map(NationalDexNumber::value), Some(251));
+    Ok(())
+}
+
+#[test]
+fn bag_filter_keeps_stable_entries_and_allows_empty_categories()
+-> Result<(), Box<dyn std::error::Error>> {
+    let context = PageDemoContext::gift_received()?;
+    let route = PlayerRoute::Pause {
+        route: PauseRoute::Bag {
+            category: BagFilter::Category(game_foundation::ItemCategory::Key),
+            selected: None,
+        },
+    };
+    let PageModel::Pause(PausePageModel::Bag(key_page)) =
+        project_page(context.content(), context.snapshot(), &route)?
+    else {
+        return Err("key filter did not project a bag page".into());
+    };
+    assert_eq!(
+        key_page.category,
+        BagFilter::Category(game_foundation::ItemCategory::Key)
+    );
+    assert!(key_page.entries.is_empty());
+
+    let route = PlayerRoute::Pause {
+        route: PauseRoute::Bag {
+            category: BagFilter::Category(game_foundation::ItemCategory::Medicine),
+            selected: None,
+        },
+    };
+    let PageModel::Pause(PausePageModel::Bag(medicine_page)) =
+        project_page(context.content(), context.snapshot(), &route)?
+    else {
+        return Err("medicine filter did not project a bag page".into());
+    };
+    assert_eq!(medicine_page.entries.len(), 1);
+    assert_eq!(medicine_page.entries[0].item.as_str(), "potion");
     Ok(())
 }
 

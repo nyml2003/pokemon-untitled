@@ -3,12 +3,14 @@
 #![forbid(unsafe_code)]
 
 mod console;
+mod page;
 mod presentation;
 
 use battle_session::{Action, BattleInteraction, BattleObservation, MoveSlot, TeamSlot};
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
 
 pub use console::{ConsoleEntry, ConsoleIntent, ConsoleOutcome, ConsoleState, GameConsole};
+pub use page::{PageFocus, PageUiOutcome, PageUiState};
 pub use presentation::{
     PokedexAction, PokedexUiSnapshot, PresentationAction, PresentationSnapshot, PresentationState,
     PresentationUpdate,

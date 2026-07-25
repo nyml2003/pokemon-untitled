@@ -9,8 +9,10 @@ rust-version.workspace = true
 game-assets = { workspace = true }
 game-native-target = { workspace = true }
 game-page-model = { workspace = true }
+game-ui = { workspace = true }
 game-view = { workspace = true }
 punctum-gpu = { workspace = true }
+punctum-input = { workspace = true }
 punctum-ui = { workspace = true }
 winit = "0.30.13"
 
