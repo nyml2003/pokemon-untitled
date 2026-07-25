@@ -8,7 +8,7 @@ use battle_session::{
 };
 use game_data::PokedexData;
 use game_foundation::{GameState, ThinSliceContent};
-use game_page_model::{PageIntent, PageModel, PausePageModel, page_demos};
+use game_page_model::{PageIntent, PageModel, PausePageModel, PokedexDetailView, page_demos};
 use map_project::{
     AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection, MapProject,
     MapProjectId, TilePosition,
@@ -109,6 +109,53 @@ fn page_notice_stays_in_the_rendering_adapter_boundary() -> Result<(), Box<dyn s
     assert!(frame.commands().iter().any(|command| matches!(
         command,
         punctum_ui::UiDrawCommand::Text { content, .. } if content == "购买请求等待产品层处理"
+    )));
+    Ok(())
+}
+
+#[test]
+fn pokedex_moves_detail_projects_virtual_move_list() -> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let PageModel::Pause(PausePageModel::Pokedex(mut page)) = demo.model()? else {
+        return Err("pokedex demo did not produce a pokedex page".into());
+    };
+    assert!(!page.moves.is_empty());
+    page.detail_view = PokedexDetailView::Moves;
+    page.selected_move = page.moves.len().saturating_sub(1);
+    let expected_label = format!(
+        "技能列表  {}/{}",
+        page.selected_move.saturating_add(1),
+        page.moves.len()
+    );
+    let expected_action = PageIntent::SelectPokedexMove(page.selected_move);
+
+    let frame = project_page_model(&PageModel::Pause(PausePageModel::Pokedex(page)))?
+        .resolve(punctum_ui::UiSize::new(960, 720))?;
+    assert!(frame.commands().iter().any(|command| matches!(
+        command,
+        punctum_ui::UiDrawCommand::Text { content, .. } if content == expected_label.as_str()
+    )));
+    assert!(
+        frame
+            .action_hits()
+            .iter()
+            .any(|hit| hit.action == expected_action),
+        "expected: {:?}, actions: {:?}",
+        expected_action,
+        frame
+            .action_hits()
+            .iter()
+            .map(|hit| &hit.action)
+            .collect::<Vec<_>>()
+    );
+    assert!(frame.commands().iter().any(|command| matches!(
+        command,
+        punctum_ui::UiDrawCommand::Image { content, .. }
+            if content.as_str().starts_with("ui/battle/move-category/")
     )));
     Ok(())
 }
