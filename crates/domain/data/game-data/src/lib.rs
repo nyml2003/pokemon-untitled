@@ -242,6 +242,9 @@ pub struct PokemonRecord {
     pub species_id: SpeciesId,
     pub identifier: String,
     pub is_default: bool,
+    pub height_decimeters: Option<u16>,
+    pub weight_hectograms: Option<u16>,
+    pub genus: Option<String>,
     pub base_stats: BaseStats,
     pub types: Vec<TypeId>,
     pub abilities: Vec<PokemonAbility>,
@@ -440,7 +443,7 @@ impl CurrentDataSet {
     }
 
     fn validate(&self) -> Result<(), DataLoadError> {
-        if self.metadata.schema_version != "current-data-set-v4" {
+        if self.metadata.schema_version != "current-data-set-v5" {
             return Err(DataLoadError::UnsupportedSchema(
                 self.metadata.schema_version.clone(),
             ));
@@ -458,6 +461,16 @@ impl CurrentDataSet {
         )?;
         validate_sorted("types", self.types.iter().map(|record| record.id.0 as u32))?;
         for pokemon in &self.pokemon {
+            if pokemon
+                .genus
+                .as_ref()
+                .is_some_and(|genus| genus.trim().is_empty())
+            {
+                return Err(DataLoadError::InvalidRecord(format!(
+                    "pokemon {} has an empty genus",
+                    pokemon.id.0
+                )));
+            }
             if pokemon.types.is_empty() || pokemon.types.len() > 2 {
                 return Err(DataLoadError::InvalidRecord(format!(
                     "pokemon {} has {} types",

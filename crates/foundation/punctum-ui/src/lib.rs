@@ -6,6 +6,7 @@
 #![forbid(unsafe_code)]
 
 mod error;
+mod form;
 mod interaction;
 mod layout;
 mod model;
@@ -13,6 +14,9 @@ mod scroll;
 mod tree;
 
 pub use error::{UiBuildError, UiLayoutError};
+pub use form::{
+    FormItem, FormItemKind, FormPresentation, KeyboardForm, KeyboardFormError, KeyboardFormState,
+};
 pub use interaction::{
     UiButtonState, UiInteraction, UiInteractionSnapshot, UiMotionPolicy, UiRipple,
 };

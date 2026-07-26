@@ -1,6 +1,68 @@
 use std::time::Duration;
 
 use super::*;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FormId {
+    Query,
+    Type,
+    Ability,
+    Reset,
+}
+
+#[test]
+fn keyboard_form_keeps_schema_and_interaction_state_separate()
+-> Result<(), Box<dyn std::error::Error>> {
+    let form = KeyboardForm::try_new([
+        FormItem::new(FormId::Query, FormItemKind::Field),
+        FormItem::new(FormId::Type, FormItemKind::Group),
+        FormItem::new(FormId::Ability, FormItemKind::Select),
+        FormItem::new(FormId::Reset, FormItemKind::Command),
+    ])?;
+    let mut state = KeyboardFormState::default();
+
+    assert_eq!(state.presentation(), FormPresentation::Compact);
+    assert!(state.toggle_presentation(&form));
+    assert_eq!(state.focused_item(), Some(&FormId::Query));
+    assert!(state.focus_next(&form));
+    assert_eq!(state.focused_item(), Some(&FormId::Type));
+    assert!(state.focus_next(&form));
+    assert_eq!(state.focused_item(), Some(&FormId::Ability));
+    assert!(state.open_select(&form, &FormId::Ability));
+    assert_eq!(state.opened_select(), Some(&FormId::Ability));
+    assert!(state.focus_next(&form));
+    assert_eq!(state.focused_item(), Some(&FormId::Reset));
+    assert_eq!(state.opened_select(), None);
+    assert!(state.compact());
+    assert_eq!(state.presentation(), FormPresentation::Compact);
+    Ok(())
+}
+
+#[test]
+fn keyboard_form_skips_hidden_or_disabled_fields_and_rejects_duplicate_ids() {
+    let form = KeyboardForm::try_new([
+        FormItem::new(FormId::Query, FormItemKind::Field).with_visible(false),
+        FormItem::new(FormId::Type, FormItemKind::Group).with_enabled(false),
+        FormItem::new(FormId::Ability, FormItemKind::Select),
+    ]);
+    assert!(form.is_ok());
+    let Ok(form) = form else {
+        return;
+    };
+    let mut state = KeyboardFormState::default();
+    assert!(state.expand(&form));
+    assert_eq!(state.focused_item(), Some(&FormId::Ability));
+    assert!(!state.open_select(&form, &FormId::Type));
+
+    let duplicate = KeyboardForm::try_new([
+        FormItem::new(FormId::Query, FormItemKind::Field),
+        FormItem::new(FormId::Query, FormItemKind::Command),
+    ]);
+    assert_eq!(
+        duplicate,
+        Err(KeyboardFormError::DuplicateItemId(FormId::Query))
+    );
+}
 fn fill(_id: u32, style: UiStyle) -> UiNode {
     UiNode::auto()
         .with_style(style)

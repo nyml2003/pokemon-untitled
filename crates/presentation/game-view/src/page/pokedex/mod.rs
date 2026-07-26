@@ -6,19 +6,23 @@ use battle_session::{MoveCategory, PokemonType};
 use game_assets::AssetKey;
 use game_page_model::{
     NationalDexNumber, PageIntent, PokedexEntryModel, PokedexMoveCategory, PokedexMoveModel,
-    PokedexPageModel, PokedexSection, PokedexStatsView,
+    PokedexPageModel,
 };
-use game_ui::PokedexVisualState;
+use game_ui::{
+    MoveFilterModel, PokedexDetailMode, PokedexFilterModel, PokedexFilterOverlay, PokedexScene,
+    PokedexVisualState,
+};
 use game_ui_kit::{
-    SpriteAppearance, TextTone, image as ui_image, screen as ui_screen, sprite as ui_sprite,
-    stack as ui_stack, text as ui_text,
+    SpriteAppearance, TextTone, image as ui_image, row as ui_row, screen as ui_screen,
+    sprite as ui_sprite, stack as ui_stack, text as ui_text,
 };
 use punctum_ui::{
-    Dimension, Position, UiBuildError, UiColor, UiContentId, UiNode, UiPixelOffset, UiSize,
+    Dimension, Insets, Position, UiBuildError, UiColor, UiContentId, UiNode, UiPixelOffset, UiSize,
     UiStyle, UiTree,
 };
 
 mod browse;
+mod filter;
 mod moves;
 mod profile;
 mod rail;
@@ -32,38 +36,58 @@ pub(super) fn project_pause_pokedex(
     viewport: UiSize,
 ) -> Result<UiTree<PageIntent>, UiBuildError> {
     let selected_index = selected_index(pokedex);
-    let visual = visual.unwrap_or(PokedexVisualState {
-        section: PokedexSection::Browse,
-        section_position: 0,
+    let visual = visual.unwrap_or_else(|| PokedexVisualState {
+        scene: PokedexScene::Browse,
+        scene_position: 0,
+        detail_mode: PokedexDetailMode::Facts,
         wheel_position: index_position(selected_index),
+        visible_entry_indices: (0..pokedex.entries.len()).collect(),
+        visible_move_indices: (0..pokedex.moves.len()).collect(),
+        filter_overlay: PokedexFilterOverlay::Compact,
+        pokedex_filter: PokedexFilterModel::default(),
+        move_filter: MoveFilterModel::default(),
+        pokedex_ability_cursor: 0,
+        move_accuracy_cursor: 0,
+        form_scroll_y: 0,
     });
-    let shared_transition = is_browse_profile_transition(visual);
+    let shared_transition = is_browse_detail_transition(&visual);
+    let selected_visible_index = selected_visible_index(pokedex, &visual.visible_entry_indices);
     let mut layers = vec![
         scene_layer(
-            PokedexSection::Browse,
-            visual,
+            PokedexScene::Browse,
+            &visual,
             viewport,
             browse::project(
                 pokedex,
+                &visual.visible_entry_indices,
                 visual.wheel_position,
-                visual.section == PokedexSection::Browse,
+                visual.scene == PokedexScene::Browse,
                 shared_transition,
             )?,
         ),
         scene_layer(
-            PokedexSection::Profile,
-            visual,
+            PokedexScene::Detail,
+            &visual,
             viewport,
-            profile::project(pokedex, visual.wheel_position, shared_transition)?,
-        ),
-        scene_layer(
-            PokedexSection::Moves,
-            visual,
-            viewport,
-            moves::project(pokedex, visual.section == PokedexSection::Moves, false)?,
+            detail_scene(pokedex, &visual, selected_visible_index, shared_transition)?,
         ),
     ];
-    layers.extend(shared_transition_icons(pokedex, visual, viewport));
+    layers.extend(shared_transition_icons(pokedex, &visual, viewport));
+    if matches!(visual.filter_overlay, PokedexFilterOverlay::Compact) && !shared_transition {
+        layers.push(
+            UiNode::auto()
+                .with_style(UiStyle {
+                    width: Dimension::Px(112),
+                    height: Dimension::Px(34),
+                    position: Position::Absolute { left: 16, top: 16 },
+                    ..UiStyle::default()
+                })
+                .with_children([filter::compact_entry(&visual)?]),
+        );
+    }
+    if let Some(overlay) = filter::expanded(pokedex, &visual)? {
+        layers.push(overlay);
+    }
     UiTree::new(ui_screen(
         &POKEDEX_THEME,
         [
@@ -81,26 +105,63 @@ pub(super) fn project_pause_pokedex(
     ))
 }
 
-fn is_browse_profile_transition(visual: PokedexVisualState) -> bool {
-    (1..POKEDEX_MOTION_STEP).contains(&visual.section_position)
+fn detail_scene(
+    pokedex: &PokedexPageModel,
+    visual: &PokedexVisualState,
+    selected_visible_index: usize,
+    hide_transition_icons: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
+    let content = match visual.detail_mode {
+        PokedexDetailMode::Facts => profile::project_content(pokedex),
+        PokedexDetailMode::Moves => moves::project_content(
+            pokedex,
+            &visual.visible_move_indices,
+            selected_visible_move_index(pokedex, &visual.visible_move_indices),
+            visual.scene == PokedexScene::Detail,
+        )?,
+    };
+    Ok(ui_row(
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            padding: Insets::all(28),
+            gap: 28,
+            ..UiStyle::default()
+        },
+        [
+            rail::project(
+                pokedex,
+                &visual.visible_entry_indices,
+                selected_visible_index,
+                hide_transition_icons,
+                !hide_transition_icons,
+            )?,
+            content,
+        ],
+    ))
+}
+
+fn is_browse_detail_transition(visual: &PokedexVisualState) -> bool {
+    (1..POKEDEX_MOTION_STEP).contains(&visual.scene_position)
 }
 
 fn shared_transition_icons(
     pokedex: &PokedexPageModel,
-    visual: PokedexVisualState,
+    visual: &PokedexVisualState,
     viewport: UiSize,
 ) -> Vec<UiNode<PageIntent>> {
-    if !is_browse_profile_transition(visual) {
+    if !is_browse_detail_transition(visual) {
         return Vec::new();
     }
-    let progress = i64::from(visual.section_position);
-    let selected = selected_index(pokedex);
-    browse::visible_entry_indices(pokedex, visual.wheel_position)
-        .filter_map(|index| {
+    let progress = i64::from(visual.scene_position);
+    let selected = selected_visible_index(pokedex, &visual.visible_entry_indices);
+    browse::visible_entries(&visual.visible_entry_indices, visual.wheel_position)
+        .into_iter()
+        .filter_map(|(display_index, index)| {
             let entry = pokedex.entries.get(index)?;
             Some(shared_transition_icon(
                 entry,
-                index,
+                display_index,
                 selected,
                 visual.wheel_position,
                 progress,
@@ -154,12 +215,12 @@ fn interpolate_u32(start: u32, end: u32, progress: i64) -> u32 {
 }
 
 fn scene_layer(
-    section: PokedexSection,
-    visual: PokedexVisualState,
+    scene: PokedexScene,
+    visual: &PokedexVisualState,
     viewport: UiSize,
     child: UiNode<PageIntent>,
 ) -> UiNode<PageIntent> {
-    let delta = i64::from(section_position(section)) - i64::from(visual.section_position);
+    let delta = i64::from(scene_position(scene)) - i64::from(visual.scene_position);
     let offset = (i64::from(viewport.width.max(1)) * delta / i64::from(POKEDEX_MOTION_STEP))
         .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
     UiNode::auto()
@@ -173,11 +234,10 @@ fn scene_layer(
         .with_children([child])
 }
 
-const fn section_position(section: PokedexSection) -> i32 {
-    match section {
-        PokedexSection::Browse => 0,
-        PokedexSection::Profile => POKEDEX_MOTION_STEP,
-        PokedexSection::Moves => POKEDEX_MOTION_STEP * 2,
+const fn scene_position(scene: PokedexScene) -> i32 {
+    match scene {
+        PokedexScene::Browse => 0,
+        PokedexScene::Detail => POKEDEX_MOTION_STEP,
     }
 }
 
@@ -187,6 +247,25 @@ pub(super) fn selected_index(pokedex: &PokedexPageModel) -> usize {
         .iter()
         .position(|entry| entry.number == pokedex.selected.number)
         .map_or(0, |index| index)
+}
+
+fn selected_visible_index(pokedex: &PokedexPageModel, visible_indices: &[usize]) -> usize {
+    visible_indices
+        .iter()
+        .position(|index| {
+            pokedex
+                .entries
+                .get(*index)
+                .is_some_and(|entry| entry.number == pokedex.selected.number)
+        })
+        .unwrap_or(0)
+}
+
+fn selected_visible_move_index(pokedex: &PokedexPageModel, visible_indices: &[usize]) -> usize {
+    visible_indices
+        .iter()
+        .position(|index| *index == pokedex.selected_move)
+        .unwrap_or(0)
 }
 
 pub(super) fn index_position(index: usize) -> i32 {
@@ -259,13 +338,6 @@ pub(super) fn format_move_details(item: &PokedexMoveModel) -> String {
         .pp
         .map_or_else(|| String::from("PP --"), |value| format!("PP {value}"));
     format!("{}  {power}  {accuracy}  {pp}", item.move_type)
-}
-
-pub(super) fn selected_stats_view(view: PokedexStatsView) -> game_ui_kit::StatChartView {
-    match view {
-        PokedexStatsView::Bars => game_ui_kit::StatChartView::Bars,
-        PokedexStatsView::Hexagon => game_ui_kit::StatChartView::Hexagon,
-    }
 }
 
 pub(super) fn number_text(number: NationalDexNumber) -> String {

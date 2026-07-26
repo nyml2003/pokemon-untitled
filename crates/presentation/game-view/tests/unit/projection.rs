@@ -8,7 +8,7 @@ use battle_session::{
 };
 use game_data::PokedexData;
 use game_foundation::{GameState, ThinSliceContent};
-use game_page_model::{PageIntent, PageModel, PausePageModel, PokedexSection, page_demos};
+use game_page_model::{PageIntent, PageModel, PausePageModel, page_demos};
 use map_project::{
     AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection, MapProject,
     MapProjectId, TilePosition,
@@ -19,7 +19,7 @@ use world_application::{CharacterAppearanceId, Direction, Position, WorldApplica
 
 use game_ui::{
     BattleMenuPage, BattleUiOutcome, BattleUiState, CommandConsoleView, PokedexAction,
-    PokedexVisualState, WorldAnimation,
+    PokedexDetailMode, PokedexScene, PokedexVisualState, WorldAnimation,
 };
 
 use super::{
@@ -183,9 +183,11 @@ fn pokedex_browse_moves_the_next_entry_up_to_the_focus() -> Result<(), Box<dyn s
         &model,
         None,
         Some(PokedexVisualState {
-            section: PokedexSection::Browse,
-            section_position: 0,
+            scene: PokedexScene::Browse,
+            scene_position: 0,
+            detail_mode: PokedexDetailMode::Facts,
             wheel_position: 1000,
+            ..PokedexVisualState::default()
         }),
         viewport,
     )?
@@ -237,9 +239,11 @@ fn pokedex_moves_scene_projects_virtual_move_list() -> Result<(), Box<dyn std::e
         &model,
         None,
         Some(PokedexVisualState {
-            section: PokedexSection::Moves,
-            section_position: 2000,
+            scene: PokedexScene::Detail,
+            scene_position: 1000,
+            detail_mode: PokedexDetailMode::Moves,
             wheel_position: 0,
+            ..PokedexVisualState::default()
         }),
         punctum_ui::UiSize::new(960, 720),
     )?
@@ -266,7 +270,7 @@ fn pokedex_moves_scene_projects_virtual_move_list() -> Result<(), Box<dyn std::e
 }
 
 #[test]
-fn pokedex_track_projects_each_section_without_duplicate_keys()
+fn pokedex_projects_browse_and_both_detail_modes_without_duplicate_keys()
 -> Result<(), Box<dyn std::error::Error>> {
     let demo = page_demos()
         .iter()
@@ -274,42 +278,64 @@ fn pokedex_track_projects_each_section_without_duplicate_keys()
         .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
         .ok_or("pokedex demo is missing")?;
     let model = demo.model()?;
-    for (section, position) in [
-        (PokedexSection::Browse, 0),
-        (PokedexSection::Profile, 1000),
-        (PokedexSection::Moves, 2000),
+    let selected_move_name = match &model {
+        PageModel::Pause(PausePageModel::Pokedex(page)) => page
+            .moves
+            .get(page.selected_move)
+            .map(|item| item.name.as_str())
+            .ok_or("selected pokedex move is missing")?,
+        _ => return Err("pokedex demo did not produce a pokedex page".into()),
+    };
+    for (scene, scene_position, detail_mode) in [
+        (PokedexScene::Browse, 0, PokedexDetailMode::Facts),
+        (PokedexScene::Detail, 1000, PokedexDetailMode::Facts),
+        (PokedexScene::Detail, 1000, PokedexDetailMode::Moves),
     ] {
         let tree = project_page_model_with_visual_state(
             &model,
             None,
             Some(PokedexVisualState {
-                section,
-                section_position: position,
+                scene,
+                scene_position,
+                detail_mode,
                 wheel_position: 0,
+                ..PokedexVisualState::default()
             }),
             punctum_ui::UiSize::new(960, 720),
         )?;
         let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
         assert!(!frame.commands().is_empty());
-        match section {
-            PokedexSection::Browse => assert!(
+        match (scene, detail_mode) {
+            (PokedexScene::Browse, _) => assert!(
                 frame
                     .action_hits()
                     .iter()
                     .any(|hit| matches!(hit.action, PageIntent::SelectPokedexEntry(_)))
             ),
-            PokedexSection::Profile => assert!(
-                frame
-                    .action_hits()
-                    .iter()
-                    .any(|hit| hit.action == PageIntent::TogglePokedexStatsView)
-            ),
-            PokedexSection::Moves => assert!(
-                frame
-                    .action_hits()
-                    .iter()
-                    .any(|hit| matches!(hit.action, PageIntent::SelectPokedexMove(_)))
-            ),
+            (PokedexScene::Detail, PokedexDetailMode::Facts) => {
+                assert!(frame.commands().iter().any(|command| matches!(
+                    command,
+                    punctum_ui::UiDrawCommand::Text { content, .. } if content == "妙蛙种子"
+                )));
+                assert!(!frame.commands().iter().any(|command| matches!(
+                    command,
+                    punctum_ui::UiDrawCommand::Text { content, .. }
+                        if content.contains(selected_move_name)
+                )));
+            }
+            (PokedexScene::Detail, PokedexDetailMode::Moves) => {
+                assert!(frame.commands().iter().any(|command| matches!(
+                    command,
+                    punctum_ui::UiDrawCommand::Text { content, .. }
+                        if content == selected_move_name
+                )));
+                assert!(
+                    frame
+                        .action_hits()
+                        .iter()
+                        .any(|hit| matches!(hit.action, PageIntent::SelectPokedexMove(_)))
+                );
+            }
         }
     }
     Ok(())
@@ -344,9 +370,11 @@ fn pokedex_transition_animates_every_visible_wheel_icon() -> Result<(), Box<dyn 
         &model,
         None,
         Some(PokedexVisualState {
-            section: PokedexSection::Profile,
-            section_position: 500,
+            scene: PokedexScene::Detail,
+            scene_position: 500,
+            detail_mode: PokedexDetailMode::Facts,
             wheel_position: 1000,
+            ..PokedexVisualState::default()
         }),
         punctum_ui::UiSize::new(960, 720),
     )?;
@@ -408,9 +436,11 @@ fn pokedex_transition_uses_the_current_viewport_for_both_endpoints()
                 &model,
                 None,
                 Some(PokedexVisualState {
-                    section: PokedexSection::Browse,
-                    section_position: 0,
+                    scene: PokedexScene::Browse,
+                    scene_position: 0,
+                    detail_mode: PokedexDetailMode::Facts,
                     wheel_position: 1000,
+                    ..PokedexVisualState::default()
                 }),
                 viewport,
             )?
@@ -422,9 +452,11 @@ fn pokedex_transition_uses_the_current_viewport_for_both_endpoints()
                 &model,
                 None,
                 Some(PokedexVisualState {
-                    section: PokedexSection::Profile,
-                    section_position: 1,
+                    scene: PokedexScene::Detail,
+                    scene_position: 1,
+                    detail_mode: PokedexDetailMode::Facts,
                     wheel_position: 1000,
+                    ..PokedexVisualState::default()
                 }),
                 viewport,
             )?
@@ -439,9 +471,11 @@ fn pokedex_transition_uses_the_current_viewport_for_both_endpoints()
                 &model,
                 None,
                 Some(PokedexVisualState {
-                    section: PokedexSection::Profile,
-                    section_position: 1000,
+                    scene: PokedexScene::Detail,
+                    scene_position: 1000,
+                    detail_mode: PokedexDetailMode::Facts,
                     wheel_position: 1000,
+                    ..PokedexVisualState::default()
                 }),
                 viewport,
             )?
@@ -453,9 +487,11 @@ fn pokedex_transition_uses_the_current_viewport_for_both_endpoints()
                 &model,
                 None,
                 Some(PokedexVisualState {
-                    section: PokedexSection::Profile,
-                    section_position: 999,
+                    scene: PokedexScene::Detail,
+                    scene_position: 999,
+                    detail_mode: PokedexDetailMode::Facts,
                     wheel_position: 1000,
+                    ..PokedexVisualState::default()
                 }),
                 viewport,
             )?

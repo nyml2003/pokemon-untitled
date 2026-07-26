@@ -1,7 +1,10 @@
 use super::*;
 use game_page_model::PokedexEntryModel;
 use game_ui_kit::{column as ui_column, row as ui_row};
-use punctum_ui::{CrossAlign, Dimension, Insets, MainAlign, UiContent, UiNode, UiSize, UiStyle};
+use punctum_ui::{
+    CrossAlign, Dimension, Insets, MainAlign, UiBuildError, UiContent, UiKey, UiNode, UiSize,
+    UiStyle,
+};
 
 const RAIL_WIDTH: u32 = 96;
 const RAIL_ITEM_HEIGHT: u32 = 64;
@@ -15,13 +18,24 @@ pub(super) const SELECTED_ICON_SIZE: u32 = 30;
 
 pub(super) fn project(
     pokedex: &PokedexPageModel,
+    visible_indices: &[usize],
+    selected: usize,
     hide_transition_icons: bool,
-) -> UiNode<PageIntent> {
-    let selected = selected_index(pokedex);
+    interactive: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
     let entries = (0..5)
-        .map(|slot| rail_slot(pokedex, selected, slot, hide_transition_icons))
-        .collect::<Vec<_>>();
-    ui_column(
+        .map(|slot| {
+            rail_slot(
+                pokedex,
+                visible_indices,
+                selected,
+                slot,
+                hide_transition_icons,
+                interactive,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(ui_column(
         UiStyle {
             width: Dimension::Px(RAIL_WIDTH),
             height: Dimension::Fill,
@@ -30,7 +44,7 @@ pub(super) fn project(
             ..UiStyle::default()
         },
         entries,
-    )
+    ))
 }
 
 pub(super) fn icon_origin(viewport: UiSize, relative_index: i64) -> (u32, u32) {
@@ -69,17 +83,21 @@ pub(super) fn icon_origin(viewport: UiSize, relative_index: i64) -> (u32, u32) {
 
 fn rail_slot(
     pokedex: &PokedexPageModel,
+    visible_indices: &[usize],
     selected: usize,
     slot: usize,
     hide_transition_icons: bool,
-) -> UiNode<PageIntent> {
+    interactive: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
     let index = if slot < 2 {
         selected.checked_sub(2 - slot)
     } else {
         selected.checked_add(slot - 2)
     };
     let current = slot == 2;
-    let entry = index.and_then(|index| pokedex.entries.get(index));
+    let entry = index
+        .and_then(|display_index| visible_indices.get(display_index))
+        .and_then(|index| pokedex.entries.get(*index));
     let hide_icon =
         hide_transition_icons && index.is_some_and(|index| index.abs_diff(selected) <= 1);
     let node = UiNode::auto()
@@ -92,11 +110,23 @@ fn rail_slot(
             ..UiStyle::default()
         })
         .with_children([rail_slot_content(entry, hide_icon)]);
-    if current {
+    let node = if current {
         node.with_content(UiContent::Fill(POKEDEX_THEME.selected))
     } else {
         node
+    };
+    let Some(entry) = entry else {
+        return Ok(node);
+    };
+    if interactive {
+        return Ok(node
+            .with_key(UiKey::new(format!(
+                "page-pokedex-detail-{}",
+                entry.number.value()
+            ))?)
+            .with_action(PageIntent::SelectPokedexEntry(entry.number)));
     }
+    Ok(node)
 }
 
 fn rail_slot_content(entry: Option<&PokedexEntryModel>, hide_icon: bool) -> UiNode<PageIntent> {

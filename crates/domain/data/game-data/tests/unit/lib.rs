@@ -34,7 +34,7 @@ fn embedded_pokedex_shared_cache_reuses_the_decoded_data() -> Result<(), Box<dyn
 fn fixture() -> Vec<u8> {
     serde_json::to_vec(&CurrentDataSet {
         metadata: super::DataSetMetadata {
-            schema_version: "current-data-set-v4".into(),
+            schema_version: "current-data-set-v5".into(),
             source_repository: "test".into(),
             source_commit: "test".into(),
             generator_version: "test".into(),
@@ -46,6 +46,9 @@ fn fixture() -> Vec<u8> {
             species_id: super::SpeciesId(1),
             identifier: "bulbasaur".into(),
             is_default: true,
+            height_decimeters: Some(7),
+            weight_hectograms: Some(69),
+            genus: Some("种子宝可梦".into()),
             base_stats: super::BaseStats {
                 hp: 45,
                 attack: 49,

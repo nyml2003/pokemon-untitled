@@ -30,7 +30,7 @@ fn minimal_data_with_category(
 ) -> CurrentDataSet {
     CurrentDataSet::new(
         DataSetMetadata {
-            schema_version: "current-data-set-v4".into(),
+            schema_version: "current-data-set-v5".into(),
             source_repository: "test".into(),
             source_commit: "test".into(),
             generator_version: "test".into(),
@@ -42,6 +42,9 @@ fn minimal_data_with_category(
             species_id: SpeciesId(1),
             identifier: "one".into(),
             is_default: true,
+            height_decimeters: Some(1),
+            weight_hectograms: Some(1),
+            genus: Some("Test Pokemon".into()),
             base_stats: BaseStats {
                 hp: 45,
                 attack: 49,

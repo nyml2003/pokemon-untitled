@@ -17,7 +17,8 @@ mod metrics;
 
 use game_assets::{AssetKey, DecodedImage, decode_png};
 use game_native_target::{
-    FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, instance_for_event_loop,
+    FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, WinitCommittedTextSnapshot,
+    instance_for_event_loop, normalize_committed_text,
 };
 use game_page_model::{
     PageDemo, PageDemoContext, PageEffect, PageIntent, PageState, demo_named, page_demos,
@@ -105,7 +106,7 @@ impl PageDemoApp {
             &self.assets,
             CLEAR_COLOR,
         )?;
-        window.set_ime_allowed(false);
+        window.set_ime_allowed(true);
         window.request_redraw();
         self.window = Some(window);
         self.runtime = Some(runtime);
@@ -322,6 +323,17 @@ impl PageDemoApp {
     }
 
     fn handle_key(&mut self, event: winit::event::KeyEvent) {
+        let text = match normalize_committed_text(WinitCommittedTextSnapshot::new(
+            event.text.map(|text| text.to_string()),
+        )) {
+            Ok(text) => text,
+            Err(error) => {
+                self.status = Some(format!("文本输入不可用：{error}"));
+                self.update_title();
+                self.request_redraw();
+                return;
+            }
+        };
         let key = game_native_target::normalize_key_event(
             game_native_target::WinitKeyEventSnapshot::new(
                 event.physical_key,
@@ -343,7 +355,7 @@ impl PageDemoApp {
                 return;
             }
         };
-        match self.page_ui.handle_key(&key, &model) {
+        match self.page_ui.handle_input(&key, text.as_ref(), &model) {
             PageUiOutcome::Intent(intent) => self.dispatch_intent(intent),
             PageUiOutcome::Updated => self.request_redraw(),
             PageUiOutcome::Ignored => {}
@@ -390,6 +402,15 @@ impl PageDemoApp {
     }
 
     fn dispatch_intent(&mut self, intent: PageIntent) {
+        if let Ok(model) = project_demo_page(&self.context, self.state.route())
+            && let Some(outcome) = self.page_ui.handle_view_intent(&intent, &model)
+        {
+            match outcome {
+                PageUiOutcome::Intent(intent) => self.dispatch_intent(intent),
+                PageUiOutcome::Updated | PageUiOutcome::Ignored => self.request_redraw(),
+            }
+            return;
+        }
         match self.state.clone().transition(intent.clone()) {
             Ok((state, effect)) => {
                 self.state = state;
@@ -548,12 +569,17 @@ impl ApplicationHandler for PageDemoApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         self.advance_ui(now);
-        if self.page_ui.pokedex_motion_active() {
+        let motion_delay = self
+            .page_ui
+            .pokedex_motion_active()
+            .then_some(Duration::from_millis(16));
+        let next_delay = motion_delay
+            .into_iter()
+            .chain(self.page_ui.pokedex_filter_next_delay())
+            .chain(self.interaction.next_delay())
+            .min();
+        if let Some(delay) = next_delay {
             self.request_redraw();
-            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
-                now + Duration::from_millis(16),
-            ));
-        } else if let Some(delay) = self.interaction.next_delay() {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(now + delay));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);

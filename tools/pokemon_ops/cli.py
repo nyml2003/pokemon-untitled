@@ -14,6 +14,7 @@ from tools.pokemon_ops.adapters.progress_reporters import JsonLinesProgressRepor
 from tools.pokemon_ops.adapters.windows_native_run_dispatcher import WindowsNativeRunDispatcher
 from tools.pokemon_ops.application.native_service import NativeService
 from tools.pokemon_ops.application.documentation_service import DocumentationService
+from tools.pokemon_ops.application.data_service import DataService
 from tools.pokemon_ops.application.metrics_service import RustLineReport, WorkspaceMetricsService
 from tools.pokemon_ops.application.sync_service import SyncService
 from tools.pokemon_ops.application.testing_service import WslTestingService
@@ -51,6 +52,10 @@ def build_parser() -> argparse.ArgumentParser:
     command_parsers.append(docs_parser)
     docs_check_parser = docs_parser.add_subparsers(dest="docs_command", required=True).add_parser("check")
     command_parsers.append(docs_check_parser)
+
+    data_parser = commands.add_parser("data")
+    command_parsers.append(data_parser)
+    data_parser.add_subparsers(dest="data_command", required=True).add_parser("generate")
 
     test_parser = commands.add_parser("test")
     command_parsers.append(test_parser)
@@ -207,6 +212,8 @@ def run(arguments: list[str] | None = None, source_root: Path | None = None) -> 
         return _emit(testing.test(config, TestSuite(args.suite)), args.json_output)
     if args.command == "docs":
         return _emit(DocumentationService(LocalProcessRunner()).check(config, forward_output=not args.json_output), args.json_output)
+    if args.command == "data":
+        return _emit(DataService(LocalProcessRunner()).generate(config), args.json_output)
     if args.command == "sync":
         return _emit(sync_service.sync(config, progress), args.json_output)
 

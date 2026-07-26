@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 
 use super::{
     BagFilter, NationalDexNumber, PageDemoContext, PageDemoId, PageEffect, PageIntent, PageModel,
-    PageState, PausePage, PausePageModel, PauseRoute, PlayerPage, PlayerRoute, PokedexStatsView,
-    demo_for, demo_named, page_demos, project_page,
+    PageState, PausePage, PausePageModel, PauseRoute, PlayerPage, PlayerRoute, demo_for,
+    demo_named, page_demos, project_page,
 };
 use game_foundation::{CreatureId, GameIdError, ItemId, ShopId};
 use game_session::ProductCommand;
@@ -136,7 +136,9 @@ fn gift_backed_pause_pages_read_product_facts() -> Result<(), Box<dyn std::error
     assert!(pokedex.entries[19].known);
     assert!(pokedex.entries[20].known);
     assert!(pokedex.entries[251].known);
-    assert_eq!(pokedex.stats_view, PokedexStatsView::Bars);
+    assert_eq!(pokedex.selected.genus.as_deref(), Some("种子宝可梦"));
+    assert_eq!(pokedex.selected.height_decimeters, Some(7));
+    assert_eq!(pokedex.selected.weight_hectograms, Some(69));
     assert_eq!(pokedex.previous, None);
     Ok(())
 }

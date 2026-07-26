@@ -3,10 +3,15 @@ use battle_application::{
     TEAM_SIZE, Team,
 };
 use battle_session::{BattleCoordinator, BattleSession, OpponentPolicy};
-use game_data::CurrentDataSet;
-use game_page_model::{PageIntent, PageModel, PausePageModel, demo_named};
+use game_data::{AbilityId, CurrentDataSet, TypeId};
+use game_page_model::{
+    NationalDexNumber, PageIntent, PageModel, PausePageModel, PokedexAbilityModel,
+    PokedexEntryModel, PokedexMoveCategory, PokedexMoveLearnMethod, PokedexMoveModel, demo_named,
+};
 use game_session::{GameCommand, GameSession};
-use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
+use punctum_input::{
+    KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode, TextEvent,
+};
 use std::time::Duration;
 use world_application::Direction;
 
@@ -28,6 +33,287 @@ fn physical_key(code: PhysicalKeyCode, name: &str, phase: KeyPhase) -> KeyEvent 
         modifiers: Modifiers::default(),
         phase,
     }
+}
+
+fn control_key(code: PhysicalKeyCode, name: &str) -> KeyEvent {
+    KeyEvent {
+        physical: Some(code),
+        logical: LogicalKey::Character(String::from(name)),
+        modifiers: Modifiers {
+            control: true,
+            ..Modifiers::default()
+        },
+        phase: KeyPhase::Press,
+    }
+}
+
+fn input_key() -> KeyEvent {
+    KeyEvent {
+        physical: None,
+        logical: LogicalKey::Unidentified,
+        modifiers: Modifiers::default(),
+        phase: KeyPhase::Press,
+    }
+}
+
+fn pokedex_entry(
+    number: u16,
+    known: bool,
+    type_ids: Vec<TypeId>,
+    height_decimeters: Option<u16>,
+    weight_hectograms: Option<u16>,
+    abilities: Vec<AbilityId>,
+) -> Result<PokedexEntryModel, Box<dyn std::error::Error>> {
+    Ok(PokedexEntryModel {
+        number: NationalDexNumber::new(number)?,
+        name: known.then(|| String::from("测试精灵")),
+        stats: None,
+        types: Vec::new(),
+        type_ids,
+        genus: None,
+        height_decimeters,
+        weight_hectograms,
+        abilities: abilities
+            .into_iter()
+            .map(|id| PokedexAbilityModel {
+                id,
+                name: format!("特性{}", id.0),
+                hidden: false,
+            })
+            .collect(),
+        known,
+    })
+}
+
+fn pokedex_move(
+    name: &str,
+    type_id: TypeId,
+    category: PokedexMoveCategory,
+    power: Option<u16>,
+    accuracy: Option<u8>,
+    priority: i8,
+) -> PokedexMoveModel {
+    PokedexMoveModel {
+        name: String::from(name),
+        move_type: String::from("测试属性"),
+        type_id,
+        category,
+        power,
+        accuracy,
+        pp: Some(10),
+        priority,
+        method: PokedexMoveLearnMethod::LevelUp,
+        level: Some(1),
+    }
+}
+
+#[test]
+fn pokedex_filter_requires_known_facts_and_respects_all_constraints()
+-> Result<(), Box<dyn std::error::Error>> {
+    let grass = TypeId(12);
+    let poison = TypeId(4);
+    let overgrow = AbilityId(65);
+    let known = pokedex_entry(
+        1,
+        true,
+        vec![grass, poison],
+        Some(7),
+        Some(69),
+        vec![overgrow],
+    )?;
+    let unknown = pokedex_entry(
+        4,
+        false,
+        vec![grass, poison],
+        Some(7),
+        Some(69),
+        vec![overgrow],
+    )?;
+
+    let mut filter = PokedexFilterModel::default();
+    filter.type_ids = [grass, poison].into_iter().collect();
+    filter.type_match = TypeMatch::All;
+    filter.generations = [1].into_iter().collect();
+    filter.height_decimeters = (Some(7), Some(7));
+    filter.weight_hectograms = (Some(69), Some(69));
+    filter.ability = Some(overgrow);
+    assert!(filter.matches(&known));
+    assert!(!filter.matches(&unknown));
+
+    filter.type_match = TypeMatch::Any;
+    filter.type_ids = [TypeId(10), poison].into_iter().collect();
+    assert!(filter.matches(&known));
+
+    filter.generations = [2].into_iter().collect();
+    assert!(!filter.matches(&known));
+    Ok(())
+}
+
+#[test]
+fn pokedex_filter_does_not_match_missing_range_values() -> Result<(), Box<dyn std::error::Error>> {
+    let entry = pokedex_entry(152, true, vec![TypeId(12)], None, Some(69), Vec::new())?;
+    let mut filter = PokedexFilterModel::default();
+    filter.height_decimeters = (Some(1), Some(10));
+    assert!(!filter.matches(&entry));
+    Ok(())
+}
+
+#[test]
+fn move_filter_distinguishes_guaranteed_hit_and_priority() -> Result<(), Box<dyn std::error::Error>>
+{
+    let electric = TypeId(13);
+    let guaranteed = pokedex_move(
+        "电磁波",
+        electric,
+        PokedexMoveCategory::Status,
+        None,
+        None,
+        0,
+    );
+    let priority = pokedex_move(
+        "先制电击",
+        electric,
+        PokedexMoveCategory::Special,
+        Some(70),
+        Some(100),
+        1,
+    );
+    let mut filter = MoveFilterModel::default();
+    filter.name_query = String::from("电");
+    filter.type_ids = [electric].into_iter().collect();
+    filter.accuracy = Some(None);
+    assert!(filter.matches(&guaranteed));
+    assert!(!filter.matches(&priority));
+
+    let mut priority_filter = filter;
+    priority_filter.accuracy = Some(Some(100));
+    priority_filter.priority_only = true;
+    assert!(!priority_filter.matches(&guaranteed));
+    assert!(priority_filter.matches(&priority));
+    Ok(())
+}
+
+#[test]
+fn pokedex_form_uses_ctrl_f_text_events_and_debounced_ranges()
+-> Result<(), Box<dyn std::error::Error>> {
+    let pokedex = demo_named("pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?
+        .model()?;
+    let mut ui = PageUiState::default();
+    assert_eq!(
+        ui.handle_input(&control_key(PhysicalKeyCode::KeyF, "f"), None, &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert!(matches!(
+        ui.pokedex_visual_state().filter_overlay,
+        PokedexFilterOverlay::Pokedex(_)
+    ));
+
+    for _ in 0..3 {
+        assert_eq!(
+            ui.handle_input(&key(NamedKey::Tab, KeyPhase::Press), None, &pokedex),
+            PageUiOutcome::Updated
+        );
+    }
+    let text = TextEvent::new("0.7")?;
+    assert_eq!(
+        ui.handle_input(&input_key(), Some(&text), &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert_eq!(
+        ui.pokedex_visual_state().pokedex_filter.height_decimeters,
+        (None, None)
+    );
+    assert!(ui.advance(Duration::from_millis(300)));
+    ui.sync(&pokedex);
+    assert_eq!(
+        ui.pokedex_visual_state().pokedex_filter.height_decimeters,
+        (Some(7), None)
+    );
+
+    assert_eq!(
+        ui.handle_input(&key(NamedKey::Escape, KeyPhase::Press), None, &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert_eq!(
+        ui.handle_input(&key(NamedKey::Escape, KeyPhase::Press), None, &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert!(matches!(
+        ui.pokedex_visual_state().filter_overlay,
+        PokedexFilterOverlay::Compact
+    ));
+    Ok(())
+}
+
+#[test]
+fn default_pokedex_filter_keeps_unknown_entries_visible() -> Result<(), Box<dyn std::error::Error>>
+{
+    let pokedex = demo_named("pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?
+        .model()?;
+    let mut ui = PageUiState::default();
+    ui.sync(&pokedex);
+    let PageModel::Pause(PausePageModel::Pokedex(page)) = &pokedex else {
+        return Err("pokedex demo did not expose a pokedex page".into());
+    };
+    assert_eq!(
+        ui.pokedex_visual_state().visible_entry_indices.len(),
+        page.entries.len()
+    );
+    Ok(())
+}
+
+#[test]
+fn pokedex_ability_select_filters_text_events_and_commits_keyboard_choice()
+-> Result<(), Box<dyn std::error::Error>> {
+    let pokedex = demo_named("pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?
+        .model()?;
+    let mut ui = PageUiState::default();
+    assert_eq!(
+        ui.handle_input(&control_key(PhysicalKeyCode::KeyF, "f"), None, &pokedex),
+        PageUiOutcome::Updated
+    );
+    for _ in 0..7 {
+        assert_eq!(
+            ui.handle_input(&key(NamedKey::Tab, KeyPhase::Press), None, &pokedex),
+            PageUiOutcome::Updated
+        );
+    }
+    assert_eq!(
+        ui.handle_view_intent(&PageIntent::TogglePokedexAbilitySelect, &pokedex),
+        Some(PageUiOutcome::Updated)
+    );
+    let query = TextEvent::new("特")?;
+    assert_eq!(
+        ui.handle_input(&input_key(), Some(&query), &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert_eq!(
+        ui.pokedex_visual_state().pokedex_filter.ability_query(),
+        "特"
+    );
+    assert_eq!(
+        ui.handle_input(&key(NamedKey::Escape, KeyPhase::Press), None, &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert!(
+        ui.pokedex_visual_state()
+            .pokedex_filter
+            .ability_query()
+            .is_empty()
+    );
+    assert_eq!(
+        ui.handle_input(&key(NamedKey::ArrowDown, KeyPhase::Press), None, &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert!(matches!(
+        ui.handle_input(&key(NamedKey::Enter, KeyPhase::Press), None, &pokedex),
+        PageUiOutcome::Updated | PageUiOutcome::Intent(_)
+    ));
+    assert!(ui.pokedex_visual_state().pokedex_filter.ability.is_some());
+    Ok(())
 }
 
 #[test]
@@ -120,21 +406,21 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated
     );
-    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexProfile);
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexDetailFacts);
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::Enter, KeyPhase::Press), &pokedex),
-        PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)
+        PageUiOutcome::Ignored
     );
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated
     );
-    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexMoves(0));
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexDetailMoves(0));
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
         PageUiOutcome::Ignored
     );
-    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexMoves(0));
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexDetailMoves(0));
     Ok(())
 }
 
@@ -147,13 +433,13 @@ fn pokedex_moves_left_returns_to_profile() -> Result<(), Box<dyn std::error::Err
     let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
     let outcome = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
     assert_eq!(outcome, PageUiOutcome::Updated);
-    assert_eq!(ui.focus(), PageFocus::PokedexMoves(0));
+    assert_eq!(ui.focus(), PageFocus::PokedexDetailMoves(0));
 
     assert_eq!(
         ui.handle_key(&key(NamedKey::ArrowLeft, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated
     );
-    assert_eq!(ui.focus(), PageFocus::PokedexProfile);
+    assert_eq!(ui.focus(), PageFocus::PokedexDetailFacts);
     Ok(())
 }
 
@@ -169,9 +455,9 @@ fn pokedex_motion_tracks_a_new_target_from_its_current_position()
     assert!(ui.advance(Duration::from_millis(50)));
     assert!(ui.pokedex_visual_state().wheel_position > 0);
     let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
-    assert_eq!(ui.pokedex_visual_state().section_position, 0);
+    assert_eq!(ui.pokedex_visual_state().scene_position, 0);
     assert!(ui.advance(Duration::from_millis(50)));
-    let mid = ui.pokedex_visual_state().section_position;
+    let mid = ui.pokedex_visual_state().scene_position;
     assert!(mid > 0 && mid < 1000);
     assert!(mid < 200, "transition should ease into the first frame");
 
@@ -181,8 +467,9 @@ fn pokedex_motion_tracks_a_new_target_from_its_current_position()
             break;
         }
     }
-    assert_eq!(ui.pokedex_visual_state().section_position, 2000);
-    assert_eq!(ui.pokedex_section(), game_page_model::PokedexSection::Moves);
+    assert_eq!(ui.pokedex_visual_state().scene_position, 1000);
+    assert_eq!(ui.pokedex_scene(), PokedexScene::Detail);
+    assert_eq!(ui.pokedex_detail_mode(), PokedexDetailMode::Moves);
     Ok(())
 }
 

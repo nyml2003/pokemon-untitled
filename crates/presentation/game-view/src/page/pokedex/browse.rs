@@ -19,15 +19,22 @@ const FOCUS_CONTENT_GAP: u32 = 4;
 
 pub(super) fn project(
     pokedex: &PokedexPageModel,
+    visible_indices: &[usize],
     wheel_position: i32,
     interactive: bool,
     hide_transition_icons: bool,
 ) -> Result<UiNode<PageIntent>, UiBuildError> {
-    let entries = visible_entry_indices(pokedex, wheel_position)
-        .filter_map(|index| pokedex.entries.get(index).map(|entry| (index, entry)))
-        .map(|(index, entry)| {
+    let entries = visible_entries(visible_indices, wheel_position)
+        .into_iter()
+        .filter_map(|(display_index, index)| {
+            pokedex
+                .entries
+                .get(index)
+                .map(|entry| (display_index, entry))
+        })
+        .map(|(display_index, entry)| {
             wheel_entry(
-                index,
+                display_index,
                 entry,
                 wheel_position,
                 interactive,
@@ -55,16 +62,23 @@ pub(super) fn project(
     ))
 }
 
-pub(super) fn visible_entry_indices(
-    pokedex: &PokedexPageModel,
+pub(super) fn visible_entries(
+    visible_indices: &[usize],
     wheel_position: i32,
-) -> std::ops::Range<usize> {
-    let center = wheel_center_index(wheel_position, pokedex.entries.len());
+) -> Vec<(usize, usize)> {
+    let center = wheel_center_index(wheel_position, visible_indices.len());
     let start = center.saturating_sub(WHEEL_VISIBLE_NEIGHBORS);
     let end = center
         .saturating_add(WHEEL_VISIBLE_NEIGHBORS + 1)
-        .min(pokedex.entries.len());
-    start..end
+        .min(visible_indices.len());
+    (start..end)
+        .filter_map(|display_index| {
+            visible_indices
+                .get(display_index)
+                .copied()
+                .map(|index| (display_index, index))
+        })
+        .collect()
 }
 
 pub(super) fn transition_icon_geometry(

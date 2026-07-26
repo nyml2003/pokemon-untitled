@@ -8,8 +8,8 @@
 use std::{collections::BTreeSet, error::Error, fmt};
 
 use game_data::{
-    CurrentDataSet, DamageClass, DataLoadError, GEN3_FIRST_DEX, GEN3_LAST_DEX, MoveLearnMethod,
-    PokedexData, PokedexLoadError,
+    AbilityId, CurrentDataSet, DamageClass, DataLoadError, GEN3_FIRST_DEX, GEN3_LAST_DEX,
+    MoveLearnMethod, PokedexData, PokedexLoadError, TypeId,
 };
 use game_foundation::{
     ContentError, CreatureId, CreatureTemplateId, Direction, GameIdError, ItemCategory, ItemId,
@@ -130,7 +130,6 @@ pub enum PauseRoute {
     },
     Pokedex {
         selected: NationalDexNumber,
-        stats_view: PokedexStatsView,
         selected_move: usize,
     },
     TrainerCard,
@@ -157,7 +156,6 @@ impl PauseRoute {
             },
             PausePage::Pokedex => Self::Pokedex {
                 selected: NationalDexNumber::first(),
-                stats_view: PokedexStatsView::Bars,
                 selected_move: 0,
             },
             PausePage::TrainerCard => Self::TrainerCard,
@@ -199,8 +197,11 @@ pub enum PageIntent {
     SelectBagCategory(BagFilter),
     SelectBagItem(ItemId),
     SelectPokedexEntry(NationalDexNumber),
-    TogglePokedexStatsView,
     SelectPokedexMove(usize),
+    TogglePokedexFilter,
+    TogglePokedexAbilitySelect,
+    TogglePokedexMoveAccuracySelect,
+    PokedexFilter(PokedexFilterIntent),
     OpenShop { shop: ShopId },
     SelectShopItem(ItemId),
     SetShopQuantity(u16),
@@ -208,6 +209,31 @@ pub enum PageIntent {
     OpenSaveConfirm,
     ConfirmSave,
     Close,
+}
+
+/// 页面视图发出的图鉴筛选语义事件。
+///
+/// 这些事件由 `game-ui` 消费；页面 reducer 不保存筛选条件。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PokedexFilterIntent {
+    ToggleType(TypeId),
+    SetTypeMatchAll(bool),
+    ToggleGeneration(u8),
+    SetHeightMinimum(String),
+    SetHeightMaximum(String),
+    SetWeightMinimum(String),
+    SetWeightMaximum(String),
+    SetAbilityQuery(String),
+    SelectAbility(Option<AbilityId>),
+    ResetPokedex,
+    SetMoveName(String),
+    ToggleMoveType(TypeId),
+    SelectMoveCategory(Option<PokedexMoveCategory>),
+    SetMovePowerMinimum(String),
+    SetMovePowerMaximum(String),
+    SelectMoveAccuracy(Option<Option<u8>>),
+    ToggleMovePriority,
+    ResetMove,
 }
 
 /// 页面请求由应用层执行，页面 reducer 不直接修改产品状态。
@@ -332,15 +358,6 @@ impl PageState {
             ) => {
                 *selected = next;
                 *selected_move = 0;
-                Ok((self, None))
-            }
-            (
-                PlayerRoute::Pause {
-                    route: PauseRoute::Pokedex { stats_view, .. },
-                },
-                PageIntent::TogglePokedexStatsView,
-            ) => {
-                *stats_view = stats_view.toggled();
                 Ok((self, None))
             }
             (
@@ -475,7 +492,6 @@ pub struct BagItemModel {
 pub struct PokedexPageModel {
     pub selected: PokedexEntryModel,
     pub entries: Vec<PokedexEntryModel>,
-    pub stats_view: PokedexStatsView,
     pub selected_move: usize,
     pub moves: Vec<PokedexMoveModel>,
     pub previous: Option<NationalDexNumber>,
@@ -490,17 +506,31 @@ pub struct PokedexEntryModel {
     pub name: Option<String>,
     pub stats: Option<PokedexStatsModel>,
     pub types: Vec<String>,
+    pub type_ids: Vec<TypeId>,
+    pub genus: Option<String>,
+    pub height_decimeters: Option<u16>,
+    pub weight_hectograms: Option<u16>,
+    pub abilities: Vec<PokedexAbilityModel>,
     pub known: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PokedexAbilityModel {
+    pub id: AbilityId,
+    pub name: String,
+    pub hidden: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PokedexMoveModel {
     pub name: String,
     pub move_type: String,
+    pub type_id: TypeId,
     pub category: PokedexMoveCategory,
     pub power: Option<u16>,
     pub accuracy: Option<u8>,
     pub pp: Option<u8>,
+    pub priority: i8,
     pub method: PokedexMoveLearnMethod,
     pub level: Option<u8>,
 }
@@ -521,15 +551,6 @@ pub enum PokedexMoveLearnMethod {
     Other(String),
 }
 
-/// 图鉴横向深入轨道中的页面层级。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum PokedexSection {
-    #[default]
-    Browse,
-    Profile,
-    Moves,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PokedexStatsModel {
     pub hp: u16,
@@ -538,21 +559,6 @@ pub struct PokedexStatsModel {
     pub special_attack: u16,
     pub special_defense: u16,
     pub speed: u16,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PokedexStatsView {
-    Bars,
-    Hexagon,
-}
-
-impl PokedexStatsView {
-    pub const fn toggled(self) -> Self {
-        match self {
-            Self::Bars => Self::Hexagon,
-            Self::Hexagon => Self::Bars,
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -751,13 +757,11 @@ fn project_pause_page(
         }
         PauseRoute::Pokedex {
             selected,
-            stats_view,
             selected_move,
         } => PausePageModel::Pokedex(pokedex_page_model(
             content,
             snapshot,
             *selected,
-            *stats_view,
             *selected_move,
             pokedex_display_mode,
         )?),
@@ -855,7 +859,6 @@ fn pokedex_page_model(
     content: &ThinSliceContent,
     snapshot: &ProductSnapshot,
     selected: NationalDexNumber,
-    stats_view: PokedexStatsView,
     selected_move: usize,
     display_mode: PokedexDisplayMode,
 ) -> Result<PokedexPageModel, PageModelError> {
@@ -873,6 +876,7 @@ fn pokedex_page_model(
             };
             let number = NationalDexNumber::new(entry.national_dex)
                 .map_err(|_| PageModelError::PokedexEntryMissing(selected))?;
+            let facts = data.pokemon(entry.form_id);
             Ok(PokedexEntryModel {
                 number,
                 name: known.then(|| entry.localized_name.clone()),
@@ -890,6 +894,41 @@ fn pokedex_page_model(
                         .iter()
                         .map(|entry_type| entry_type.name.clone())
                         .collect()
+                } else {
+                    Vec::new()
+                },
+                type_ids: if known {
+                    entry.types.iter().map(|entry_type| entry_type.id).collect()
+                } else {
+                    Vec::new()
+                },
+                genus: known
+                    .then(|| facts.and_then(|record| record.genus.clone()))
+                    .flatten(),
+                height_decimeters: known
+                    .then(|| facts.and_then(|record| record.height_decimeters))
+                    .flatten(),
+                weight_hectograms: known
+                    .then(|| facts.and_then(|record| record.weight_hectograms))
+                    .flatten(),
+                abilities: if known {
+                    facts
+                        .map(|record| {
+                            record
+                                .abilities
+                                .iter()
+                                .filter_map(|ability| {
+                                    data.ability_by_id(ability.ability_id).map(|definition| {
+                                        PokedexAbilityModel {
+                                            id: ability.ability_id,
+                                            name: definition.display_name.localized.clone(),
+                                            hidden: ability.is_hidden,
+                                        }
+                                    })
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default()
                 } else {
                     Vec::new()
                 },
@@ -916,7 +955,6 @@ fn pokedex_page_model(
     Ok(PokedexPageModel {
         selected: selected_entry,
         entries,
-        stats_view,
         selected_move: selected_move.min(moves.len().saturating_sub(1)),
         moves,
         previous: selected.previous(),
@@ -941,6 +979,7 @@ fn pokedex_moves(
             Some(PokedexMoveModel {
                 name: record.display_name.localized.clone(),
                 move_type: move_type.display_name.localized.clone(),
+                type_id: record.move_type,
                 category: match record.damage_class {
                     DamageClass::Physical => PokedexMoveCategory::Physical,
                     DamageClass::Special => PokedexMoveCategory::Special,
@@ -949,6 +988,7 @@ fn pokedex_moves(
                 power: record.power,
                 accuracy: record.accuracy,
                 pp: record.pp,
+                priority: record.priority,
                 method: match &learnset_entry.method {
                     MoveLearnMethod::LevelUp => PokedexMoveLearnMethod::LevelUp,
                     MoveLearnMethod::Egg => PokedexMoveLearnMethod::Egg,
@@ -1153,7 +1193,6 @@ fn pokedex_route() -> Result<PlayerRoute, PageDemoError> {
     Ok(PlayerRoute::Pause {
         route: PauseRoute::Pokedex {
             selected: NationalDexNumber::first(),
-            stats_view: PokedexStatsView::Bars,
             selected_move: 0,
         },
     })

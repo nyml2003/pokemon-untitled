@@ -259,6 +259,8 @@ struct PokemonRow {
     id: u32,
     identifier: String,
     species_id: u32,
+    height: u16,
+    weight: u16,
     is_default: u8,
 }
 #[derive(Deserialize)]
@@ -298,6 +300,7 @@ struct SpeciesNameRow {
     pokemon_species_id: u32,
     local_language_id: u16,
     name: String,
+    genus: String,
 }
 #[derive(Deserialize)]
 struct MoveRow {
@@ -590,22 +593,26 @@ pub fn import_source(
             .map(|row| (row.value.id, row.value.identifier))
             .collect();
 
+    let species_rows = read_csv::<SpeciesNameRow>(
+        source,
+        "pokemon_species_names.csv",
+        &["pokemon_species_id", "local_language_id", "name", "genus"],
+    )?;
     let species_names = names(
-        read_csv::<SpeciesNameRow>(
-            source,
-            "pokemon_species_names.csv",
-            &["pokemon_species_id", "local_language_id", "name"],
-        )?
-        .into_iter()
-        .map(|row| {
+        species_rows.iter().map(|row| {
             (
                 row.value.pokemon_species_id,
                 row.value.local_language_id,
-                row.value.name,
+                row.value.name.clone(),
             )
         }),
         language_id,
     );
+    let species_genera = species_rows
+        .into_iter()
+        .filter(|row| row.value.local_language_id == language_id)
+        .map(|row| (row.value.pokemon_species_id, row.value.genus))
+        .collect::<HashMap<_, _>>();
     let move_names = names(
         read_csv::<MoveNameRow>(
             source,
@@ -813,7 +820,14 @@ pub fn import_source(
     let mut pokemon = read_csv::<PokemonRow>(
         source,
         "pokemon.csv",
-        &["id", "identifier", "species_id", "is_default"],
+        &[
+            "id",
+            "identifier",
+            "species_id",
+            "height",
+            "weight",
+            "is_default",
+        ],
     )?
     .into_iter()
     .map(|located| {
@@ -868,6 +882,12 @@ pub fn import_source(
             species_id: SpeciesId(row.species_id),
             identifier: row.identifier.clone(),
             is_default: row.is_default != 0,
+            height_decimeters: (row.height != 0).then_some(row.height),
+            weight_hectograms: (row.weight != 0).then_some(row.weight),
+            genus: species_genera
+                .get(&row.species_id)
+                .filter(|genus| !genus.trim().is_empty())
+                .cloned(),
             base_stats: BaseStats {
                 hp,
                 attack,
@@ -974,7 +994,7 @@ pub fn import_source(
 
     CurrentDataSet::new(
         DataSetMetadata {
-            schema_version: "current-data-set-v4".into(),
+            schema_version: "current-data-set-v5".into(),
             source_repository: SOURCE_REPOSITORY.into(),
             source_commit: options.source_commit.clone(),
             generator_version: "game-data-import-0.0.0".into(),

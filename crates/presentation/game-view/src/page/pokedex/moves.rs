@@ -10,25 +10,41 @@ use punctum_ui::{
 const MOVE_VISIBLE_ITEMS: usize = 7;
 const MOVE_ITEM_HEIGHT: u32 = 52;
 
-pub(super) fn project(
+pub(super) fn project_content(
     pokedex: &PokedexPageModel,
+    visible_indices: &[usize],
+    selected_index: usize,
     interactive: bool,
-    hide_transition_icons: bool,
 ) -> Result<UiNode<PageIntent>, UiBuildError> {
     let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
-        pokedex.moves.len(),
+        visible_indices.len(),
         MOVE_VISIBLE_ITEMS,
         MOVE_ITEM_HEIGHT,
     )
     .with_gap(4)
     .with_overscan(2);
-    scroll.select(pokedex.selected_move);
+    scroll.select(selected_index);
     let rows = scroll
         .render_range()
-        .filter_map(|index| pokedex.moves.get(index).map(|item| (index, item)))
-        .map(|(index, item)| move_row(index, item, index == scroll.selected_index(), interactive))
+        .filter_map(|display_index| {
+            visible_indices.get(display_index).and_then(|index| {
+                pokedex
+                    .moves
+                    .get(*index)
+                    .map(|item| (display_index, *index, item))
+            })
+        })
+        .map(|(display_index, index, item)| {
+            move_row(
+                display_index,
+                index,
+                item,
+                display_index == scroll.selected_index(),
+                interactive,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    let list = if pokedex.moves.is_empty() {
+    let list = if visible_indices.is_empty() {
         text_node("没有可显示的技能记录", TextTone::Muted, 15)
     } else {
         scroll.node(
@@ -41,46 +57,38 @@ pub(super) fn project(
             rows,
         )
     };
-    let summary = pokedex.moves.get(scroll.selected_index()).map_or_else(
-        || {
-            ui_panel(
-                &POKEDEX_THEME,
-                PanelTone::Panel,
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Px(62),
-                    padding: Insets::symmetric(12, 8),
-                    ..UiStyle::default()
-                },
-                [text_node("--", TextTone::Muted, 14)],
-            )
-        },
-        move_summary,
-    );
-    Ok(ui_row(
+    let summary = visible_indices
+        .get(scroll.selected_index())
+        .and_then(|index| pokedex.moves.get(*index))
+        .map_or_else(
+            || {
+                ui_panel(
+                    &POKEDEX_THEME,
+                    PanelTone::Panel,
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Px(62),
+                        padding: Insets::symmetric(12, 8),
+                        ..UiStyle::default()
+                    },
+                    [text_node("--", TextTone::Muted, 14)],
+                )
+            },
+            move_summary,
+        );
+    Ok(ui_column(
         UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
-            padding: Insets::all(28),
-            gap: 28,
+            gap: 10,
             ..UiStyle::default()
         },
-        [
-            rail::project(pokedex, hide_transition_icons),
-            ui_column(
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 10,
-                    ..UiStyle::default()
-                },
-                [list, summary],
-            ),
-        ],
+        [list, summary],
     ))
 }
 
 fn move_row(
+    display_index: usize,
     index: usize,
     item: &PokedexMoveModel,
     selected: bool,
@@ -117,7 +125,7 @@ fn move_row(
                     },
                     [
                         text_node(
-                            format!("{:02}  {}", index.saturating_add(1), item.name),
+                            format!("{:02}  {}", display_index.saturating_add(1), item.name),
                             if selected {
                                 TextTone::Selected
                             } else {

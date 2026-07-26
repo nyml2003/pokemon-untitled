@@ -4,13 +4,21 @@
 
 mod console;
 mod page;
+mod pokedex_filter;
 mod presentation;
 
 use battle_session::{Action, BattleInteraction, BattleObservation, MoveSlot, TeamSlot};
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
 
 pub use console::{ConsoleEntry, ConsoleIntent, ConsoleOutcome, ConsoleState, GameConsole};
-pub use page::{PageFocus, PageUiOutcome, PageUiState, PokedexVisualState};
+pub use page::{
+    PageFocus, PageUiOutcome, PageUiState, PokedexDetailMode, PokedexFilterOverlay, PokedexScene,
+    PokedexVisualState,
+};
+pub use pokedex_filter::{
+    MoveFilterItem, MoveFilterModel, PokedexFilterItem, PokedexFilterModel, TypeMatch,
+    move_filter_form, pokedex_filter_form,
+};
 pub use presentation::{
     PokedexAction, PokedexUiSnapshot, PresentationAction, PresentationSnapshot, PresentationState,
     PresentationUpdate,

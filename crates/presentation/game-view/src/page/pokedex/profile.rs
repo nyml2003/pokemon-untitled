@@ -1,17 +1,11 @@
 use super::*;
 use game_ui_kit::{
-    ButtonOptions, PanelTone, StatChartValues, button_with_options as ui_button_with_options,
-    column as ui_column, panel as ui_panel, row as ui_row, stat_chart,
+    PanelTone, StatChartValues, StatChartView, column as ui_column, panel as ui_panel,
+    row as ui_row, stat_chart,
 };
-use punctum_ui::{
-    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiKey, UiNode, UiStyle,
-};
+use punctum_ui::{CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiNode, UiStyle};
 
-pub(super) fn project(
-    pokedex: &PokedexPageModel,
-    _wheel_position: i32,
-    hide_transition_icons: bool,
-) -> Result<UiNode<PageIntent>, UiBuildError> {
+pub(super) fn project_content(pokedex: &PokedexPageModel) -> UiNode<PageIntent> {
     let selected = &pokedex.selected;
     let stats = selected.stats.map(|stats| StatChartValues {
         hp: stats.hp,
@@ -32,32 +26,6 @@ pub(super) fn project(
         },
         types,
     );
-    let toggle = ui_button_with_options(
-        &POKEDEX_THEME,
-        UiStyle {
-            width: Dimension::Px(30),
-            height: Dimension::Px(28),
-            main_align: MainAlign::Center,
-            cross_align: CrossAlign::Center,
-            padding: Insets::symmetric(3, 2),
-            border_radius: POKEDEX_THEME.small_radius,
-            ..UiStyle::default()
-        },
-        ButtonOptions::new(
-            matches!(pokedex.stats_view, PokedexStatsView::Hexagon),
-            false,
-        ),
-        [text_node(
-            match pokedex.stats_view {
-                PokedexStatsView::Bars => "[=]",
-                PokedexStatsView::Hexagon => "[o]",
-            },
-            TextTone::Selected,
-            12,
-        )],
-    )
-    .with_key(UiKey::new("page-pokedex-stats-toggle")?)
-    .with_action(PageIntent::TogglePokedexStatsView);
     let identity = ui_column(
         UiStyle {
             width: Dimension::Fill,
@@ -81,7 +49,7 @@ pub(super) fn project(
                     cross_align: CrossAlign::Center,
                     ..UiStyle::default()
                 },
-                [types, toggle],
+                [types],
             ),
         ],
     );
@@ -95,33 +63,61 @@ pub(super) fn project(
             clip: true,
             ..UiStyle::default()
         },
-        [stat_chart(
-            &POKEDEX_THEME,
-            selected_stats_view(pokedex.stats_view),
-            stats,
-        )],
+        [stat_chart(&POKEDEX_THEME, StatChartView::Hexagon, stats)],
     );
-    Ok(ui_row(
+    let facts = ui_panel(
+        &POKEDEX_THEME,
+        PanelTone::Panel,
         UiStyle {
             width: Dimension::Fill,
-            height: Dimension::Fill,
-            padding: Insets::all(28),
-            gap: 28,
+            height: Dimension::Px(58),
+            padding: Insets::symmetric(12, 8),
+            gap: 6,
             ..UiStyle::default()
         },
         [
-            rail::project(pokedex, hide_transition_icons),
-            ui_column(
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    direction: FlexDirection::Column,
-                    gap: 14,
-                    main_align: MainAlign::Center,
-                    ..UiStyle::default()
-                },
-                [identity, chart],
+            compact_text_node(
+                selected.genus.as_deref().unwrap_or("分类 --"),
+                TextTone::Muted,
+                13,
+            ),
+            compact_text_node(
+                selected.height_decimeters.map_or_else(
+                    || String::from("身高 --"),
+                    |value| format!("身高 {}.{}m", value / 10, value % 10),
+                ),
+                TextTone::Muted,
+                13,
+            ),
+            compact_text_node(
+                selected.weight_hectograms.map_or_else(
+                    || String::from("体重 --"),
+                    |value| format!("体重 {}.{}kg", value / 10, value % 10),
+                ),
+                TextTone::Muted,
+                13,
+            ),
+            compact_text_node(
+                selected
+                    .abilities
+                    .iter()
+                    .map(|ability| ability.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" / "),
+                TextTone::Default,
+                13,
             ),
         ],
-    ))
+    );
+    ui_column(
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Fill,
+            direction: FlexDirection::Column,
+            gap: 14,
+            main_align: MainAlign::Center,
+            ..UiStyle::default()
+        },
+        [identity, facts, chart],
+    )
 }
