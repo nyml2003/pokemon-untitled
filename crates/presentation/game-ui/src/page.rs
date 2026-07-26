@@ -72,9 +72,10 @@ impl PokedexMotion {
         if self.current == self.target {
             return false;
         }
-        let milliseconds = elapsed.as_millis().min(250) as i32;
-        let step = milliseconds.saturating_mul(8).max(1);
+        let milliseconds = elapsed.as_millis().min(50) as i32;
         let distance = self.target.saturating_sub(self.current);
+        let step = ((i64::from(distance.unsigned_abs()) * i64::from(milliseconds)) / 220)
+            .clamp(1, i64::from(distance.unsigned_abs())) as i32;
         if distance.unsigned_abs() <= step as u32 {
             self.current = self.target;
         } else {
@@ -141,6 +142,10 @@ impl PageUiState {
     /// 推进图鉴转场；返回 true 表示需要重新绘制。
     pub fn advance(&mut self, elapsed: Duration) -> bool {
         self.pokedex_motion.advance(elapsed)
+    }
+
+    pub const fn pokedex_motion_active(self) -> bool {
+        self.pokedex_motion.current != self.pokedex_motion.target
     }
 
     fn set_pokedex_section(&mut self, section: PokedexSection) {
@@ -212,10 +217,7 @@ impl PageUiState {
                     .iter()
                     .position(|entry| entry.number == *number)
                 {
-                    self.focus = match page.detail_view {
-                        PokedexDetailView::Overview => PageFocus::Pokedex(index),
-                        PokedexDetailView::Moves => PageFocus::PokedexMoves(page.selected_move),
-                    };
+                    self.focus = PageFocus::Pokedex(index);
                     self.set_pokedex_section(section_for_focus(self.focus));
                 }
             }
@@ -529,12 +531,7 @@ impl PageUiState {
                 if direction == PageKey::Left {
                     self.focus = PageFocus::PokedexStats;
                     self.set_pokedex_section(PokedexSection::Stats);
-                    return PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(
-                        PokedexDetailView::Overview,
-                    ));
-                }
-                if page.detail_view != PokedexDetailView::Moves {
-                    return PageUiOutcome::Ignored;
+                    return PageUiOutcome::Updated;
                 }
                 let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
                     page.moves.len(),
@@ -597,15 +594,12 @@ fn default_focus(model: &PageModel) -> PageFocus {
             })
             .map(PageFocus::BagItem)
             .unwrap_or(PageFocus::BagCategory(0)),
-        PageModel::Pause(PausePageModel::Pokedex(page)) => match page.detail_view {
-            PokedexDetailView::Overview => PageFocus::Pokedex(
-                page.entries
-                    .iter()
-                    .position(|entry| entry.number == page.selected.number)
-                    .map_or(0, |index| index),
-            ),
-            PokedexDetailView::Moves => PageFocus::PokedexMoves(page.selected_move),
-        },
+        PageModel::Pause(PausePageModel::Pokedex(page)) => PageFocus::Pokedex(
+            page.entries
+                .iter()
+                .position(|entry| entry.number == page.selected.number)
+                .map_or(0, |index| index),
+        ),
         PageModel::Pause(PausePageModel::TrainerCard(_)) => PageFocus::TrainerCard,
         PageModel::Shop(_) => PageFocus::Shop(2),
         PageModel::SaveConfirm(_) => PageFocus::SaveConfirm,

@@ -5,7 +5,13 @@
 
 #![forbid(unsafe_code)]
 
-use std::{error::Error, fmt, fs, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    error::Error,
+    fmt, fs,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 mod metrics;
 
@@ -542,7 +548,12 @@ impl ApplicationHandler for PageDemoApp {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         self.advance_ui(now);
-        if let Some(delay) = self.interaction.next_delay() {
+        if self.page_ui.pokedex_motion_active() {
+            self.request_redraw();
+            event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(
+                now + Duration::from_millis(16),
+            ));
+        } else if let Some(delay) = self.interaction.next_delay() {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::WaitUntil(now + delay));
         } else {
             event_loop.set_control_flow(winit::event_loop::ControlFlow::Wait);

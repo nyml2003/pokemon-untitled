@@ -211,6 +211,44 @@ fn pokedex_track_projects_each_section_without_duplicate_keys()
     Ok(())
 }
 
+#[test]
+fn pokedex_track_uses_distinct_background_structure_and_content_offsets()
+-> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let model = demo.model()?;
+    let tree = project_page_model_with_visual_state(
+        &model,
+        None,
+        Some(PokedexVisualState {
+            section: PokedexSection::Detail,
+            position: 1500,
+        }),
+        punctum_ui::UiSize::new(960, 720),
+    )?;
+    let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
+    let structure_color = punctum_ui::UiColor::new(84, 101, 122, 150);
+    let mut structure_widths = frame
+        .commands()
+        .iter()
+        .filter_map(|command| match command {
+            punctum_ui::UiDrawCommand::Fill { bounds, color, .. } if *color == structure_color => {
+                Some(bounds.width)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(structure_widths.len(), 4);
+    structure_widths.sort_unstable();
+    structure_widths.dedup();
+    assert!(structure_widths.len() >= 3);
+    Ok(())
+}
+
 fn expected_page_action<'a>(
     model: &PageModel,
     mut actions: impl Iterator<Item = &'a PageIntent>,

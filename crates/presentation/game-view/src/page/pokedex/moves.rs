@@ -1,5 +1,8 @@
 use super::*;
 
-pub(super) fn project(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>, UiBuildError> {
-    super::pokedex_moves_panel(pokedex)
+pub(super) fn project(
+    pokedex: &PokedexPageModel,
+    interactive: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
+    super::pokedex_moves_panel(pokedex, interactive)
 }

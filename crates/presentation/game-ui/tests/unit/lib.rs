@@ -130,6 +130,42 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         pokedex_ui.handle_key(&key(NamedKey::Enter, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)
     );
+    assert_eq!(
+        pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(
+            game_page_model::PokedexDetailView::Moves,
+        ))
+    );
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexMoves(0));
+    assert_eq!(
+        pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Ignored
+    );
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexMoves(0));
+    Ok(())
+}
+
+#[test]
+fn pokedex_moves_left_stays_on_stats_when_legacy_detail_state_is_overview()
+-> Result<(), Box<dyn std::error::Error>> {
+    let pokedex = demo_named("pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?
+        .model()?;
+    let mut ui = PageUiState::default();
+    let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
+    let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
+    let outcome = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
+    assert!(matches!(
+        outcome,
+        PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(_))
+    ));
+    assert_eq!(ui.focus(), PageFocus::PokedexMoves(0));
+
+    assert_eq!(
+        ui.handle_key(&key(NamedKey::ArrowLeft, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Updated
+    );
+    assert_eq!(ui.focus(), PageFocus::PokedexStats);
     Ok(())
 }
 
@@ -148,8 +184,10 @@ fn pokedex_motion_tracks_a_new_target_from_its_current_position()
     assert!(mid > 0 && mid < 1000);
 
     let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
-    for _ in 0..10 {
-        ui.advance(Duration::from_millis(50));
+    for _ in 0..64 {
+        if !ui.advance(Duration::from_millis(50)) {
+            break;
+        }
     }
     assert_eq!(ui.pokedex_visual_state().position, 2000);
     assert_eq!(ui.pokedex_section(), game_page_model::PokedexSection::Stats);

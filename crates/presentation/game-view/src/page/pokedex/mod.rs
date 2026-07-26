@@ -28,6 +28,12 @@ mod stats;
 const POKEDEX_VISIBLE_ITEMS: usize = 7;
 const POKEDEX_ITEM_HEIGHT: u32 = 52;
 const POKEDEX_MOVE_ITEM_HEIGHT: u32 = 48;
+const POKEDEX_BACKGROUND_RATE: i32 = 28;
+const POKEDEX_STRUCTURE_RATE: i32 = 62;
+const POKEDEX_CONTENT_RATE: i32 = 100;
+const POKEDEX_CARD_WIDTH_PERCENT: u32 = 78;
+const POKEDEX_CARD_SIDE_GUTTER_PERCENT: u32 = (100 - POKEDEX_CARD_WIDTH_PERCENT) / 2;
+const POKEDEX_TRACK_STEP_PERCENT: u32 = 68;
 
 pub(super) fn project_pause_pokedex(
     pokedex: &PokedexPageModel,
@@ -52,7 +58,7 @@ fn project_pause_pokedex_track(
             PokedexSection::Index,
             visual,
             viewport,
-            index::project(pokedex)?,
+            index::project(pokedex, visual.section == PokedexSection::Index)?,
         ),
         track_layer(
             PokedexSection::Detail,
@@ -64,13 +70,13 @@ fn project_pause_pokedex_track(
             PokedexSection::Stats,
             visual,
             viewport,
-            stats::project(pokedex)?,
+            stats::project(pokedex, visual.section == PokedexSection::Stats)?,
         ),
         track_layer(
             PokedexSection::Moves,
             visual,
             viewport,
-            moves::project(pokedex)?,
+            moves::project(pokedex, visual.section == PokedexSection::Moves)?,
         ),
     ];
     UiTree::new(ui_screen(
@@ -103,11 +109,14 @@ fn track_layer(
         PokedexSection::Moves => 3000,
     };
     let delta = i64::from(section_position) - i64::from(visual.position);
-    let offset = (i64::from(viewport.width.max(1)) * delta / 1000)
-        .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
-    let background_offset = scaled_offset(offset, 35);
-    let structure_offset = scaled_offset(offset, 30);
-    let content_offset = scaled_offset(offset, 35);
+    let track_step = i64::from(viewport.width.max(1))
+        .saturating_mul(i64::from(POKEDEX_TRACK_STEP_PERCENT))
+        / 100;
+    let offset = (track_step * delta / 1000).clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+    let background_offset = scaled_offset(offset, POKEDEX_BACKGROUND_RATE);
+    let structure_offset = scaled_offset(offset, POKEDEX_STRUCTURE_RATE - POKEDEX_BACKGROUND_RATE);
+    let content_offset = scaled_offset(offset, POKEDEX_CONTENT_RATE - POKEDEX_STRUCTURE_RATE);
+    let shade_alpha = (delta.unsigned_abs().min(2000) * 70 / 1000) as u8;
     UiNode::auto()
         .with_style(UiStyle {
             width: Dimension::Fill,
@@ -124,21 +133,43 @@ fn track_layer(
         )))
         .with_children([UiNode::auto()
             .with_style(UiStyle {
-                width: Dimension::Fill,
+                width: Dimension::Ratio {
+                    units: POKEDEX_CARD_WIDTH_PERCENT,
+                    base: 100,
+                },
                 height: Dimension::Fill,
-                position: punctum_ui::Position::Absolute { left: 0, top: 0 },
+                position: punctum_ui::Position::AbsoluteRatio {
+                    left: POKEDEX_CARD_SIDE_GUTTER_PERCENT,
+                    top: 0,
+                    base: punctum_ui::UiSize::new(100, 100),
+                },
+                border: punctum_ui::UiBorder {
+                    widths: Insets::all(2),
+                    color: UiColor::new(84, 101, 122, 150),
+                },
                 visual_offset: punctum_ui::UiPixelOffset::new(structure_offset, 0),
                 ..UiStyle::default()
             })
-            .with_children([UiNode::auto()
-                .with_style(UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    position: punctum_ui::Position::Absolute { left: 0, top: 0 },
-                    visual_offset: punctum_ui::UiPixelOffset::new(content_offset, 0),
-                    ..UiStyle::default()
-                })
-                .with_children([child])])])
+            .with_children([
+                UiNode::auto()
+                    .with_style(UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Fill,
+                        position: punctum_ui::Position::Absolute { left: 0, top: 0 },
+                        visual_offset: punctum_ui::UiPixelOffset::new(content_offset, 0),
+                        ..UiStyle::default()
+                    })
+                    .with_children([child]),
+                UiNode::auto()
+                    .with_style(UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Fill,
+                        position: punctum_ui::Position::Absolute { left: 0, top: 0 },
+                        visual_offset: punctum_ui::UiPixelOffset::new(content_offset, 0),
+                        ..UiStyle::default()
+                    })
+                    .with_content(UiContent::Fill(UiColor::new(11, 17, 27, shade_alpha))),
+            ])])
 }
 
 fn scaled_offset(offset: i32, percentage: i32) -> i32 {
@@ -146,7 +177,10 @@ fn scaled_offset(offset: i32, percentage: i32) -> i32 {
         .clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32
 }
 
-fn pokedex_index_page(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>, UiBuildError> {
+fn pokedex_index_page(
+    pokedex: &PokedexPageModel,
+    interactive: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
     let selected_number = pokedex.selected.number;
     let selected_index = pokedex
         .entries
@@ -170,12 +204,10 @@ fn pokedex_index_page(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>, 
                 entry.number == selected_number,
                 entry.known,
                 format!("page-pokedex-index-{}", entry.number.value()),
-                Some(PageIntent::SelectPokedexEntry(entry.number)),
+                interactive.then_some(PageIntent::SelectPokedexEntry(entry.number)),
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let name = pokedex.selected.name.as_deref().unwrap_or("???");
-    let selected = pokedex_sprite(selected_number.value(), 280, 280, pokedex.selected.known);
     Ok(ui_panel(
         &FOUNDATION_THEME,
         PanelTone::Screen,
@@ -185,73 +217,31 @@ fn pokedex_index_page(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>, 
             direction: FlexDirection::Column,
             gap: 12,
             padding: Insets::all(20),
+            cross_align: CrossAlign::Center,
             ..UiStyle::default()
         },
-        [
-            ui_text(
-                &FOUNDATION_THEME,
-                TextTone::Default,
-                "图鉴 / INDEX",
-                22,
-                Dimension::Fill,
-            ),
-            ui_row(
+        [ui_panel(
+            &FOUNDATION_THEME,
+            PanelTone::Panel,
+            UiStyle {
+                width: Dimension::Ratio { units: 4, base: 5 },
+                height: Dimension::Fill,
+                direction: FlexDirection::Column,
+                gap: 4,
+                padding: Insets::all(8),
+                clip: true,
+                ..UiStyle::default()
+            },
+            [scroll.node(
                 UiStyle {
                     width: Dimension::Fill,
                     height: Dimension::Fill,
-                    gap: 16,
+                    gap: 4,
                     ..UiStyle::default()
                 },
-                [
-                    ui_panel(
-                        &FOUNDATION_THEME,
-                        PanelTone::Panel,
-                        UiStyle {
-                            width: Dimension::Ratio { units: 2, base: 5 },
-                            height: Dimension::Fill,
-                            direction: FlexDirection::Column,
-                            gap: 4,
-                            padding: Insets::all(8),
-                            clip: true,
-                            ..UiStyle::default()
-                        },
-                        [scroll.node(
-                            UiStyle {
-                                width: Dimension::Fill,
-                                height: Dimension::Fill,
-                                gap: 4,
-                                ..UiStyle::default()
-                            },
-                            rows,
-                        )],
-                    ),
-                    ui_panel(
-                        &FOUNDATION_THEME,
-                        PanelTone::ImageBackdrop,
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Fill,
-                            direction: FlexDirection::Column,
-                            main_align: MainAlign::Center,
-                            cross_align: CrossAlign::Center,
-                            gap: 8,
-                            clip: true,
-                            ..UiStyle::default()
-                        },
-                        [
-                            selected,
-                            ui_text(
-                                &FOUNDATION_THEME,
-                                TextTone::Selected,
-                                format!("NO.{:03}  {name}", selected_number.value()),
-                                18,
-                                Dimension::Fill,
-                            ),
-                        ],
-                    ),
-                ],
-            ),
-        ],
+                rows,
+            )],
+        )],
     ))
 }
 
@@ -281,99 +271,91 @@ fn pokedex_detail_page(pokedex: &PokedexPageModel) -> UiNode<PageIntent> {
             padding: Insets::all(20),
             ..UiStyle::default()
         },
-        [
-            ui_text(
-                &FOUNDATION_THEME,
-                TextTone::Default,
-                "图鉴 / DETAIL",
-                22,
-                Dimension::Fill,
-            ),
-            ui_row(
-                UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Fill,
-                    gap: 20,
-                    ..UiStyle::default()
-                },
-                [
-                    ui_panel(
-                        &FOUNDATION_THEME,
-                        PanelTone::ImageBackdrop,
-                        UiStyle {
-                            width: Dimension::Ratio { units: 2, base: 5 },
-                            height: Dimension::Fill,
-                            main_align: MainAlign::Center,
-                            cross_align: CrossAlign::Center,
-                            clip: true,
-                            ..UiStyle::default()
-                        },
-                        [pokedex_sprite(
-                            selected_number.value(),
-                            360,
-                            360,
-                            pokedex.selected.known,
-                        )],
-                    ),
-                    ui_column(
-                        UiStyle {
-                            width: Dimension::Fill,
-                            height: Dimension::Fill,
-                            gap: 8,
-                            main_align: MainAlign::Center,
-                            ..UiStyle::default()
-                        },
-                        [
-                            ui_text(
-                                &FOUNDATION_THEME,
-                                TextTone::MutedInk,
-                                format!("NO.{:03}", selected_number.value()),
-                                18,
-                                Dimension::Fill,
-                            ),
-                            ui_text(&FOUNDATION_THEME, TextTone::Ink, name, 36, Dimension::Fill),
-                            ui_row(
-                                UiStyle {
-                                    width: Dimension::Fill,
-                                    height: Dimension::Px(32),
-                                    gap: 8,
-                                    ..UiStyle::default()
-                                },
-                                if type_icons.is_empty() {
-                                    vec![ui_text(
-                                        &FOUNDATION_THEME,
-                                        TextTone::MutedInk,
-                                        "属性数据未记录",
-                                        15,
-                                        Dimension::Fill,
-                                    )]
-                                } else {
-                                    type_icons
-                                },
-                            ),
-                            ui_text(
-                                &FOUNDATION_THEME,
-                                TextTone::MutedInk,
-                                if pokedex.selected.known {
-                                    "已发现 / 已记录"
-                                } else {
-                                    "未发现 / 仅保留轮廓"
-                                },
-                                16,
-                                Dimension::Fill,
-                            ),
-                            pokedex_progress_panel(pokedex),
-                        ],
-                    ),
-                ],
-            ),
-        ],
+        [ui_row(
+            UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                gap: 20,
+                ..UiStyle::default()
+            },
+            [
+                ui_panel(
+                    &FOUNDATION_THEME,
+                    PanelTone::ImageBackdrop,
+                    UiStyle {
+                        width: Dimension::Ratio { units: 2, base: 5 },
+                        height: Dimension::Fill,
+                        main_align: MainAlign::Center,
+                        cross_align: CrossAlign::Center,
+                        clip: true,
+                        ..UiStyle::default()
+                    },
+                    [pokedex_sprite(
+                        selected_number.value(),
+                        360,
+                        360,
+                        pokedex.selected.known,
+                    )],
+                ),
+                ui_column(
+                    UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Fill,
+                        gap: 8,
+                        main_align: MainAlign::Center,
+                        ..UiStyle::default()
+                    },
+                    [
+                        ui_text(
+                            &FOUNDATION_THEME,
+                            TextTone::MutedInk,
+                            format!("NO.{:03}", selected_number.value()),
+                            18,
+                            Dimension::Fill,
+                        ),
+                        ui_text(&FOUNDATION_THEME, TextTone::Ink, name, 36, Dimension::Fill),
+                        ui_row(
+                            UiStyle {
+                                width: Dimension::Fill,
+                                height: Dimension::Px(32),
+                                gap: 8,
+                                ..UiStyle::default()
+                            },
+                            if type_icons.is_empty() {
+                                vec![ui_text(
+                                    &FOUNDATION_THEME,
+                                    TextTone::MutedInk,
+                                    "属性数据未记录",
+                                    15,
+                                    Dimension::Fill,
+                                )]
+                            } else {
+                                type_icons
+                            },
+                        ),
+                        ui_text(
+                            &FOUNDATION_THEME,
+                            TextTone::MutedInk,
+                            if pokedex.selected.known {
+                                "已发现 / 已记录"
+                            } else {
+                                "未发现 / 仅保留轮廓"
+                            },
+                            16,
+                            Dimension::Fill,
+                        ),
+                        pokedex_progress_panel(pokedex),
+                    ],
+                ),
+            ],
+        )],
     )
 }
 
-fn pokedex_stats_page(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>, UiBuildError> {
-    let selected_number = pokedex.selected.number;
-    let name = pokedex.selected.name.as_deref().unwrap_or("???");
+fn pokedex_stats_page(
+    pokedex: &PokedexPageModel,
+    interactive: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
     let values = pokedex.selected.stats.map(|stats| StatChartValues {
         hp: stats.hp,
         attack: stats.attack,
@@ -397,21 +379,12 @@ fn pokedex_stats_page(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>, 
             ui_row(
                 UiStyle {
                     width: Dimension::Fill,
-                    height: Dimension::Px(42),
-                    main_align: MainAlign::SpaceBetween,
+                    height: Dimension::Px(28),
+                    main_align: MainAlign::End,
                     cross_align: CrossAlign::Center,
                     ..UiStyle::default()
                 },
-                [
-                    ui_text(
-                        &FOUNDATION_THEME,
-                        TextTone::Default,
-                        format!("图鉴 / STATS  ·  NO.{:03} {name}", selected_number.value()),
-                        22,
-                        Dimension::Fill,
-                    ),
-                    pokedex_stats_toggle(pokedex.stats_view)?,
-                ],
+                [pokedex_stats_toggle(pokedex.stats_view, interactive)?],
             ),
             ui_panel(
                 &FOUNDATION_THEME,
@@ -518,11 +491,11 @@ fn project_pause_pokedex_legacy(
         },
         stat_values,
     );
-    let stats_toggle = pokedex_stats_toggle(pokedex.stats_view)?;
+    let stats_toggle = pokedex_stats_toggle(pokedex.stats_view, true)?;
     let detail_toggle = pokedex_detail_toggle(pokedex.detail_view)?;
     let detail_body = match pokedex.detail_view {
         PokedexDetailView::Overview => pokedex_progress_panel(pokedex),
-        PokedexDetailView::Moves => pokedex_moves_panel(pokedex)?,
+        PokedexDetailView::Moves => pokedex_moves_panel(pokedex, true)?,
     };
     UiTree::new(ui_screen(
         &FOUNDATION_THEME,
@@ -542,31 +515,22 @@ fn project_pause_pokedex_legacy(
                     UiStyle {
                         width: Dimension::Fill,
                         height: Dimension::Px(46),
-                        main_align: MainAlign::SpaceBetween,
+                        main_align: MainAlign::End,
                         cross_align: CrossAlign::Center,
                         ..UiStyle::default()
                     },
-                    [
-                        ui_text(
-                            &FOUNDATION_THEME,
-                            TextTone::Default,
-                            "图鉴 / FIELD GUIDE",
-                            22,
-                            Dimension::Fill,
+                    [ui_text(
+                        &FOUNDATION_THEME,
+                        TextTone::Muted,
+                        format!(
+                            "{:03}  ·  {}/{}",
+                            selected_number.value(),
+                            pokedex.known_count,
+                            pokedex.total_count
                         ),
-                        ui_text(
-                            &FOUNDATION_THEME,
-                            TextTone::Muted,
-                            format!(
-                                "{:03}  ·  {}/{}",
-                                selected_number.value(),
-                                pokedex.known_count,
-                                pokedex.total_count
-                            ),
-                            16,
-                            Dimension::Px(180),
-                        ),
-                    ],
+                        16,
+                        Dimension::Px(180),
+                    )],
                 ),
                 ui_row(
                     UiStyle {
@@ -588,24 +552,15 @@ fn project_pause_pokedex_legacy(
                                 clip: true,
                                 ..UiStyle::default()
                             },
-                            [
-                                ui_text(
-                                    &FOUNDATION_THEME,
-                                    TextTone::Muted,
-                                    "INDEX",
-                                    13,
-                                    Dimension::Fill,
-                                ),
-                                ui_column(
-                                    UiStyle {
-                                        width: Dimension::Fill,
-                                        height: Dimension::Fill,
-                                        gap: 2,
-                                        ..UiStyle::default()
-                                    },
-                                    [index_scroll],
-                                ),
-                            ],
+                            [ui_column(
+                                UiStyle {
+                                    width: Dimension::Fill,
+                                    height: Dimension::Fill,
+                                    gap: 2,
+                                    ..UiStyle::default()
+                                },
+                                [index_scroll],
+                            )],
                         ),
                         ui_panel(
                             &FOUNDATION_THEME,
@@ -845,7 +800,10 @@ fn pokedex_progress_panel(pokedex: &PokedexPageModel) -> UiNode<PageIntent> {
     )
 }
 
-fn pokedex_moves_panel(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>, UiBuildError> {
+fn pokedex_moves_panel(
+    pokedex: &PokedexPageModel,
+    interactive: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
     let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
         pokedex.moves.len(),
         POKEDEX_VISIBLE_ITEMS,
@@ -857,7 +815,9 @@ fn pokedex_moves_panel(pokedex: &PokedexPageModel) -> Result<UiNode<PageIntent>,
     let rows = scroll
         .render_range()
         .filter_map(|index| pokedex.moves.get(index).map(|item| (index, item)))
-        .map(|(index, item)| pokedex_move_row(index, item, index == scroll.selected_index()))
+        .map(|(index, item)| {
+            pokedex_move_row(index, item, index == scroll.selected_index(), interactive)
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let list = if pokedex.moves.is_empty() {
         ui_panel(
@@ -926,6 +886,7 @@ fn pokedex_move_row(
     index: usize,
     item: &PokedexMoveModel,
     selected: bool,
+    interactive: bool,
 ) -> Result<UiNode<PageIntent>, UiBuildError> {
     let node = ui_button_with_options(
         &FOUNDATION_THEME,
@@ -979,8 +940,12 @@ fn pokedex_move_row(
             ),
         ],
     )
-    .with_key(UiKey::new(format!("page-pokedex-move-{index}"))?)
-    .with_action(PageIntent::SelectPokedexMove(index));
+    .with_key(UiKey::new(format!("page-pokedex-move-{index}"))?);
+    let node = if interactive {
+        node.with_action(PageIntent::SelectPokedexMove(index))
+    } else {
+        node
+    };
     Ok(node)
 }
 
@@ -1058,12 +1023,15 @@ fn pokedex_index_row(
     })
 }
 
-fn pokedex_stats_toggle(view: PokedexStatsView) -> Result<UiNode<PageIntent>, UiBuildError> {
+fn pokedex_stats_toggle(
+    view: PokedexStatsView,
+    interactive: bool,
+) -> Result<UiNode<PageIntent>, UiBuildError> {
     let label = match view {
         PokedexStatsView::Bars => "BAR",
         PokedexStatsView::Hexagon => "HEX",
     };
-    Ok(ui_button_with_options(
+    let node = ui_button_with_options(
         &FOUNDATION_THEME,
         UiStyle {
             width: Dimension::Px(72),
@@ -1081,8 +1049,12 @@ fn pokedex_stats_toggle(view: PokedexStatsView) -> Result<UiNode<PageIntent>, Ui
             Dimension::Fill,
         )],
     )
-    .with_key(UiKey::new("page-pokedex-stats-toggle")?)
-    .with_action(PageIntent::TogglePokedexStatsView))
+    .with_key(UiKey::new("page-pokedex-stats-toggle")?);
+    Ok(if interactive {
+        node.with_action(PageIntent::TogglePokedexStatsView)
+    } else {
+        node
+    })
 }
 
 fn pokedex_sprite(number: u16, width: u32, height: u32, known: bool) -> UiNode<PageIntent> {
