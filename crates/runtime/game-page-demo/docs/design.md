@@ -17,3 +17,17 @@ runtime 不执行 reducer 返回的 `PageEffect`。购买和存档请求只转�
 默认键位是方向键或 WASD 移动焦点，Enter 或 Z 确认，Escape 或 X 取消，Tab 从世界画面打开导航，F5 打开保存确认，Q/E 切换背包分类。页面不渲染返回按钮；取消由键盘状态处理。当前批次的缺失图片使用几何占位，后续可替换资源槽位而不改变页面语义。
 
 `--page-demo` 只接受 `demo_named` 已登记的 ID。窗口中的 `PageUp` / `PageDown` 只切换 demo fixture，不改变正式页面状态合同。ops 的 `--demo` 同样限制在当前目录，因此传入 Windows runner 的不是任意命令文本。`assets/other/DP背包.png` 目前仍是背包视觉参考表，不作为单个物品图标直接加载。
+
+## 性能指标
+
+`game-page-demo` 不把性能指标绘制到页面 HUD。标准错误每秒输出完整采样，程序退出时再输出整段运行报告。报告字段包括总运行时间、总帧数、FPS、平均重绘耗时、最慢帧、各阶段平均耗时和平均耗时最高的阶段。每秒采样还包括当前 frame 的 UI/GPU 规模。
+
+- `advance`：交互动画和 UI 状态推进。
+- `model`：从 demo 状态构建 `PageModel`。
+- `tree`：从页面模型构建 UI 树。
+- `layout`：解析 UI 树并生成 `UiFrame`。
+- `plan`：把 UI frame 转成 GPU submission plan。
+- `present`：提交到原生窗口的耗时。
+- `commands`、`action_hits`、`targets`、`instances`：当前 frame 的规模。
+
+`frame` 高而 `layout` 高，优先检查页面树规模或虚拟滚动是否失效。`frame` 高而 `present` 高，优先检查 GPU 提交和窗口环境。`max` 反映这一秒内最慢的一帧，用来发现偶发尖峰。

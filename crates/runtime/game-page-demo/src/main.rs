@@ -7,6 +7,8 @@
 
 use std::{error::Error, fmt, fs, path::PathBuf, sync::Arc, time::Instant};
 
+mod metrics;
+
 use game_assets::{AssetKey, DecodedImage, decode_png};
 use game_native_target::{
     FramePlan, NativeAssets, NativeTarget, PresentOutcome, TextScale, instance_for_event_loop,
@@ -32,6 +34,8 @@ use winit::{
     window::{Window, WindowId},
 };
 
+use metrics::{FrameMetrics, FrameSample, PerfReport};
+
 const CLEAR_COLOR: Rgba8 = Rgba8::new(14, 22, 32, 255);
 const TEXT_SCALE: TextScale = TextScale::new(1, 1, 14, 28);
 const DEFAULT_DEMO: &str = "world-starting-town";
@@ -48,6 +52,7 @@ struct PageDemoApp {
     interaction_targets: Vec<UiInteractionTarget>,
     cursor: Option<PhysicalPosition<f64>>,
     modifiers: ModifiersState,
+    metrics: FrameMetrics,
     last_ui_instant: Instant,
     window: Option<Arc<Window>>,
     runtime: Option<NativeTarget<'static>>,
@@ -55,6 +60,7 @@ struct PageDemoApp {
 
 impl PageDemoApp {
     fn new(demo: PageDemo) -> Result<Self, Box<dyn Error>> {
+        let now = Instant::now();
         let context = demo.context()?;
         let state = demo.initial_state()?;
         let assets = load_page_demo_assets()?;
@@ -70,7 +76,8 @@ impl PageDemoApp {
             interaction_targets: Vec::new(),
             cursor: None,
             modifiers: ModifiersState::empty(),
-            last_ui_instant: Instant::now(),
+            metrics: FrameMetrics::new(now),
+            last_ui_instant: now,
             window: None,
             runtime: None,
         })
@@ -119,10 +126,14 @@ impl PageDemoApp {
     }
 
     fn redraw(&mut self, event_loop: &ActiveEventLoop) {
+        let frame_started = Instant::now();
+        let advance_started = Instant::now();
         self.advance_ui(Instant::now());
+        let advance = advance_started.elapsed();
         let Some(surface_size) = self.runtime.as_ref().map(NativeTarget::surface_size) else {
             return;
         };
+        let model_started = Instant::now();
         let model = match project_demo_page(&self.context, self.state.route()) {
             Ok(model) => model,
             Err(error) => {
@@ -131,7 +142,9 @@ impl PageDemoApp {
                 return;
             }
         };
+        let model_time = model_started.elapsed();
         self.page_ui.sync(&model);
+        let tree_started = Instant::now();
         let tree = match project_page_model_with_notice(&model, self.status.as_deref()) {
             Ok(tree) => tree,
             Err(error) => {
@@ -140,6 +153,8 @@ impl PageDemoApp {
                 return;
             }
         };
+        let tree_time = tree_started.elapsed();
+        let layout_started = Instant::now();
         let frame = match tree.resolve(UiSize::new(surface_size.width, surface_size.height)) {
             Ok(frame) => frame,
             Err(error) => {
@@ -148,11 +163,16 @@ impl PageDemoApp {
                 return;
             }
         };
+        let layout_time = layout_started.elapsed();
         self.interaction_targets = frame.interaction_targets().to_vec();
         self.interaction.reconcile(&self.interaction_targets);
         self.sync_keyboard_focus(&model, &frame);
         self.sync_pointer();
         let frame = frame.with_interaction(self.interaction.snapshot());
+        let commands = frame.commands().len();
+        let action_hits = frame.action_hits().len();
+        let interaction_targets = frame.interaction_targets().len();
+        let plan_started = Instant::now();
         let plan = match FramePlan::from_ui_frame(&frame, &self.assets, TEXT_SCALE) {
             Ok(plan) => plan,
             Err(error) => {
@@ -161,25 +181,52 @@ impl PageDemoApp {
                 return;
             }
         };
+        let plan_time = plan_started.elapsed();
+        let instances = plan
+            .passes()
+            .iter()
+            .map(|pass| u64::from(pass.gpu().instance_count))
+            .fold(0_u64, u64::saturating_add);
         self.frame = Some(frame);
         let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
             return;
         };
-        match runtime.present(&plan) {
-            Ok(PresentOutcome::Reconfigured | PresentOutcome::SurfaceLost) => {
+        let present_started = Instant::now();
+        let present_result = runtime.present(&plan);
+        let present_time = present_started.elapsed();
+        let outcome = match present_result {
+            Ok(outcome @ (PresentOutcome::Reconfigured | PresentOutcome::SurfaceLost)) => {
                 runtime.resize(runtime.surface_size());
                 window.request_redraw();
+                Some(outcome)
             }
-            Ok(
-                PresentOutcome::Presented
-                | PresentOutcome::PresentedAndReconfigured
-                | PresentOutcome::SkippedMinimized
-                | PresentOutcome::SkippedTimeout
-                | PresentOutcome::SkippedOccluded,
-            ) => {}
+            Ok(outcome) => Some(outcome),
             Err(error) => {
                 eprintln!("page demo presentation failed: {error}");
                 event_loop.exit();
+                None
+            }
+        };
+        if let Some(outcome) = outcome {
+            let report = self.metrics.record(
+                Instant::now(),
+                FrameSample {
+                    total: frame_started.elapsed(),
+                    advance,
+                    model: model_time,
+                    tree: tree_time,
+                    layout: layout_time,
+                    plan: plan_time,
+                    present: present_time,
+                    commands,
+                    action_hits,
+                    interaction_targets,
+                    instances,
+                    outcome,
+                },
+            );
+            if let Some(report) = report {
+                eprintln!("[page-demo perf] {report}");
             }
         }
     }
@@ -575,8 +622,42 @@ fn main() -> Result<(), Box<dyn Error>> {
     let demo = selected_demo(std::env::args().skip(1))?;
     let event_loop = EventLoop::new()?;
     let mut app = PageDemoApp::new(demo)?;
-    event_loop.run_app(&mut app)?;
+    let result = event_loop.run_app(&mut app);
+    if let Some(report) = app.metrics.finish(Instant::now()) {
+        print_final_report(report);
+    }
+    result?;
     Ok(())
+}
+
+fn print_final_report(report: PerfReport) {
+    let (dominant_stage, dominant_ms) = report.dominant_stage();
+    eprintln!("[page-demo perf final]");
+    eprintln!(
+        "  runtime: {:.2}s, frames: {}, fps: {:.1}",
+        report.elapsed_s, report.frames, report.fps
+    );
+    eprintln!(
+        "  frame: average {:.2}ms, max {:.2}ms",
+        report.frame_ms, report.max_frame_ms
+    );
+    eprintln!(
+        "  stages: advance {:.2}ms, model {:.2}ms, tree {:.2}ms, layout {:.2}ms, plan {:.2}ms, present {:.2}ms",
+        report.advance_ms,
+        report.model_ms,
+        report.tree_ms,
+        report.layout_ms,
+        report.plan_ms,
+        report.present_ms,
+    );
+    eprintln!(
+        "  dominant stage: {dominant_stage} ({dominant_ms:.2}ms average); last frame: commands={}, action_hits={}, targets={}, instances={}, outcome={:?}",
+        report.commands,
+        report.action_hits,
+        report.interaction_targets,
+        report.instances,
+        report.outcome,
+    );
 }
 
 #[cfg(test)]
