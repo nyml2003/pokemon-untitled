@@ -101,17 +101,17 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         _ => return Err("pokedex demo did not expose entries".into()),
     };
     pokedex_ui.focus_intent(&PageIntent::SelectPokedexEntry(clicked), &pokedex);
-    assert_eq!(pokedex_ui.focus(), PageFocus::Pokedex(10));
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexBrowse(10));
     assert!(matches!(
         pokedex_ui.handle_key(&key(NamedKey::ArrowDown, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(number)) if number.value() == 12
     ));
-    assert!(matches!(pokedex_ui.focus(), PageFocus::Pokedex(_)));
+    assert!(matches!(pokedex_ui.focus(), PageFocus::PokedexBrowse(_)));
     assert!(matches!(
         pokedex_ui.handle_key(&key(NamedKey::End, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
     ));
-    assert!(matches!(pokedex_ui.focus(), PageFocus::Pokedex(_)));
+    assert!(matches!(pokedex_ui.focus(), PageFocus::PokedexBrowse(_)));
     assert!(matches!(
         pokedex_ui.handle_key(&key(NamedKey::Home, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
@@ -120,21 +120,14 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated
     );
-    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexDetail);
-    assert_eq!(
-        pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
-        PageUiOutcome::Updated
-    );
-    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexStats);
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexProfile);
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::Enter, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)
     );
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
-        PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(
-            game_page_model::PokedexDetailView::Moves,
-        ))
+        PageUiOutcome::Updated
     );
     assert_eq!(pokedex_ui.focus(), PageFocus::PokedexMoves(0));
     assert_eq!(
@@ -146,26 +139,21 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
 }
 
 #[test]
-fn pokedex_moves_left_stays_on_stats_when_legacy_detail_state_is_overview()
--> Result<(), Box<dyn std::error::Error>> {
+fn pokedex_moves_left_returns_to_profile() -> Result<(), Box<dyn std::error::Error>> {
     let pokedex = demo_named("pokedex-seen-and-unseen")
         .ok_or("pokedex demo is missing")?
         .model()?;
     let mut ui = PageUiState::default();
     let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
-    let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
     let outcome = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
-    assert!(matches!(
-        outcome,
-        PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(_))
-    ));
+    assert_eq!(outcome, PageUiOutcome::Updated);
     assert_eq!(ui.focus(), PageFocus::PokedexMoves(0));
 
     assert_eq!(
         ui.handle_key(&key(NamedKey::ArrowLeft, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated
     );
-    assert_eq!(ui.focus(), PageFocus::PokedexStats);
+    assert_eq!(ui.focus(), PageFocus::PokedexProfile);
     Ok(())
 }
 
@@ -177,11 +165,15 @@ fn pokedex_motion_tracks_a_new_target_from_its_current_position()
         .model()?;
     let mut ui = PageUiState::default();
     let _ = ui.handle_key(&key(NamedKey::ArrowDown, KeyPhase::Press), &pokedex);
-    let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
-    assert_eq!(ui.pokedex_visual_state().position, 0);
+    assert_eq!(ui.focus(), PageFocus::PokedexBrowse(1));
     assert!(ui.advance(Duration::from_millis(50)));
-    let mid = ui.pokedex_visual_state().position;
+    assert!(ui.pokedex_visual_state().wheel_position > 0);
+    let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
+    assert_eq!(ui.pokedex_visual_state().section_position, 0);
+    assert!(ui.advance(Duration::from_millis(50)));
+    let mid = ui.pokedex_visual_state().section_position;
     assert!(mid > 0 && mid < 1000);
+    assert!(mid < 200, "transition should ease into the first frame");
 
     let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
     for _ in 0..64 {
@@ -189,8 +181,8 @@ fn pokedex_motion_tracks_a_new_target_from_its_current_position()
             break;
         }
     }
-    assert_eq!(ui.pokedex_visual_state().position, 2000);
-    assert_eq!(ui.pokedex_section(), game_page_model::PokedexSection::Stats);
+    assert_eq!(ui.pokedex_visual_state().section_position, 2000);
+    assert_eq!(ui.pokedex_section(), game_page_model::PokedexSection::Moves);
     Ok(())
 }
 

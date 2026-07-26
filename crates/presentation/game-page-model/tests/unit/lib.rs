@@ -127,17 +127,17 @@ fn gift_backed_pause_pages_read_product_facts() -> Result<(), Box<dyn std::error
         return Err("pokedex demo did not project a pokedex page".into());
     };
     assert!(pokedex.selected.known);
-    assert_eq!(pokedex.selected.number.value(), 252);
+    assert_eq!(pokedex.selected.number, NationalDexNumber::first());
     assert_eq!(pokedex.entries.len(), 386);
-    assert_eq!(pokedex.known_count, 380);
-    assert!(!pokedex.entries[0].known);
+    assert_eq!(pokedex.known_count, 381);
+    assert!(pokedex.entries[0].known);
     assert!(pokedex.entries[1].known);
     assert!(!pokedex.entries[3].known);
     assert!(pokedex.entries[19].known);
     assert!(pokedex.entries[20].known);
     assert!(pokedex.entries[251].known);
     assert_eq!(pokedex.stats_view, PokedexStatsView::Bars);
-    assert_eq!(pokedex.previous.map(NationalDexNumber::value), Some(251));
+    assert_eq!(pokedex.previous, None);
     Ok(())
 }
 

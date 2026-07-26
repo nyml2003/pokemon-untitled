@@ -131,7 +131,6 @@ pub enum PauseRoute {
     Pokedex {
         selected: NationalDexNumber,
         stats_view: PokedexStatsView,
-        detail_view: PokedexDetailView,
         selected_move: usize,
     },
     TrainerCard,
@@ -159,7 +158,6 @@ impl PauseRoute {
             PausePage::Pokedex => Self::Pokedex {
                 selected: NationalDexNumber::first(),
                 stats_view: PokedexStatsView::Bars,
-                detail_view: PokedexDetailView::Overview,
                 selected_move: 0,
             },
             PausePage::TrainerCard => Self::TrainerCard,
@@ -202,7 +200,6 @@ pub enum PageIntent {
     SelectBagItem(ItemId),
     SelectPokedexEntry(NationalDexNumber),
     TogglePokedexStatsView,
-    SelectPokedexDetail(PokedexDetailView),
     SelectPokedexMove(usize),
     OpenShop { shop: ShopId },
     SelectShopItem(ItemId),
@@ -348,15 +345,6 @@ impl PageState {
             }
             (
                 PlayerRoute::Pause {
-                    route: PauseRoute::Pokedex { detail_view, .. },
-                },
-                PageIntent::SelectPokedexDetail(next),
-            ) => {
-                *detail_view = next;
-                Ok((self, None))
-            }
-            (
-                PlayerRoute::Pause {
                     route: PauseRoute::Pokedex { selected_move, .. },
                 },
                 PageIntent::SelectPokedexMove(next),
@@ -488,7 +476,6 @@ pub struct PokedexPageModel {
     pub selected: PokedexEntryModel,
     pub entries: Vec<PokedexEntryModel>,
     pub stats_view: PokedexStatsView,
-    pub detail_view: PokedexDetailView,
     pub selected_move: usize,
     pub moves: Vec<PokedexMoveModel>,
     pub previous: Option<NationalDexNumber>,
@@ -534,19 +521,12 @@ pub enum PokedexMoveLearnMethod {
     Other(String),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PokedexDetailView {
-    Overview,
-    Moves,
-}
-
 /// 图鉴横向深入轨道中的页面层级。
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PokedexSection {
     #[default]
-    Index,
-    Detail,
-    Stats,
+    Browse,
+    Profile,
     Moves,
 }
 
@@ -772,14 +752,12 @@ fn project_pause_page(
         PauseRoute::Pokedex {
             selected,
             stats_view,
-            detail_view,
             selected_move,
         } => PausePageModel::Pokedex(pokedex_page_model(
             content,
             snapshot,
             *selected,
             *stats_view,
-            *detail_view,
             *selected_move,
             pokedex_display_mode,
         )?),
@@ -878,7 +856,6 @@ fn pokedex_page_model(
     snapshot: &ProductSnapshot,
     selected: NationalDexNumber,
     stats_view: PokedexStatsView,
-    detail_view: PokedexDetailView,
     selected_move: usize,
     display_mode: PokedexDisplayMode,
 ) -> Result<PokedexPageModel, PageModelError> {
@@ -940,7 +917,6 @@ fn pokedex_page_model(
         selected: selected_entry,
         entries,
         stats_view,
-        detail_view,
         selected_move: selected_move.min(moves.len().saturating_sub(1)),
         moves,
         previous: selected.previous(),
@@ -988,7 +964,7 @@ fn pokedex_moves(
 
 fn demo_pokedex_known(number: u16) -> bool {
     match number {
-        1 | 4 | 7 | 11 | 15 | 19 => false,
+        4 | 7 | 11 | 15 | 19 => false,
         2..=20 => true,
         _ => true,
     }
@@ -1176,9 +1152,8 @@ fn bag_route() -> Result<PlayerRoute, PageDemoError> {
 fn pokedex_route() -> Result<PlayerRoute, PageDemoError> {
     Ok(PlayerRoute::Pause {
         route: PauseRoute::Pokedex {
-            selected: NationalDexNumber::new(252).map_err(PageDemoError::Dex)?,
+            selected: NationalDexNumber::first(),
             stats_view: PokedexStatsView::Bars,
-            detail_view: PokedexDetailView::Overview,
             selected_move: 0,
         },
     })

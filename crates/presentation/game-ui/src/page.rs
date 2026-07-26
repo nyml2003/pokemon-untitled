@@ -2,9 +2,7 @@
 
 use std::time::Duration;
 
-use game_page_model::{
-    BagFilter, PageIntent, PageModel, PausePageModel, PokedexDetailView, PokedexSection,
-};
+use game_page_model::{BagFilter, PageIntent, PageModel, PausePageModel, PokedexSection};
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey, PhysicalKeyCode};
 use punctum_ui::KeyboardSingleColumnFixedHeightScrollView;
 
@@ -16,9 +14,8 @@ pub enum PageFocus {
     Party(usize),
     BagCategory(usize),
     BagItem(usize),
-    Pokedex(usize),
-    PokedexDetail,
-    PokedexStats,
+    PokedexBrowse(usize),
+    PokedexProfile,
     PokedexMoves(usize),
     TrainerCard,
     Shop(usize),
@@ -37,51 +34,104 @@ pub enum PageUiOutcome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PokedexVisualState {
     pub section: PokedexSection,
-    pub position: i32,
+    pub section_position: i32,
+    pub wheel_position: i32,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct TrackMotion {
+    current: i32,
+    target: i32,
+    start: i32,
+    elapsed_ms: u32,
+}
+
+impl TrackMotion {
+    fn set_target(&mut self, target: i32) {
+        if target == self.target {
+            return;
+        }
+        self.start = self.current;
+        self.target = target;
+        self.elapsed_ms = 0;
+    }
+
+    fn snap(&mut self, position: i32) {
+        self.current = position;
+        self.target = position;
+        self.start = position;
+        self.elapsed_ms = 0;
+    }
+
+    fn advance(&mut self, elapsed: Duration, duration_ms: i32) -> bool {
+        if self.current == self.target {
+            return false;
+        }
+        let duration_ms = u32::try_from(duration_ms.max(1)).map_or(u32::MAX, |value| value);
+        let elapsed_ms = u32::try_from(elapsed.as_millis().min(50)).map_or(50, |value| value);
+        self.elapsed_ms = self.elapsed_ms.saturating_add(elapsed_ms).min(duration_ms);
+        if self.elapsed_ms == duration_ms {
+            self.current = self.target;
+        } else {
+            let progress = i64::from(self.elapsed_ms) * 1000 / i64::from(duration_ms);
+            let eased = ease_in_out_cubic(progress);
+            let distance = i64::from(self.target) - i64::from(self.start);
+            let position = i64::from(self.start) + distance * eased / 1000;
+            self.current = position.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
+        }
+        true
+    }
+}
+
+fn ease_in_out_cubic(progress: i64) -> i64 {
+    let progress = progress.clamp(0, 1000);
+    if progress < 500 {
+        4 * progress * progress * progress / 1_000_000
+    } else {
+        let remaining = 1000 - progress;
+        1000 - 4 * remaining * remaining * remaining / 1_000_000
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct PokedexMotion {
-    current: i32,
-    target: i32,
+    section: TrackMotion,
+    wheel: TrackMotion,
 }
 
 impl PokedexMotion {
-    const SECTION_STEP: i32 = 1000;
+    const STEP: i32 = 1000;
+    const SECTION_DURATION_MS: i32 = 280;
+    const WHEEL_DURATION_MS: i32 = 200;
 
     const fn position(section: PokedexSection) -> i32 {
         match section {
-            PokedexSection::Index => 0,
-            PokedexSection::Detail => Self::SECTION_STEP,
-            PokedexSection::Stats => Self::SECTION_STEP * 2,
-            PokedexSection::Moves => Self::SECTION_STEP * 3,
+            PokedexSection::Browse => 0,
+            PokedexSection::Profile => Self::STEP,
+            PokedexSection::Moves => Self::STEP * 2,
         }
     }
 
     fn set_target(&mut self, section: PokedexSection) {
-        self.target = Self::position(section);
+        self.section.set_target(Self::position(section));
     }
 
-    fn snap(&mut self, section: PokedexSection) {
-        let position = Self::position(section);
-        self.current = position;
-        self.target = position;
+    fn set_wheel_target(&mut self, index: usize) {
+        self.wheel.set_target(index_position(index));
+    }
+
+    fn snap(&mut self, section: PokedexSection, index: usize) {
+        self.section.snap(Self::position(section));
+        self.wheel.snap(index_position(index));
     }
 
     fn advance(&mut self, elapsed: Duration) -> bool {
-        if self.current == self.target {
-            return false;
-        }
-        let milliseconds = elapsed.as_millis().min(50) as i32;
-        let distance = self.target.saturating_sub(self.current);
-        let step = ((i64::from(distance.unsigned_abs()) * i64::from(milliseconds)) / 220)
-            .clamp(1, i64::from(distance.unsigned_abs())) as i32;
-        if distance.unsigned_abs() <= step as u32 {
-            self.current = self.target;
-        } else {
-            self.current = self.current.saturating_add(distance.signum() * step);
-        }
-        true
+        self.section.advance(elapsed, Self::SECTION_DURATION_MS)
+            | self.wheel.advance(elapsed, Self::WHEEL_DURATION_MS)
+    }
+
+    const fn active(self) -> bool {
+        self.section.current != self.section.target || self.wheel.current != self.wheel.target
     }
 }
 
@@ -124,18 +174,18 @@ impl PageUiState {
 
     pub const fn pokedex_section(self) -> PokedexSection {
         match self.focus {
-            PageFocus::Pokedex(_) => PokedexSection::Index,
-            PageFocus::PokedexDetail => PokedexSection::Detail,
-            PageFocus::PokedexStats => PokedexSection::Stats,
+            PageFocus::PokedexBrowse(_) => PokedexSection::Browse,
+            PageFocus::PokedexProfile => PokedexSection::Profile,
             PageFocus::PokedexMoves(_) => PokedexSection::Moves,
-            _ => PokedexSection::Index,
+            _ => PokedexSection::Browse,
         }
     }
 
     pub const fn pokedex_visual_state(self) -> PokedexVisualState {
         PokedexVisualState {
             section: self.pokedex_section(),
-            position: self.pokedex_motion.current,
+            section_position: self.pokedex_motion.section.current,
+            wheel_position: self.pokedex_motion.wheel.current,
         }
     }
 
@@ -145,15 +195,19 @@ impl PageUiState {
     }
 
     pub const fn pokedex_motion_active(self) -> bool {
-        self.pokedex_motion.current != self.pokedex_motion.target
+        self.pokedex_motion.active()
     }
 
     fn set_pokedex_section(&mut self, section: PokedexSection) {
         self.pokedex_motion.set_target(section);
     }
 
-    fn snap_pokedex_section(&mut self, section: PokedexSection) {
-        self.pokedex_motion.snap(section);
+    fn set_pokedex_wheel(&mut self, index: usize) {
+        self.pokedex_motion.set_wheel_target(index);
+    }
+
+    fn snap_pokedex_state(&mut self, section: PokedexSection, index: usize) {
+        self.pokedex_motion.snap(section, index);
     }
 
     pub fn sync(&mut self, model: &PageModel) {
@@ -178,14 +232,11 @@ impl PageUiState {
                     PageFocus::BagItem(index.min(page.entries.len() - 1))
                 }
             }
-            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
-                PageFocus::Pokedex(index.min(page.entries.len().saturating_sub(1)))
+            (PageFocus::PokedexBrowse(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
+                PageFocus::PokedexBrowse(index.min(page.entries.len().saturating_sub(1)))
             }
-            (PageFocus::PokedexDetail, PageModel::Pause(PausePageModel::Pokedex(_))) => {
-                PageFocus::PokedexDetail
-            }
-            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(_))) => {
-                PageFocus::PokedexStats
+            (PageFocus::PokedexProfile, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+                PageFocus::PokedexProfile
             }
             (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
                 PageFocus::PokedexMoves(index.min(page.moves.len().saturating_sub(1)))
@@ -201,7 +252,7 @@ impl PageUiState {
         let entered_pokedex = !is_pokedex_focus(self.focus) && is_pokedex_focus(next_focus);
         self.focus = next_focus;
         if entered_pokedex {
-            self.snap_pokedex_section(section_for_focus(next_focus));
+            self.snap_pokedex_state(section_for_focus(next_focus), current_pokedex_index(model));
         }
     }
 
@@ -217,19 +268,10 @@ impl PageUiState {
                     .iter()
                     .position(|entry| entry.number == *number)
                 {
-                    self.focus = PageFocus::Pokedex(index);
+                    self.focus = PageFocus::PokedexBrowse(index);
                     self.set_pokedex_section(section_for_focus(self.focus));
+                    self.set_pokedex_wheel(index);
                 }
-            }
-            (
-                PageIntent::SelectPokedexDetail(detail_view),
-                PageModel::Pause(PausePageModel::Pokedex(page)),
-            ) => {
-                self.focus = match detail_view {
-                    PokedexDetailView::Overview => PageFocus::PokedexDetail,
-                    PokedexDetailView::Moves => PageFocus::PokedexMoves(page.selected_move),
-                };
-                self.set_pokedex_section(section_for_focus(self.focus));
             }
             (
                 PageIntent::SelectPokedexMove(index),
@@ -240,8 +282,8 @@ impl PageUiState {
                 self.set_pokedex_section(PokedexSection::Moves);
             }
             (PageIntent::TogglePokedexStatsView, PageModel::Pause(PausePageModel::Pokedex(_))) => {
-                self.focus = PageFocus::PokedexStats;
-                self.set_pokedex_section(PokedexSection::Stats);
+                self.focus = PageFocus::PokedexProfile;
+                self.set_pokedex_section(PokedexSection::Profile);
             }
             _ => {}
         }
@@ -269,14 +311,14 @@ impl PageUiState {
                 .entries
                 .get(index)
                 .map(|entry| format!("page-bag-{}", entry.item.as_str())),
-            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => page
-                .entries
-                .get(index)
-                .map(|entry| format!("page-pokedex-index-{}", entry.number.value())),
-            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+            (PageFocus::PokedexBrowse(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
+                page.entries
+                    .get(index)
+                    .map(|entry| format!("page-pokedex-index-{}", entry.number.value()))
+            }
+            (PageFocus::PokedexProfile, PageModel::Pause(PausePageModel::Pokedex(_))) => {
                 Some(String::from("page-pokedex-stats-toggle"))
             }
-            (PageFocus::PokedexDetail, PageModel::Pause(PausePageModel::Pokedex(_))) => None,
             (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(_))) => {
                 Some(format!("page-pokedex-move-{index}"))
             }
@@ -330,7 +372,7 @@ impl PageUiState {
         }
     }
 
-    fn confirm(&self, model: &PageModel) -> PageUiOutcome {
+    fn confirm(&mut self, model: &PageModel) -> PageUiOutcome {
         match (self.focus, model) {
             (PageFocus::PauseMenu(index), PageModel::Pause(PausePageModel::Menu)) => [
                 PageIntent::SelectPausePage(game_page_model::PausePage::Party),
@@ -358,12 +400,12 @@ impl PageUiState {
                     PageUiOutcome::Intent(PageIntent::SelectBagCategory(category))
                 })
             }
-            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => page
-                .entries
-                .get(index)
-                .map(|entry| PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(entry.number)))
-                .unwrap_or(PageUiOutcome::Ignored),
-            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+            (PageFocus::PokedexBrowse(_), PageModel::Pause(PausePageModel::Pokedex(_))) => {
+                self.focus = PageFocus::PokedexProfile;
+                self.set_pokedex_section(PokedexSection::Profile);
+                PageUiOutcome::Updated
+            }
+            (PageFocus::PokedexProfile, PageModel::Pause(PausePageModel::Pokedex(_))) => {
                 PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)
             }
             (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
@@ -469,7 +511,7 @@ impl PageUiState {
                     })
                     .unwrap_or(PageUiOutcome::Ignored)
             }
-            (PageFocus::Pokedex(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
+            (PageFocus::PokedexBrowse(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
                 let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
                     page.entries.len(),
                     POKEDEX_VISIBLE_ITEMS,
@@ -482,8 +524,8 @@ impl PageUiState {
                     PageKey::Home => scroll.move_to_top(),
                     PageKey::End => scroll.move_to_bottom(),
                     PageKey::Right => {
-                        self.focus = PageFocus::PokedexDetail;
-                        self.set_pokedex_section(PokedexSection::Detail);
+                        self.focus = PageFocus::PokedexProfile;
+                        self.set_pokedex_section(PokedexSection::Profile);
                         return PageUiOutcome::Updated;
                     }
                     _ => false,
@@ -492,45 +534,33 @@ impl PageUiState {
                     return PageUiOutcome::Ignored;
                 }
                 let next = scroll.selected_index();
-                self.focus = PageFocus::Pokedex(next);
+                self.focus = PageFocus::PokedexBrowse(next);
+                self.set_pokedex_wheel(next);
                 page.entries
                     .get(next)
                     .map_or(PageUiOutcome::Updated, |entry| {
                         PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(entry.number))
                     })
             }
-            (PageFocus::PokedexDetail, PageModel::Pause(PausePageModel::Pokedex(_))) => {
+            (PageFocus::PokedexProfile, PageModel::Pause(PausePageModel::Pokedex(page))) => {
                 match direction {
                     PageKey::Left => {
-                        self.focus = PageFocus::Pokedex(current_pokedex_index(model));
-                        self.set_pokedex_section(PokedexSection::Index);
+                        self.focus = PageFocus::PokedexBrowse(current_pokedex_index(model));
+                        self.set_pokedex_section(PokedexSection::Browse);
                         PageUiOutcome::Updated
                     }
                     PageKey::Right => {
-                        self.focus = PageFocus::PokedexStats;
-                        self.set_pokedex_section(PokedexSection::Stats);
+                        self.focus = PageFocus::PokedexMoves(page.selected_move);
+                        self.set_pokedex_section(PokedexSection::Moves);
                         PageUiOutcome::Updated
                     }
                     _ => PageUiOutcome::Ignored,
                 }
             }
-            (PageFocus::PokedexStats, PageModel::Pause(PausePageModel::Pokedex(page))) => {
-                if direction == PageKey::Left {
-                    self.focus = PageFocus::PokedexDetail;
-                    self.set_pokedex_section(PokedexSection::Detail);
-                    PageUiOutcome::Updated
-                } else if direction == PageKey::Right {
-                    self.focus = PageFocus::PokedexMoves(page.selected_move);
-                    self.set_pokedex_section(PokedexSection::Moves);
-                    PageUiOutcome::Intent(PageIntent::SelectPokedexDetail(PokedexDetailView::Moves))
-                } else {
-                    PageUiOutcome::Ignored
-                }
-            }
             (PageFocus::PokedexMoves(index), PageModel::Pause(PausePageModel::Pokedex(page))) => {
                 if direction == PageKey::Left {
-                    self.focus = PageFocus::PokedexStats;
-                    self.set_pokedex_section(PokedexSection::Stats);
+                    self.focus = PageFocus::PokedexProfile;
+                    self.set_pokedex_section(PokedexSection::Profile);
                     return PageUiOutcome::Updated;
                 }
                 let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
@@ -594,7 +624,7 @@ fn default_focus(model: &PageModel) -> PageFocus {
             })
             .map(PageFocus::BagItem)
             .unwrap_or(PageFocus::BagCategory(0)),
-        PageModel::Pause(PausePageModel::Pokedex(page)) => PageFocus::Pokedex(
+        PageModel::Pause(PausePageModel::Pokedex(page)) => PageFocus::PokedexBrowse(
             page.entries
                 .iter()
                 .position(|entry| entry.number == page.selected.number)
@@ -609,20 +639,16 @@ fn default_focus(model: &PageModel) -> PageFocus {
 fn is_pokedex_focus(focus: PageFocus) -> bool {
     matches!(
         focus,
-        PageFocus::Pokedex(_)
-            | PageFocus::PokedexDetail
-            | PageFocus::PokedexStats
-            | PageFocus::PokedexMoves(_)
+        PageFocus::PokedexBrowse(_) | PageFocus::PokedexProfile | PageFocus::PokedexMoves(_)
     )
 }
 
 fn section_for_focus(focus: PageFocus) -> PokedexSection {
     match focus {
-        PageFocus::Pokedex(_) => PokedexSection::Index,
-        PageFocus::PokedexDetail => PokedexSection::Detail,
-        PageFocus::PokedexStats => PokedexSection::Stats,
+        PageFocus::PokedexBrowse(_) => PokedexSection::Browse,
+        PageFocus::PokedexProfile => PokedexSection::Profile,
         PageFocus::PokedexMoves(_) => PokedexSection::Moves,
-        _ => PokedexSection::Index,
+        _ => PokedexSection::Browse,
     }
 }
 
@@ -634,6 +660,10 @@ fn current_pokedex_index(model: &PageModel) -> usize {
         .iter()
         .position(|entry| entry.number == page.selected.number)
         .unwrap_or(0)
+}
+
+fn index_position(index: usize) -> i32 {
+    i32::try_from(index).map_or(i32::MAX, |value| value.saturating_mul(PokedexMotion::STEP))
 }
 
 fn page_key(key: &KeyEvent) -> Option<PageKey> {

@@ -8,9 +8,7 @@ use battle_session::{
 };
 use game_data::PokedexData;
 use game_foundation::{GameState, ThinSliceContent};
-use game_page_model::{
-    PageIntent, PageModel, PausePageModel, PokedexDetailView, PokedexSection, page_demos,
-};
+use game_page_model::{PageIntent, PageModel, PausePageModel, PokedexSection, page_demos};
 use map_project::{
     AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection, MapProject,
     MapProjectId, TilePosition,
@@ -27,11 +25,10 @@ use game_ui::{
 use super::{
     BattleSpriteResources, FoundationPage, FoundationPageAction, LayerKind, TextRole, ViewCell,
     ViewLayer, compose_world, move_category_icon_asset, page_party_pokemon_asset,
-    page_pokedex_icon_asset, page_pokedex_pokemon_asset, page_world_player_asset, pill_ui_asset,
-    pokemon_icon_asset, project_battle, project_battle_ui, project_console, project_console_ui,
-    project_foundation, project_page_model, project_page_model_with_notice,
-    project_page_model_with_visual_state, project_pokedex, project_world, rounded_ui_asset,
-    type_icon_asset, world_character_asset,
+    page_pokedex_icon_asset, page_world_player_asset, pill_ui_asset, pokemon_icon_asset,
+    project_battle, project_battle_ui, project_console, project_console_ui, project_foundation,
+    project_page_model, project_page_model_with_notice, project_page_model_with_visual_state,
+    project_pokedex, project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
 };
 
 #[test]
@@ -76,9 +73,6 @@ fn page_demos_resolve_to_ui_with_optional_page_images() -> Result<(), Box<dyn st
                 }
             }
             PageModel::Pause(PausePageModel::Pokedex(pokedex)) => {
-                if let Some(asset) = page_pokedex_pokemon_asset(pokedex.selected.number.value()) {
-                    assert!(images.contains(&asset.as_str()));
-                }
                 if let Some(asset) = page_pokedex_icon_asset(pokedex.selected.number.value()) {
                     assert!(images.contains(&asset.as_str()));
                 }
@@ -104,6 +98,114 @@ fn page_demos_resolve_to_ui_with_optional_page_images() -> Result<(), Box<dyn st
 }
 
 #[test]
+fn pokedex_browse_centers_the_selected_name_with_its_icon() -> Result<(), Box<dyn std::error::Error>>
+{
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let model = demo.model()?;
+    let (selected_name, selected_icon) = match &model {
+        PageModel::Pause(PausePageModel::Pokedex(page)) => {
+            let name = page
+                .selected
+                .name
+                .as_deref()
+                .ok_or("selected pokedex entry name is missing")?;
+            (
+                name,
+                format!("pokedex-icon/{}", page.selected.number.value()),
+            )
+        }
+        _ => return Err("pokedex demo did not produce a pokedex page".into()),
+    };
+    let frame = project_page_model(&model)?.resolve(punctum_ui::UiSize::new(960, 720))?;
+    let text = frame
+        .commands()
+        .iter()
+        .filter_map(|command| match command {
+            punctum_ui::UiDrawCommand::Text { content, .. } => Some(content.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(text.contains(&"NO.001"));
+    let name_bounds = frame
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            punctum_ui::UiDrawCommand::Text {
+                bounds, content, ..
+            } if content == selected_name => Some(*bounds),
+            _ => None,
+        })
+        .ok_or("selected pokedex name is missing")?;
+    let icon_bounds = frame
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            punctum_ui::UiDrawCommand::Image {
+                bounds, content, ..
+            } if content.as_str() == selected_icon => Some(*bounds),
+            _ => None,
+        })
+        .ok_or("selected pokedex icon is missing")?;
+    let name_center = name_bounds.x.saturating_add(name_bounds.width / 2);
+    let icon_center = icon_bounds.x.saturating_add(icon_bounds.width / 2);
+    assert!(name_center.abs_diff(icon_center) <= 2);
+    assert_eq!(icon_bounds.width, 320);
+    let icon_middle = icon_bounds.y.saturating_add(icon_bounds.height / 2);
+    assert!(
+        icon_middle.abs_diff(330) <= 2,
+        "the focused icon should leave room for its centered label group, got {icon_middle}"
+    );
+    let adjacent = image_bounds(&frame, "pokedex-icon/2")?;
+    assert_eq!(adjacent.width, 160);
+    assert_eq!(adjacent.height, 160);
+    Ok(())
+}
+
+#[test]
+fn pokedex_browse_moves_the_next_entry_up_to_the_focus() -> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let model = demo.model()?;
+    let viewport = punctum_ui::UiSize::new(960, 720);
+    let initial = project_page_model(&model)?.resolve(viewport)?;
+    let initial_focus = image_bounds(&initial, "pokedex-icon/1")?;
+    let initial_next = image_bounds(&initial, "pokedex-icon/2")?;
+    assert!(initial_next.y > initial_focus.y);
+
+    let moved = project_page_model_with_visual_state(
+        &model,
+        None,
+        Some(PokedexVisualState {
+            section: PokedexSection::Browse,
+            section_position: 0,
+            wheel_position: 1000,
+        }),
+        viewport,
+    )?
+    .resolve(viewport)?;
+    let previous = image_bounds(&moved, "pokedex-icon/1")?;
+    let next_focus = image_bounds(&moved, "pokedex-icon/2")?;
+    assert!(previous.y < next_focus.y);
+    assert_eq!(next_focus.width, 320);
+    assert!(
+        next_focus
+            .y
+            .saturating_add(next_focus.height / 2)
+            .abs_diff(330)
+            <= 2,
+        "the next entry should reach the vertical focus"
+    );
+    Ok(())
+}
+
+#[test]
 fn page_notice_stays_in_the_rendering_adapter_boundary() -> Result<(), Box<dyn std::error::Error>> {
     let demo = page_demos().first().ok_or("page demo catalog is empty")?;
     let model = demo.model()?;
@@ -117,7 +219,7 @@ fn page_notice_stays_in_the_rendering_adapter_boundary() -> Result<(), Box<dyn s
 }
 
 #[test]
-fn pokedex_moves_detail_projects_virtual_move_list() -> Result<(), Box<dyn std::error::Error>> {
+fn pokedex_moves_scene_projects_virtual_move_list() -> Result<(), Box<dyn std::error::Error>> {
     let demo = page_demos()
         .iter()
         .copied()
@@ -127,21 +229,21 @@ fn pokedex_moves_detail_projects_virtual_move_list() -> Result<(), Box<dyn std::
         return Err("pokedex demo did not produce a pokedex page".into());
     };
     assert!(!page.moves.is_empty());
-    page.detail_view = PokedexDetailView::Moves;
     page.selected_move = page.moves.len().saturating_sub(1);
-    let expected_label = format!(
-        "技能列表  {}/{}",
-        page.selected_move.saturating_add(1),
-        page.moves.len()
-    );
     let expected_action = PageIntent::SelectPokedexMove(page.selected_move);
 
-    let frame = project_page_model(&PageModel::Pause(PausePageModel::Pokedex(page)))?
-        .resolve(punctum_ui::UiSize::new(960, 720))?;
-    assert!(frame.commands().iter().any(|command| matches!(
-        command,
-        punctum_ui::UiDrawCommand::Text { content, .. } if content == expected_label.as_str()
-    )));
+    let model = PageModel::Pause(PausePageModel::Pokedex(page));
+    let frame = project_page_model_with_visual_state(
+        &model,
+        None,
+        Some(PokedexVisualState {
+            section: PokedexSection::Moves,
+            section_position: 2000,
+            wheel_position: 0,
+        }),
+        punctum_ui::UiSize::new(960, 720),
+    )?
+    .resolve(punctum_ui::UiSize::new(960, 720))?;
     assert!(
         frame
             .action_hits()
@@ -173,28 +275,30 @@ fn pokedex_track_projects_each_section_without_duplicate_keys()
         .ok_or("pokedex demo is missing")?;
     let model = demo.model()?;
     for (section, position) in [
-        (PokedexSection::Index, 0),
-        (PokedexSection::Detail, 1000),
-        (PokedexSection::Stats, 2000),
-        (PokedexSection::Moves, 3000),
+        (PokedexSection::Browse, 0),
+        (PokedexSection::Profile, 1000),
+        (PokedexSection::Moves, 2000),
     ] {
         let tree = project_page_model_with_visual_state(
             &model,
             None,
-            Some(PokedexVisualState { section, position }),
+            Some(PokedexVisualState {
+                section,
+                section_position: position,
+                wheel_position: 0,
+            }),
             punctum_ui::UiSize::new(960, 720),
         )?;
         let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
         assert!(!frame.commands().is_empty());
         match section {
-            PokedexSection::Index => assert!(
+            PokedexSection::Browse => assert!(
                 frame
                     .action_hits()
                     .iter()
                     .any(|hit| matches!(hit.action, PageIntent::SelectPokedexEntry(_)))
             ),
-            PokedexSection::Detail => assert!(frame.action_hits().is_empty()),
-            PokedexSection::Stats => assert!(
+            PokedexSection::Profile => assert!(
                 frame
                     .action_hits()
                     .iter()
@@ -212,40 +316,66 @@ fn pokedex_track_projects_each_section_without_duplicate_keys()
 }
 
 #[test]
-fn pokedex_track_uses_distinct_background_structure_and_content_offsets()
--> Result<(), Box<dyn std::error::Error>> {
+fn pokedex_transition_animates_every_visible_wheel_icon() -> Result<(), Box<dyn std::error::Error>>
+{
     let demo = page_demos()
         .iter()
         .copied()
         .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
         .ok_or("pokedex demo is missing")?;
-    let model = demo.model()?;
+    let mut model = demo.model()?;
+    let visible_icons = match &mut model {
+        PageModel::Pause(PausePageModel::Pokedex(page)) => {
+            let selected = page
+                .entries
+                .get(1)
+                .cloned()
+                .ok_or("pokedex demo needs a second entry")?;
+            page.selected = selected;
+            page.entries
+                .iter()
+                .take(3)
+                .map(|entry| format!("pokedex-icon/{}", entry.number.value()))
+                .collect::<Vec<_>>()
+        }
+        _ => return Err("pokedex demo did not produce a pokedex page".into()),
+    };
     let tree = project_page_model_with_visual_state(
         &model,
         None,
         Some(PokedexVisualState {
-            section: PokedexSection::Detail,
-            position: 1500,
+            section: PokedexSection::Profile,
+            section_position: 500,
+            wheel_position: 1000,
         }),
         punctum_ui::UiSize::new(960, 720),
     )?;
     let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
-    let structure_color = punctum_ui::UiColor::new(84, 101, 122, 150);
-    let mut structure_widths = frame
+    let image_count = frame
         .commands()
         .iter()
-        .filter_map(|command| match command {
-            punctum_ui::UiDrawCommand::Fill { bounds, color, .. } if *color == structure_color => {
-                Some(bounds.width)
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-
-    assert_eq!(structure_widths.len(), 4);
-    structure_widths.sort_unstable();
-    structure_widths.dedup();
-    assert!(structure_widths.len() >= 3);
+        .filter(|command| matches!(command, punctum_ui::UiDrawCommand::Image { .. }))
+        .count();
+    assert!(image_count > 0);
+    assert!(frame.action_hits().is_empty());
+    for icon in visible_icons {
+        let bounds = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                punctum_ui::UiDrawCommand::Image {
+                    bounds, content, ..
+                } if content.as_str() == icon && bounds.x < 960 => Some(*bounds),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            bounds.len(),
+            1,
+            "{icon} should have one shared transition icon"
+        );
+        assert!(bounds[0].width > 30 && bounds[0].width < 320);
+    }
     Ok(())
 }
 
@@ -278,6 +408,22 @@ fn expected_page_action<'a>(
             actions.any(|action| matches!(action, PageIntent::ConfirmSave))
         }
     }
+}
+
+fn image_bounds(
+    frame: &punctum_ui::UiFrame<PageIntent>,
+    asset: &str,
+) -> Result<punctum_ui::UiRect, Box<dyn std::error::Error>> {
+    frame
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            punctum_ui::UiDrawCommand::Image {
+                bounds, content, ..
+            } if content.as_str() == asset => Some(*bounds),
+            _ => None,
+        })
+        .ok_or_else(|| format!("pokedex icon {asset} is missing").into())
 }
 
 #[test]
