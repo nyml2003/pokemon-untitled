@@ -17,7 +17,8 @@ mod shop;
 mod world;
 
 use game_page_model::{PageIntent, PageModel};
-use punctum_ui::{UiBuildError, UiTree};
+use game_ui::PokedexVisualState;
+use punctum_ui::{UiBuildError, UiSize, UiTree};
 
 pub use assets::{
     page_party_pokemon_asset, page_pokedex_icon_asset, page_pokedex_pokemon_asset,
@@ -35,9 +36,19 @@ pub fn project_page_model_with_notice(
     model: &PageModel,
     notice: Option<&str>,
 ) -> Result<UiTree<PageIntent>, UiBuildError> {
+    project_page_model_with_visual_state(model, notice, None, UiSize::new(960, 720))
+}
+
+/// 将页面模型与图鉴的逻辑层级、连续轨道位置投影为 UI tree。
+pub fn project_page_model_with_visual_state(
+    model: &PageModel,
+    notice: Option<&str>,
+    pokedex: Option<PokedexVisualState>,
+    viewport: UiSize,
+) -> Result<UiTree<PageIntent>, UiBuildError> {
     match model {
         PageModel::World(world) => world::project_page_world(world, notice),
-        PageModel::Pause(pause) => pause::project_page_pause(pause, notice),
+        PageModel::Pause(pause) => pause::project_page_pause(pause, notice, pokedex, viewport),
         PageModel::Shop(shop) => shop::project_page_shop(shop, notice),
         PageModel::SaveConfirm(save) => save_confirm::project_page_save_confirm(save, notice),
     }

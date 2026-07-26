@@ -14,7 +14,8 @@ pub use projection::{
     page_party_pokemon_asset, page_pokedex_icon_asset, page_pokedex_pokemon_asset,
     page_world_player_asset, page_world_tile_asset, pill_ui_asset, player_back_asset,
     pokemon_icon_asset, project_battle, project_battle_ui, project_console, project_console_ui,
-    project_foundation, project_page_model, project_page_model_with_notice, project_pokedex,
-    project_world, project_world_animated, project_world_presented, rounded_ui_asset,
-    type_icon_asset, with_console, world_character_asset,
+    project_foundation, project_page_model, project_page_model_with_notice,
+    project_page_model_with_visual_state, project_pokedex, project_world, project_world_animated,
+    project_world_presented, rounded_ui_asset, type_icon_asset, with_console,
+    world_character_asset,
 };

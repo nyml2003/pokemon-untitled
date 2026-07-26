@@ -20,7 +20,7 @@ use game_page_model::{
 use game_ui::{PageUiOutcome, PageUiState};
 use game_view::{
     page_party_pokemon_asset, page_pokedex_icon_asset, page_pokedex_pokemon_asset,
-    page_world_player_asset, page_world_tile_asset, project_page_model_with_notice,
+    page_world_player_asset, page_world_tile_asset, project_page_model_with_visual_state,
 };
 use punctum_gpu::{PixelSize, Rgba8};
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
@@ -145,7 +145,12 @@ impl PageDemoApp {
         let model_time = model_started.elapsed();
         self.page_ui.sync(&model);
         let tree_started = Instant::now();
-        let tree = match project_page_model_with_notice(&model, self.status.as_deref()) {
+        let tree = match project_page_model_with_visual_state(
+            &model,
+            self.status.as_deref(),
+            Some(self.page_ui.pokedex_visual_state()),
+            UiSize::new(surface_size.width, surface_size.height),
+        ) {
             Ok(tree) => tree,
             Err(error) => {
                 eprintln!("page demo tree construction failed: {error}");
@@ -396,7 +401,7 @@ impl PageDemoApp {
     fn advance_ui(&mut self, now: Instant) {
         let elapsed = now.saturating_duration_since(self.last_ui_instant);
         self.last_ui_instant = now;
-        if self.interaction.advance(elapsed) {
+        if self.page_ui.advance(elapsed) || self.interaction.advance(elapsed) {
             self.request_redraw();
         }
     }

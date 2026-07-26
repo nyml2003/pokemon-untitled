@@ -8,7 +8,9 @@ use battle_session::{
 };
 use game_data::PokedexData;
 use game_foundation::{GameState, ThinSliceContent};
-use game_page_model::{PageIntent, PageModel, PausePageModel, PokedexDetailView, page_demos};
+use game_page_model::{
+    PageIntent, PageModel, PausePageModel, PokedexDetailView, PokedexSection, page_demos,
+};
 use map_project::{
     AtomicTileId, CompositeTile, CompositeTileId, MapActor, MapActorId, MapDirection, MapProject,
     MapProjectId, TilePosition,
@@ -19,7 +21,7 @@ use world_application::{CharacterAppearanceId, Direction, Position, WorldApplica
 
 use game_ui::{
     BattleMenuPage, BattleUiOutcome, BattleUiState, CommandConsoleView, PokedexAction,
-    WorldAnimation,
+    PokedexVisualState, WorldAnimation,
 };
 
 use super::{
@@ -27,8 +29,9 @@ use super::{
     ViewLayer, compose_world, move_category_icon_asset, page_party_pokemon_asset,
     page_pokedex_icon_asset, page_pokedex_pokemon_asset, page_world_player_asset, pill_ui_asset,
     pokemon_icon_asset, project_battle, project_battle_ui, project_console, project_console_ui,
-    project_foundation, project_page_model, project_page_model_with_notice, project_pokedex,
-    project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
+    project_foundation, project_page_model, project_page_model_with_notice,
+    project_page_model_with_visual_state, project_pokedex, project_world, rounded_ui_asset,
+    type_icon_asset, world_character_asset,
 };
 
 #[test]
@@ -157,6 +160,54 @@ fn pokedex_moves_detail_projects_virtual_move_list() -> Result<(), Box<dyn std::
         punctum_ui::UiDrawCommand::Image { content, .. }
             if content.as_str().starts_with("ui/battle/move-category/")
     )));
+    Ok(())
+}
+
+#[test]
+fn pokedex_track_projects_each_section_without_duplicate_keys()
+-> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let model = demo.model()?;
+    for (section, position) in [
+        (PokedexSection::Index, 0),
+        (PokedexSection::Detail, 1000),
+        (PokedexSection::Stats, 2000),
+        (PokedexSection::Moves, 3000),
+    ] {
+        let tree = project_page_model_with_visual_state(
+            &model,
+            None,
+            Some(PokedexVisualState { section, position }),
+            punctum_ui::UiSize::new(960, 720),
+        )?;
+        let frame = tree.resolve(punctum_ui::UiSize::new(960, 720))?;
+        assert!(!frame.commands().is_empty());
+        match section {
+            PokedexSection::Index => assert!(
+                frame
+                    .action_hits()
+                    .iter()
+                    .any(|hit| matches!(hit.action, PageIntent::SelectPokedexEntry(_)))
+            ),
+            PokedexSection::Detail => assert!(frame.action_hits().is_empty()),
+            PokedexSection::Stats => assert!(
+                frame
+                    .action_hits()
+                    .iter()
+                    .any(|hit| hit.action == PageIntent::TogglePokedexStatsView)
+            ),
+            PokedexSection::Moves => assert!(
+                frame
+                    .action_hits()
+                    .iter()
+                    .any(|hit| matches!(hit.action, PageIntent::SelectPokedexMove(_)))
+            ),
+        }
+    }
     Ok(())
 }
 

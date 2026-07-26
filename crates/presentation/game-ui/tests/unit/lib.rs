@@ -7,6 +7,7 @@ use game_data::CurrentDataSet;
 use game_page_model::{PageIntent, PageModel, PausePageModel, demo_named};
 use game_session::{GameCommand, GameSession};
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
+use std::time::Duration;
 use world_application::Direction;
 
 use super::*;
@@ -119,11 +120,39 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated
     );
+    assert_eq!(pokedex_ui.focus(), PageFocus::PokedexDetail);
+    assert_eq!(
+        pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
+        PageUiOutcome::Updated
+    );
     assert_eq!(pokedex_ui.focus(), PageFocus::PokedexStats);
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::Enter, KeyPhase::Press), &pokedex),
         PageUiOutcome::Intent(PageIntent::TogglePokedexStatsView)
     );
+    Ok(())
+}
+
+#[test]
+fn pokedex_motion_tracks_a_new_target_from_its_current_position()
+-> Result<(), Box<dyn std::error::Error>> {
+    let pokedex = demo_named("pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?
+        .model()?;
+    let mut ui = PageUiState::default();
+    let _ = ui.handle_key(&key(NamedKey::ArrowDown, KeyPhase::Press), &pokedex);
+    let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
+    assert_eq!(ui.pokedex_visual_state().position, 0);
+    assert!(ui.advance(Duration::from_millis(50)));
+    let mid = ui.pokedex_visual_state().position;
+    assert!(mid > 0 && mid < 1000);
+
+    let _ = ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex);
+    for _ in 0..10 {
+        ui.advance(Duration::from_millis(50));
+    }
+    assert_eq!(ui.pokedex_visual_state().position, 2000);
+    assert_eq!(ui.pokedex_section(), game_page_model::PokedexSection::Stats);
     Ok(())
 }
 

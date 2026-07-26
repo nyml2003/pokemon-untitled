@@ -104,6 +104,13 @@ impl UiPixelOffset {
     pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }
+
+    pub(crate) const fn saturating_add(self, other: Self) -> Self {
+        Self {
+            x: self.x.saturating_add(other.x),
+            y: self.y.saturating_add(other.y),
+        }
+    }
 }
 impl UiColor {
     pub const fn new(red: u8, green: u8, blue: u8, alpha: u8) -> Self {
@@ -347,6 +354,8 @@ pub struct UiStyle {
     pub cross_align: CrossAlign,
     pub position: Position,
     pub clip: bool,
+    /// 只改变视觉和命中位置，不改变父容器中的布局占位。
+    pub visual_offset: UiPixelOffset,
 }
 impl Default for UiStyle {
     fn default() -> Self {
@@ -366,6 +375,7 @@ impl Default for UiStyle {
             cross_align: CrossAlign::Start,
             position: Position::Flow,
             clip: false,
+            visual_offset: UiPixelOffset::default(),
         }
     }
 }

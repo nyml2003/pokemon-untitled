@@ -25,7 +25,7 @@ pub use common::{
 pub use page::{
     page_party_pokemon_asset, page_pokedex_icon_asset, page_pokedex_pokemon_asset,
     page_world_player_asset, page_world_tile_asset, project_foundation, project_page_model,
-    project_page_model_with_notice,
+    project_page_model_with_notice, project_page_model_with_visual_state,
 };
 pub use scene::{
     compose_world, project_battle, project_console, project_world, project_world_animated,

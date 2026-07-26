@@ -170,7 +170,14 @@ pub(crate) fn resolve_tree<Action: Clone>(
         action_hits: Vec::new(),
         interaction_targets: Vec::new(),
     };
-    resolve_node(root, root_bounds, viewport, root_bounds, &mut buffers)?;
+    resolve_node(
+        root,
+        root_bounds,
+        viewport,
+        root_bounds,
+        UiPixelOffset::default(),
+        &mut buffers,
+    )?;
     Ok(UiFrame {
         viewport,
         commands: buffers.commands,
@@ -184,9 +191,12 @@ fn resolve_node<Action: Clone>(
     offered: UiRect,
     ratio_basis: UiSize,
     inherited_clip: UiRect,
+    inherited_offset: UiPixelOffset,
     buffers: &mut ResolveBuffers<Action>,
 ) -> Result<(), UiLayoutError> {
-    let bounds = constrain(node, offered, ratio_basis)?;
+    let layout_bounds = constrain(node, offered, ratio_basis)?;
+    let offset = inherited_offset.saturating_add(node.style.visual_offset);
+    let bounds = translate(layout_bounds, offset);
     let clip = if node.style.clip {
         inherited_clip.intersect(bounds).unwrap_or_default()
     } else {
@@ -318,7 +328,16 @@ fn resolve_node<Action: Clone>(
             bounds: hit_bounds,
         });
     }
-    layout_children(node, inset(paint_bounds, node.style.padding), clip, buffers)
+    layout_children(
+        node,
+        inset(
+            inset(layout_bounds, node.style.border.widths),
+            node.style.padding,
+        ),
+        clip,
+        offset,
+        buffers,
+    )
 }
 
 fn dynamic_commands(
@@ -380,6 +399,25 @@ fn inset(bounds: UiRect, insets: Insets) -> UiRect {
         bounds.width.saturating_sub(insets.horizontal()),
         bounds.height.saturating_sub(insets.vertical()),
     )
+}
+
+fn translate(bounds: UiRect, offset: UiPixelOffset) -> UiRect {
+    let left = i64::from(bounds.x) + i64::from(offset.x);
+    let top = i64::from(bounds.y) + i64::from(offset.y);
+    let right = left + i64::from(bounds.width);
+    let bottom = top + i64::from(bounds.height);
+    if right <= 0 || bottom <= 0 {
+        return UiRect::default();
+    }
+    let left = left.max(0).min(i64::from(u32::MAX)) as u32;
+    let top = top.max(0).min(i64::from(u32::MAX)) as u32;
+    let right = right.max(0).min(i64::from(u32::MAX)) as u32;
+    let bottom = bottom.max(0).min(i64::from(u32::MAX)) as u32;
+    if left >= right || top >= bottom {
+        UiRect::default()
+    } else {
+        UiRect::new(left, top, right - left, bottom - top)
+    }
 }
 fn constrain<Action>(
     node: &UiNode<Action>,
@@ -449,6 +487,7 @@ fn layout_children<Action: Clone>(
     node: &UiNode<Action>,
     content: UiRect,
     clip: UiRect,
+    visual_offset: UiPixelOffset,
     buffers: &mut ResolveBuffers<Action>,
 ) -> Result<(), UiLayoutError> {
     let flow: Vec<_> = node
@@ -653,7 +692,7 @@ fn layout_children<Action: Clone>(
                 offered.height.min(main_available.saturating_sub(cursor)),
             )
         };
-        resolve_node(child, offered, content.size(), clip, buffers)?;
+        resolve_node(child, offered, content.size(), clip, visual_offset, buffers)?;
         if !stacked {
             cursor = cursor
                 .saturating_add(main)
@@ -678,7 +717,7 @@ fn layout_children<Action: Clone>(
             content.width.saturating_sub(left),
             content.height.saturating_sub(top),
         );
-        resolve_node(child, offered, content.size(), clip, buffers)?;
+        resolve_node(child, offered, content.size(), clip, visual_offset, buffers)?;
     }
     let _ = used;
     Ok(())

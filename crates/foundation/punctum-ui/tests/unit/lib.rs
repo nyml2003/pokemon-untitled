@@ -77,6 +77,80 @@ fn clipping_and_topmost_hit_are_deterministic() {
 }
 
 #[test]
+fn visual_offset_moves_paint_and_hits_without_reflowing_siblings()
+-> Result<(), Box<dyn std::error::Error>> {
+    let shifted = action_fill(UiStyle {
+        width: Dimension::Px(10),
+        height: Dimension::Px(10),
+        visual_offset: UiPixelOffset::new(5, 0),
+        ..UiStyle::default()
+    })
+    .with_action(TestAction::Back);
+    let tree = UiTree::new(
+        UiNode::auto()
+            .with_style(UiStyle {
+                width: Dimension::Px(30),
+                height: Dimension::Px(12),
+                direction: FlexDirection::Row,
+                gap: 2,
+                clip: true,
+                ..UiStyle::default()
+            })
+            .with_children([
+                shifted,
+                action_fill(UiStyle::fixed(10, 10)).with_action(TestAction::Front),
+            ]),
+    )?;
+    let frame = tree.resolve(UiSize::new(30, 12))?;
+    assert!(matches!(
+        frame.commands()[0],
+        UiDrawCommand::Fill {
+            bounds: UiRect { x: 5, .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        frame.commands()[1],
+        UiDrawCommand::Fill {
+            bounds: UiRect { x: 12, .. },
+            ..
+        }
+    ));
+    assert_eq!(
+        frame.action_hit_at(6, 5).map(|hit| hit.bounds),
+        Some(UiRect::new(5, 0, 10, 10))
+    );
+    Ok(())
+}
+
+#[test]
+fn negative_visual_offset_is_clipped_without_coordinate_underflow()
+-> Result<(), Box<dyn std::error::Error>> {
+    let tree = UiTree::new(
+        UiNode::auto()
+            .with_style(UiStyle {
+                width: Dimension::Px(20),
+                height: Dimension::Px(10),
+                clip: true,
+                ..UiStyle::default()
+            })
+            .with_children([action_fill(UiStyle {
+                width: Dimension::Px(10),
+                height: Dimension::Px(10),
+                visual_offset: UiPixelOffset::new(-4, 0),
+                ..UiStyle::default()
+            })
+            .with_action(TestAction::Front)]),
+    )?;
+    let frame = tree.resolve(UiSize::new(20, 10))?;
+    assert_eq!(
+        frame.action_hit_at(0, 5).map(|hit| hit.bounds),
+        Some(UiRect::new(0, 0, 6, 10))
+    );
+    Ok(())
+}
+
+#[test]
 fn button_states_are_orthogonal_and_ripple_is_transient() -> Result<(), Box<dyn std::error::Error>>
 {
     let button = UiButtonStyle {

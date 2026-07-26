@@ -10,7 +10,7 @@ use battle_session::{Action, BattleInteraction, BattleObservation, MoveSlot, Tea
 use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
 
 pub use console::{ConsoleEntry, ConsoleIntent, ConsoleOutcome, ConsoleState, GameConsole};
-pub use page::{PageFocus, PageUiOutcome, PageUiState};
+pub use page::{PageFocus, PageUiOutcome, PageUiState, PokedexVisualState};
 pub use presentation::{
     PokedexAction, PokedexUiSnapshot, PresentationAction, PresentationSnapshot, PresentationState,
     PresentationUpdate,

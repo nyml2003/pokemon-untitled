@@ -540,6 +540,16 @@ pub enum PokedexDetailView {
     Moves,
 }
 
+/// 图鉴横向深入轨道中的页面层级。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PokedexSection {
+    #[default]
+    Index,
+    Detail,
+    Stats,
+    Moves,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PokedexStatsModel {
     pub hp: u16,

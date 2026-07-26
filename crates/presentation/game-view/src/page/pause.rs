@@ -5,20 +5,25 @@ use super::pause_bag::project_pause_bag;
 use super::pause_trainer_card::project_pause_trainer_card;
 use super::pokedex::project_pause_pokedex;
 use game_page_model::{PageIntent, PausePage, PausePageModel};
+use game_ui::PokedexVisualState;
 use game_ui_kit::{PanelTone, panel as ui_panel, row as ui_row};
 use punctum_ui::{
-    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiStyle, UiTree,
+    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiSize, UiStyle, UiTree,
 };
 
 pub(super) fn project_page_pause(
     pause: &PausePageModel,
     notice: Option<&str>,
+    visual: Option<PokedexVisualState>,
+    viewport: UiSize,
 ) -> Result<UiTree<PageIntent>, UiBuildError> {
     match pause {
         PausePageModel::Menu => project_pause_menu(notice),
         PausePageModel::Party(party) => project_pause_party(party, notice),
         PausePageModel::Bag(bag) => project_pause_bag(bag, notice),
-        PausePageModel::Pokedex(pokedex) => project_pause_pokedex(pokedex, notice),
+        PausePageModel::Pokedex(pokedex) => {
+            project_pause_pokedex(pokedex, notice, visual, viewport)
+        }
         PausePageModel::TrainerCard(card) => project_pause_trainer_card(card, notice),
     }
 }
