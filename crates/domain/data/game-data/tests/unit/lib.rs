@@ -2,6 +2,7 @@ use super::{
     CurrentDataSet, DamageClass, DataLoadError, GEN3_FIRST_DEX, GEN3_LAST_DEX, MoveId, PokedexData,
     PokemonFormId, TypeId,
 };
+use std::error::Error;
 
 #[test]
 fn embedded_pokedex_covers_the_canonical_gen3_fronts() {
@@ -20,6 +21,14 @@ fn embedded_pokedex_covers_the_canonical_gen3_fronts() {
         assert!(!entry.localized_name.is_empty());
         assert!(!entry.types.is_empty());
     }
+}
+
+#[test]
+fn embedded_pokedex_shared_cache_reuses_the_decoded_data() -> Result<(), Box<dyn Error>> {
+    let first = PokedexData::embedded_gen3_shared()?;
+    let second = PokedexData::embedded_gen3_shared()?;
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+    Ok(())
 }
 
 fn fixture() -> Vec<u8> {
@@ -198,4 +207,12 @@ fn embedded_data_matches_the_pinned_snapshot() {
     assert!(data.can_learn(PokemonFormId(1), MoveId(22)));
     assert!(!data.can_learn_at_level(PokemonFormId(1), MoveId(22), 9));
     assert!(data.can_learn_at_level(PokemonFormId(1), MoveId(22), 10));
+}
+
+#[test]
+fn embedded_data_shared_cache_reuses_the_decoded_data() -> Result<(), Box<dyn Error>> {
+    let first = CurrentDataSet::embedded_shared()?;
+    let second = CurrentDataSet::embedded_shared()?;
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+    Ok(())
 }

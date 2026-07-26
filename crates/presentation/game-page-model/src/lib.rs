@@ -882,8 +882,8 @@ fn pokedex_page_model(
     selected_move: usize,
     display_mode: PokedexDisplayMode,
 ) -> Result<PokedexPageModel, PageModelError> {
-    let pokedex = PokedexData::embedded_gen3().map_err(PageModelError::Pokedex)?;
-    let data = CurrentDataSet::embedded().map_err(PageModelError::Data)?;
+    let pokedex = PokedexData::embedded_gen3_shared().map_err(PageModelError::Pokedex)?;
+    let data = CurrentDataSet::embedded_shared().map_err(PageModelError::Data)?;
     let known_species = party_species(content, snapshot)?;
     let entries = pokedex
         .entries()
@@ -931,7 +931,7 @@ fn pokedex_page_model(
         .find(|entry| entry.national_dex == selected.value())
         .ok_or(PageModelError::PokedexEntryMissing(selected))?;
     let moves = if selected_entry.known {
-        pokedex_moves(&data, selected_data_entry.form_id)
+        pokedex_moves(data.as_ref(), selected_data_entry.form_id)
     } else {
         Vec::new()
     };

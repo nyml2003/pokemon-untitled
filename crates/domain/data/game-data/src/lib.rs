@@ -2,7 +2,11 @@
 
 #![forbid(unsafe_code)]
 
-use std::{error::Error, fmt};
+use std::{
+    error::Error,
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -51,10 +55,21 @@ pub struct PokedexData {
 
 impl PokedexData {
     pub fn embedded_gen3() -> Result<Self, PokedexLoadError> {
-        Self::from_bytes(include_bytes!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../../assets/source/data/game/pokedex/gen3.v1.bin"
-        )))
+        Self::embedded_gen3_shared().map(|data| data.as_ref().clone())
+    }
+
+    /// Returns the decoded Gen3 Pokedex from a process-wide immutable cache.
+    pub fn embedded_gen3_shared() -> Result<Arc<Self>, PokedexLoadError> {
+        static CACHE: OnceLock<Result<Arc<PokedexData>, PokedexLoadError>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                Self::from_bytes(include_bytes!(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../../../../assets/source/data/game/pokedex/gen3.v1.bin"
+                )))
+                .map(Arc::new)
+            })
+            .clone()
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, PokedexLoadError> {
@@ -332,9 +347,20 @@ impl CurrentDataSet {
     }
 
     pub fn embedded() -> Result<Self, DataLoadError> {
-        Self::from_json(include_bytes!(
-            "../../../../../assets/source/data/game/current-dataset/v2.json"
-        ))
+        Self::embedded_shared().map(|data| data.as_ref().clone())
+    }
+
+    /// Returns the decoded current dataset from a process-wide immutable cache.
+    pub fn embedded_shared() -> Result<Arc<Self>, DataLoadError> {
+        static CACHE: OnceLock<Result<Arc<CurrentDataSet>, DataLoadError>> = OnceLock::new();
+        CACHE
+            .get_or_init(|| {
+                Self::from_json(include_bytes!(
+                    "../../../../../assets/source/data/game/current-dataset/v2.json"
+                ))
+                .map(Arc::new)
+            })
+            .clone()
     }
 
     pub fn metadata(&self) -> &DataSetMetadata {
