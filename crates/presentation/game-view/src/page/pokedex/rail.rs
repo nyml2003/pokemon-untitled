@@ -5,6 +5,12 @@ use punctum_ui::{CrossAlign, Dimension, Insets, MainAlign, UiContent, UiNode, Ui
 
 const RAIL_WIDTH: u32 = 96;
 const RAIL_ITEM_HEIGHT: u32 = 64;
+const RAIL_SLOT_COUNT: u32 = 5;
+const PAGE_PADDING: u32 = 28;
+const RAIL_HORIZONTAL_PADDING: u32 = 4;
+const RAIL_VERTICAL_PADDING: u32 = 2;
+const RAIL_CONTENT_GAP: u32 = 4;
+const RAIL_NUMBER_WIDTH: u32 = 33;
 pub(super) const SELECTED_ICON_SIZE: u32 = 30;
 
 pub(super) fn project(
@@ -28,11 +34,37 @@ pub(super) fn project(
 }
 
 pub(super) fn icon_origin(viewport: UiSize, relative_index: i64) -> (u32, u32) {
-    let center_y = i64::from(viewport.height.saturating_sub(SELECTED_ICON_SIZE) / 2);
-    let y = center_y
-        .saturating_add(relative_index.saturating_mul(i64::from(RAIL_ITEM_HEIGHT)))
-        .clamp(0, i64::from(u32::MAX)) as u32;
-    (49, y)
+    let content_width = viewport
+        .width
+        .saturating_sub(PAGE_PADDING.saturating_mul(2));
+    let rail_width = content_width.min(RAIL_WIDTH);
+    let slot_content_width = rail_width.saturating_sub(RAIL_HORIZONTAL_PADDING.saturating_mul(2));
+    let row_width = SELECTED_ICON_SIZE
+        .saturating_add(RAIL_CONTENT_GAP)
+        .saturating_add(RAIL_NUMBER_WIDTH);
+    let x = PAGE_PADDING
+        .saturating_add(RAIL_HORIZONTAL_PADDING)
+        .saturating_add(slot_content_width.saturating_sub(row_width) / 2);
+
+    let available_height = viewport
+        .height
+        .saturating_sub(PAGE_PADDING.saturating_mul(2));
+    let rail_height = RAIL_ITEM_HEIGHT.saturating_mul(RAIL_SLOT_COUNT);
+    let rail_top = PAGE_PADDING.saturating_add(available_height.saturating_sub(rail_height) / 2);
+    let slot = relative_index
+        .saturating_add(2)
+        .clamp(0, i64::from(RAIL_SLOT_COUNT - 1));
+    let slot = u32::try_from(slot).map_or(0, |slot| slot);
+    let slot_offset = slot.saturating_mul(RAIL_ITEM_HEIGHT);
+    let slot_height = available_height
+        .saturating_sub(slot_offset)
+        .min(RAIL_ITEM_HEIGHT);
+    let slot_content_height = slot_height.saturating_sub(RAIL_VERTICAL_PADDING.saturating_mul(2));
+    let y = rail_top
+        .saturating_add(slot_offset)
+        .saturating_add(RAIL_VERTICAL_PADDING)
+        .saturating_add(slot_content_height.saturating_sub(SELECTED_ICON_SIZE) / 2);
+    (x, y)
 }
 
 fn rail_slot(

@@ -118,13 +118,13 @@ fn shared_transition_icon(
     progress: i64,
     viewport: UiSize,
 ) -> UiNode<PageIntent> {
-    let (start_size, start_center_y) = browse::transition_icon_geometry(index, wheel_position);
+    let (start_size, start_center_x, start_center_y) =
+        browse::transition_icon_geometry(index, wheel_position, viewport);
     let relative_index = i64::try_from(index)
         .map_or(0, |index| index)
         .saturating_sub(i64::try_from(selected).map_or(0, |selected| selected));
     let icon_size = interpolate_u32(start_size, rail::SELECTED_ICON_SIZE, progress);
     let (rail_x, rail_y) = rail::icon_origin(viewport, relative_index);
-    let start_center_x = viewport.width / 2;
     let end_center_x = rail_x.saturating_add(rail::SELECTED_ICON_SIZE / 2);
     let center_x = interpolate_u32(start_center_x, end_center_x, progress);
     let end_center_y = rail_y.saturating_add(rail::SELECTED_ICON_SIZE / 2);

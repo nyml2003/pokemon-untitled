@@ -379,6 +379,95 @@ fn pokedex_transition_animates_every_visible_wheel_icon() -> Result<(), Box<dyn 
     Ok(())
 }
 
+#[test]
+fn pokedex_transition_uses_the_current_viewport_for_both_endpoints()
+-> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let mut model = demo.model()?;
+    match &mut model {
+        PageModel::Pause(PausePageModel::Pokedex(page)) => {
+            page.selected = page
+                .entries
+                .get(1)
+                .cloned()
+                .ok_or("pokedex demo needs a second entry")?;
+        }
+        _ => return Err("pokedex demo did not produce a pokedex page".into()),
+    }
+
+    for viewport in [
+        punctum_ui::UiSize::new(1280, 960),
+        punctum_ui::UiSize::new(320, 720),
+    ] {
+        let browse = visible_pokedex_icon_bounds(
+            &project_page_model_with_visual_state(
+                &model,
+                None,
+                Some(PokedexVisualState {
+                    section: PokedexSection::Browse,
+                    section_position: 0,
+                    wheel_position: 1000,
+                }),
+                viewport,
+            )?
+            .resolve(viewport)?,
+            "pokedex-icon/2",
+        )?;
+        let entering = visible_pokedex_icon_bounds(
+            &project_page_model_with_visual_state(
+                &model,
+                None,
+                Some(PokedexVisualState {
+                    section: PokedexSection::Profile,
+                    section_position: 1,
+                    wheel_position: 1000,
+                }),
+                viewport,
+            )?
+            .resolve(viewport)?,
+            "pokedex-icon/2",
+        )?;
+        assert!(browse.x.abs_diff(entering.x) <= 2);
+        assert!(browse.y.abs_diff(entering.y) <= 2);
+
+        let profile = visible_pokedex_icon_bounds(
+            &project_page_model_with_visual_state(
+                &model,
+                None,
+                Some(PokedexVisualState {
+                    section: PokedexSection::Profile,
+                    section_position: 1000,
+                    wheel_position: 1000,
+                }),
+                viewport,
+            )?
+            .resolve(viewport)?,
+            "pokedex-icon/2",
+        )?;
+        let arriving = visible_pokedex_icon_bounds(
+            &project_page_model_with_visual_state(
+                &model,
+                None,
+                Some(PokedexVisualState {
+                    section: PokedexSection::Profile,
+                    section_position: 999,
+                    wheel_position: 1000,
+                }),
+                viewport,
+            )?
+            .resolve(viewport)?,
+            "pokedex-icon/2",
+        )?;
+        assert!(profile.x.abs_diff(arriving.x) <= 2);
+        assert!(profile.y.abs_diff(arriving.y) <= 2);
+    }
+    Ok(())
+}
+
 fn expected_page_action<'a>(
     model: &PageModel,
     mut actions: impl Iterator<Item = &'a PageIntent>,
@@ -424,6 +513,28 @@ fn image_bounds(
             _ => None,
         })
         .ok_or_else(|| format!("pokedex icon {asset} is missing").into())
+}
+
+fn visible_pokedex_icon_bounds(
+    frame: &punctum_ui::UiFrame<PageIntent>,
+    asset: &str,
+) -> Result<punctum_ui::UiRect, Box<dyn std::error::Error>> {
+    let viewport = frame.viewport();
+    frame
+        .commands()
+        .iter()
+        .find_map(|command| match command {
+            punctum_ui::UiDrawCommand::Image {
+                bounds, content, ..
+            } if content.as_str() == asset
+                && bounds.x < viewport.width
+                && bounds.y < viewport.height =>
+            {
+                Some(*bounds)
+            }
+            _ => None,
+        })
+        .ok_or_else(|| format!("visible pokedex icon {asset} is missing").into())
 }
 
 #[test]

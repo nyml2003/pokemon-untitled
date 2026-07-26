@@ -2,7 +2,7 @@ use super::*;
 use game_page_model::PokedexEntryModel;
 use game_ui_kit::column as ui_column;
 use punctum_ui::{
-    CrossAlign, Dimension, MainAlign, Position, UiBuildError, UiKey, UiNode, UiStyle,
+    CrossAlign, Dimension, MainAlign, Position, UiBuildError, UiKey, UiNode, UiSize, UiStyle,
 };
 
 const WHEEL_STAGE_WIDTH: u32 = 560;
@@ -67,11 +67,25 @@ pub(super) fn visible_entry_indices(
     start..end
 }
 
-pub(super) fn transition_icon_geometry(index: usize, wheel_position: i32) -> (u32, u32) {
+pub(super) fn transition_icon_geometry(
+    index: usize,
+    wheel_position: i32,
+    viewport: UiSize,
+) -> (u32, u32, u32) {
     let distance = wheel_distance(index, wheel_position);
     let icon_size = icon_size(distance);
-    let center_y = icon_top(distance, icon_size).saturating_add(icon_size / 2);
-    (icon_size, center_y)
+    let (stage_x, stage_y) = stage_origin(viewport);
+    let center_x = stage_x.saturating_add(WHEEL_STAGE_WIDTH / 2);
+    let center_y =
+        stage_y.saturating_add(icon_top(distance, icon_size).saturating_add(icon_size / 2));
+    (icon_size, center_x, center_y)
+}
+
+fn stage_origin(viewport: UiSize) -> (u32, u32) {
+    (
+        viewport.width.saturating_sub(WHEEL_STAGE_WIDTH) / 2,
+        viewport.height.saturating_sub(WHEEL_STAGE_HEIGHT) / 2,
+    )
 }
 
 fn wheel_entry(
