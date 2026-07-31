@@ -7,6 +7,7 @@ mod control;
 mod page;
 mod pokedex_filter;
 mod presentation;
+mod runtime;
 
 use battle_session::{Action, BattleInteraction, BattleObservation, MoveSlot, TeamSlot};
 use punctum_input::{KeyEvent, KeyPhase};
@@ -25,6 +26,7 @@ pub use presentation::{
     PokedexAction, PokedexUiSnapshot, PresentationAction, PresentationSnapshot, PresentationState,
     PresentationUpdate,
 };
+pub use runtime::{GameRuntime, GameRuntimeUpdate};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum WorldAnimation {

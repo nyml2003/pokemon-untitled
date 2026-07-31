@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": "allow",
+  "model": "deepseek/deepseek-v4-flash",
+  "lsp": {
+  },
+  "watcher": {
+    "ignore": ["target/**", ".venv/**", ".git/**"]
+  }
+}

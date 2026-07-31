@@ -281,6 +281,15 @@ pub fn assemble_assets(
     sources: Vec<AssetBytes>,
     map_images: Vec<(AssetKey, DecodedImage)>,
 ) -> Result<NativeAssets, GameAssetError> {
+    assemble_assets_with_extra(sources, map_images, Vec::new())
+}
+
+/// 组合场景资源与由运行时页面补充的语义资源。
+pub fn assemble_assets_with_extra(
+    sources: Vec<AssetBytes>,
+    map_images: Vec<(AssetKey, DecodedImage)>,
+    extra_images: Vec<(AssetKey, DecodedImage)>,
+) -> Result<NativeAssets, GameAssetError> {
     let mut images = vec![(
         AssetKey::from_resource_template("solid/white".into()),
         DecodedImage::solid(Rgba8::new(255, 255, 255, 255)),
@@ -304,6 +313,7 @@ pub fn assemble_assets(
         images.push((source.request.resource_key, image));
     }
     images.extend(map_images);
+    images.extend(extra_images);
     NativeAssets::new(images).map_err(|error| GameAssetError::Assets(error.to_string()))
 }
 

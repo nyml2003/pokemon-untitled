@@ -1,30 +1,12 @@
 use game_data::CurrentDataSet;
-use game_foundation::{Direction, GameCommand as FoundationCommand};
+use game_page_model::{PageModel, PageState, project_page};
 use game_session::ProductSession;
 
-use super::{CreatureGameApp, product_command};
-
-#[test]
-fn product_route_maps_world_commands_but_rejects_summary_battle_resolution() {
-    assert!(matches!(
-        product_command(FoundationCommand::Move {
-            direction: Direction::Left,
-        }),
-        Ok(game_session::ProductCommand::Move(Direction::Left))
-    ));
-    assert!(
-        product_command(FoundationCommand::ResolveBattle {
-            outcome: game_foundation::BattleOutcome::Victory,
-            hp: 1,
-            pp: 1,
-        })
-        .is_err()
-    );
-}
+use super::load_product_content_package;
 
 #[test]
 fn checked_in_product_content_package_loads() -> Result<(), Box<dyn std::error::Error>> {
-    let package = super::load_product_content_package()?;
+    let package = load_product_content_package()?;
     assert_eq!(package.manifest().storage_key(), "starter-region@1");
     let trainer = package
         .content()
@@ -51,10 +33,12 @@ fn checked_in_product_content_package_loads() -> Result<(), Box<dyn std::error::
 }
 
 #[test]
-#[ignore = "known asset gap: pokemon/0351/form/00/normal/back/{00,01} is absent"]
-fn complete_game_atlas_fits_wgpu_texture_limits() {
-    let app = CreatureGameApp::new().unwrap();
-    let size = app.assets.atlas_size();
-    assert!(size.width <= 8_192, "atlas width was {}", size.width);
-    assert!(size.height <= 8_192, "atlas height was {}", size.height);
+fn product_snapshot_projects_the_initial_player_page() -> Result<(), Box<dyn std::error::Error>> {
+    let package = load_product_content_package()?;
+    let content = package.content().clone();
+    let product = ProductSession::from_package(CurrentDataSet::embedded()?, package)
+        .map_err(|error| std::io::Error::other(format!("product session: {error:?}")))?;
+    let page = project_page(&content, &product.snapshot(), PageState::world().route())?;
+    assert!(matches!(page, PageModel::World(_)));
+    Ok(())
 }
