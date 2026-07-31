@@ -27,7 +27,8 @@ use game_session::{
     GameCommand, GameError, GameEvents, GameScene, GameSession, ProductCommand, ProductSession,
 };
 use game_ui::{
-    GameConsole, PokedexAction, PresentationAction, PresentationState, PresentationUpdate,
+    GameConsole, GameControl, PokedexAction, PresentationAction, PresentationState,
+    PresentationUpdate,
 };
 use game_view::{FoundationPage, FoundationPageAction, project_foundation};
 use map::load_map;
@@ -35,7 +36,7 @@ use map_project::MapProject;
 use map_render::AtomicTileCatalog;
 use narrative::load_narrative_scripts;
 use punctum_gpu::{PixelSize, Rgba8};
-use punctum_input::{KeyPhase, LogicalKey, NamedKey};
+use punctum_input::KeyPhase;
 use punctum_ui::{UiFrame, UiInteraction, UiInteractionTarget, UiSize};
 use sprites::load_game_assets;
 use winit::{
@@ -446,8 +447,10 @@ impl CreatureGameApp {
             event.state,
             event.repeat,
         ));
-        if key.phase == KeyPhase::Press
-            && matches!(&key.logical, LogicalKey::Character(value) if value.eq_ignore_ascii_case("f"))
+        let control = GameControl::from_key_event(&key);
+        if self.foundation_page.is_none()
+            && key.phase == KeyPhase::Press
+            && control == Some(GameControl::Start)
         {
             self.foundation_page = Some(FoundationPage::Journey);
             self.request_redraw();
@@ -556,33 +559,27 @@ impl CreatureGameApp {
         if key.phase != KeyPhase::Press {
             return;
         }
-        let action = match &key.logical {
-            LogicalKey::Named(NamedKey::Escape) => Some(FoundationPageAction::Close),
-            LogicalKey::Named(NamedKey::ArrowUp) => {
+        let action = match GameControl::from_key_event(key) {
+            Some(GameControl::B) => Some(FoundationPageAction::Close),
+            Some(GameControl::Up) => {
                 Some(FoundationPageAction::Move(game_foundation::Direction::Up))
             }
-            LogicalKey::Named(NamedKey::ArrowDown) => {
+            Some(GameControl::Down) => {
                 Some(FoundationPageAction::Move(game_foundation::Direction::Down))
             }
-            LogicalKey::Named(NamedKey::ArrowLeft) => {
+            Some(GameControl::Left) => {
                 Some(FoundationPageAction::Move(game_foundation::Direction::Left))
             }
-            LogicalKey::Named(NamedKey::ArrowRight) => Some(FoundationPageAction::Move(
+            Some(GameControl::Right) => Some(FoundationPageAction::Move(
                 game_foundation::Direction::Right,
             )),
-            LogicalKey::Named(NamedKey::Enter) => Some(FoundationPageAction::Interact),
-            LogicalKey::Character(value) if value.eq_ignore_ascii_case("e") => {
-                Some(FoundationPageAction::Encounter)
-            }
-            LogicalKey::Character(value) if value.eq_ignore_ascii_case("r") => {
-                Some(FoundationPageAction::ResolveBattle)
-            }
-            LogicalKey::Character(value) if value.eq_ignore_ascii_case("b") => {
-                Some(FoundationPageAction::BuyPotion)
-            }
-            LogicalKey::Character(value) if value.eq_ignore_ascii_case("s") => {
-                Some(FoundationPageAction::Save)
-            }
+            Some(GameControl::A) => Some(FoundationPageAction::Interact),
+            Some(GameControl::L) => self.foundation_page.map(|page| {
+                FoundationPageAction::SelectPage(adjacent_foundation_page(page, false))
+            }),
+            Some(GameControl::R) => self
+                .foundation_page
+                .map(|page| FoundationPageAction::SelectPage(adjacent_foundation_page(page, true))),
             _ => None,
         };
         if let Some(action) = action {
@@ -593,7 +590,7 @@ impl CreatureGameApp {
     fn dispatch_foundation_action(&mut self, action: FoundationPageAction) {
         match action {
             FoundationPageAction::SelectPage(page) => self.foundation_page = Some(page),
-            FoundationPageAction::Close => self.foundation_page = Some(FoundationPage::Journey),
+            FoundationPageAction::Close => self.foundation_page = None,
             FoundationPageAction::Move(direction) => {
                 self.route_foundation_source(&format!(
                     "/game/world move direction={}",
@@ -1004,6 +1001,17 @@ const fn foundation_direction(direction: game_foundation::Direction) -> &'static
         game_foundation::Direction::Down => "down",
         game_foundation::Direction::Left => "left",
         game_foundation::Direction::Right => "right",
+    }
+}
+
+const fn adjacent_foundation_page(page: FoundationPage, next: bool) -> FoundationPage {
+    match (page, next) {
+        (FoundationPage::Journey, false) => FoundationPage::Journey,
+        (FoundationPage::Journey, true) => FoundationPage::Bag,
+        (FoundationPage::Bag, false) => FoundationPage::Journey,
+        (FoundationPage::Bag, true) => FoundationPage::TrainerCard,
+        (FoundationPage::TrainerCard, false) => FoundationPage::Bag,
+        (FoundationPage::TrainerCard, true) => FoundationPage::TrainerCard,
     }
 }
 

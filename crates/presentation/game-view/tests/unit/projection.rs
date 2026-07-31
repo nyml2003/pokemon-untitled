@@ -19,7 +19,7 @@ use world_application::{CharacterAppearanceId, Direction, Position, WorldApplica
 
 use game_ui::{
     BattleMenuPage, BattleUiOutcome, BattleUiState, CommandConsoleView, PokedexAction,
-    PokedexDetailMode, PokedexScene, PokedexVisualState, WorldAnimation,
+    PokedexDetailMode, PokedexFilterOverlay, PokedexScene, PokedexVisualState, WorldAnimation,
 };
 
 use super::{
@@ -338,6 +338,71 @@ fn pokedex_projects_browse_and_both_detail_modes_without_duplicate_keys()
             }
         }
     }
+    Ok(())
+}
+
+#[test]
+fn pokedex_filter_form_projects_visible_controls() -> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let model = demo.model()?;
+    let viewport = punctum_ui::UiSize::new(960, 720);
+    let frame = project_page_model_with_visual_state(
+        &model,
+        None,
+        Some(PokedexVisualState {
+            filter_overlay: PokedexFilterOverlay::Pokedex(Default::default()),
+            ..PokedexVisualState::default()
+        }),
+        viewport,
+    )?
+    .resolve(viewport)?;
+    assert!(frame.commands().iter().any(|command| matches!(
+        command,
+        punctum_ui::UiDrawCommand::Text { bounds, content, clip, .. }
+            if content == "属性" && !bounds.is_empty() && !clip.is_empty()
+    )));
+    assert!(frame.action_hits().iter().any(|hit| {
+        hit.key
+            .as_ref()
+            .is_some_and(|key| key.as_str() == "page-pokedex-filter-reset")
+            && !hit.bounds.is_empty()
+    }));
+    Ok(())
+}
+
+#[test]
+fn pokedex_filter_entry_uses_a_query_symbol_without_a_bare_count()
+-> Result<(), Box<dyn std::error::Error>> {
+    let demo = page_demos()
+        .iter()
+        .copied()
+        .find(|demo| demo.id().as_str() == "pokedex-seen-and-unseen")
+        .ok_or("pokedex demo is missing")?;
+    let model = demo.model()?;
+    let entry_count = match &model {
+        PageModel::Pause(PausePageModel::Pokedex(page)) => page.entries.len().to_string(),
+        _ => return Err("pokedex demo did not produce a pokedex page".into()),
+    };
+    let viewport = punctum_ui::UiSize::new(960, 720);
+    let frame = project_page_model_with_visual_state(
+        &model,
+        None,
+        Some(PokedexVisualState::default()),
+        viewport,
+    )?
+    .resolve(viewport)?;
+    assert!(frame.commands().iter().any(|command| matches!(
+        command,
+        punctum_ui::UiDrawCommand::Text { content, .. } if content == "⌕"
+    )));
+    assert!(!frame.commands().iter().any(|command| matches!(
+        command,
+        punctum_ui::UiDrawCommand::Text { content, .. } if content == &entry_count
+    )));
     Ok(())
 }
 

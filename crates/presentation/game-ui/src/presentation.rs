@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use game_session::{GameCommand, GameEvent, GameEvents, GameScene, GameSnapshot};
 use punctum_gpu::{PixelOffset, PixelSize};
-use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey, PhysicalKeyCode, TextEvent};
+use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey, TextEvent};
 use world_application::{Direction, WorldEvent};
 
 use crate::{
     BattleUiOutcome, BattleUiState, CommandConsoleView, ConsoleEntry, ConsoleIntent,
-    ConsoleOutcome, ConsoleState, WorldAnimation,
+    ConsoleOutcome, ConsoleState, GameControl, WorldAnimation,
 };
 
 const BATTLE_PLAYBACK_INTERVAL: Duration = Duration::from_millis(600);
@@ -191,28 +191,13 @@ impl PresentationState {
         text: Option<&TextEvent>,
         running: bool,
         game: &GameSnapshot,
-        console_entries: Vec<ConsoleEntry>,
+        _console_entries: Vec<ConsoleEntry>,
     ) -> PresentationUpdate {
         self.running = running;
         self.sync_scene(game);
-        if !self.console.preedit.is_empty() && !is_console_toggle(key) {
+        let control = GameControl::from_key_event(key);
+        if !self.console.preedit.is_empty() {
             return PresentationUpdate::default();
-        }
-        if is_console_toggle(key) {
-            if key.phase != KeyPhase::Press {
-                return PresentationUpdate::default();
-            }
-            let was_open = self.console.is_open();
-            let outcome = if was_open {
-                self.console.handle(ConsoleIntent::Close)
-            } else {
-                self.console.handle(ConsoleIntent::Open(console_entries))
-            };
-            return PresentationUpdate {
-                redraw: outcome != ConsoleOutcome::Ignored,
-                ime_changed: was_open != self.console.is_open(),
-                ..PresentationUpdate::default()
-            };
         }
         if self.console.is_open() {
             return self.handle_console_key(key, text);
@@ -225,47 +210,23 @@ impl PresentationState {
                 return PresentationUpdate::default();
             };
             let selected_index = pokedex.selected_index;
-            let action = match key.logical {
-                LogicalKey::Named(NamedKey::Escape) => {
+            let action = match control {
+                Some(GameControl::B) => {
                     self.pokedex = None;
                     return PresentationUpdate::redraw();
                 }
-                LogicalKey::Character(ref value) if value.eq_ignore_ascii_case("p") => {
-                    self.pokedex = None;
-                    return PresentationUpdate::redraw();
-                }
-                LogicalKey::Named(NamedKey::ArrowUp) | LogicalKey::Named(NamedKey::ArrowLeft) => {
-                    PokedexAction::SelectEntry {
-                        index: (selected_index + POKEDEX_ENTRY_COUNT - 1) % POKEDEX_ENTRY_COUNT,
-                    }
-                }
-                LogicalKey::Named(NamedKey::ArrowDown)
-                | LogicalKey::Named(NamedKey::ArrowRight) => PokedexAction::SelectEntry {
+                Some(GameControl::Up | GameControl::Left) => PokedexAction::SelectEntry {
+                    index: (selected_index + POKEDEX_ENTRY_COUNT - 1) % POKEDEX_ENTRY_COUNT,
+                },
+                Some(GameControl::Down | GameControl::Right) => PokedexAction::SelectEntry {
                     index: (selected_index + 1) % POKEDEX_ENTRY_COUNT,
-                },
-                LogicalKey::Named(NamedKey::PageUp) => PokedexAction::SelectEntry {
-                    index: (selected_index + POKEDEX_ENTRY_COUNT - 10) % POKEDEX_ENTRY_COUNT,
-                },
-                LogicalKey::Named(NamedKey::PageDown) => PokedexAction::SelectEntry {
-                    index: (selected_index + 10) % POKEDEX_ENTRY_COUNT,
-                },
-                LogicalKey::Named(NamedKey::Home) => PokedexAction::SelectEntry { index: 0 },
-                LogicalKey::Named(NamedKey::End) => PokedexAction::SelectEntry {
-                    index: POKEDEX_ENTRY_COUNT - 1,
                 },
                 _ => return PresentationUpdate::default(),
             };
             return self.handle_pokedex_action_mut(action);
         }
         if game.scene() == GameScene::World
-            && key.phase == KeyPhase::Press
-            && matches!(&key.logical, LogicalKey::Character(value) if value.eq_ignore_ascii_case("p"))
-        {
-            self.pokedex = Some(PokedexUiSnapshot { selected_index: 0 });
-            return PresentationUpdate::redraw();
-        }
-        if game.scene() == GameScene::World
-            && let Some(direction) = direction_for_key(key)
+            && let Some(direction) = direction_for_control(control)
         {
             return self.handle_world_direction(direction, key.phase);
         }
@@ -275,7 +236,8 @@ impl PresentationState {
         if matches!(
             battle.session().interaction(),
             battle_session::BattleInteraction::Finished(_)
-        ) && is_enter_press(key)
+        ) && control == Some(GameControl::A)
+            && key.phase == KeyPhase::Press
         {
             return PresentationUpdate::action(PresentationAction::Submit(
                 GameCommand::LeaveFinishedBattle,
@@ -625,20 +587,14 @@ fn advance_periodic(timer: &mut Option<Duration>, elapsed: Duration, interval: D
     true
 }
 
-fn direction_for_key(key: &KeyEvent) -> Option<Direction> {
-    match key.logical {
-        LogicalKey::Named(NamedKey::ArrowUp) => Some(Direction::Up),
-        LogicalKey::Named(NamedKey::ArrowDown) => Some(Direction::Down),
-        LogicalKey::Named(NamedKey::ArrowLeft) => Some(Direction::Left),
-        LogicalKey::Named(NamedKey::ArrowRight) => Some(Direction::Right),
+fn direction_for_control(control: Option<GameControl>) -> Option<Direction> {
+    match control {
+        Some(GameControl::Up) => Some(Direction::Up),
+        Some(GameControl::Down) => Some(Direction::Down),
+        Some(GameControl::Left) => Some(Direction::Left),
+        Some(GameControl::Right) => Some(Direction::Right),
         _ => None,
     }
-}
-
-fn is_console_toggle(key: &KeyEvent) -> bool {
-    key.modifiers.control
-        && (key.physical == Some(PhysicalKeyCode::KeyP)
-            || matches!(&key.logical, LogicalKey::Character(character) if character.eq_ignore_ascii_case("p")))
 }
 
 fn console_intent_for_key(key: &KeyEvent) -> Option<ConsoleIntent> {
@@ -657,10 +613,6 @@ fn console_intent_for_key(key: &KeyEvent) -> Option<ConsoleIntent> {
         }
         _ => None,
     }
-}
-
-fn is_enter_press(key: &KeyEvent) -> bool {
-    key.phase == KeyPhase::Press && key.logical == LogicalKey::Named(NamedKey::Enter)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

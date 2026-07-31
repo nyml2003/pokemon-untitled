@@ -18,8 +18,17 @@ use world_application::Direction;
 use super::*;
 
 fn key(name: NamedKey, phase: KeyPhase) -> KeyEvent {
+    let physical = match name {
+        NamedKey::ArrowUp => Some(PhysicalKeyCode::KeyW),
+        NamedKey::ArrowDown => Some(PhysicalKeyCode::KeyS),
+        NamedKey::ArrowLeft => Some(PhysicalKeyCode::KeyA),
+        NamedKey::ArrowRight => Some(PhysicalKeyCode::KeyD),
+        NamedKey::Enter => Some(PhysicalKeyCode::KeyJ),
+        NamedKey::Escape => Some(PhysicalKeyCode::KeyK),
+        _ => Some(PhysicalKeyCode::Unidentified),
+    };
     KeyEvent {
-        physical: None,
+        physical,
         logical: LogicalKey::Named(name),
         modifiers: Modifiers::default(),
         phase,
@@ -32,18 +41,6 @@ fn physical_key(code: PhysicalKeyCode, name: &str, phase: KeyPhase) -> KeyEvent 
         logical: LogicalKey::Character(name.to_owned()),
         modifiers: Modifiers::default(),
         phase,
-    }
-}
-
-fn control_key(code: PhysicalKeyCode, name: &str) -> KeyEvent {
-    KeyEvent {
-        physical: Some(code),
-        logical: LogicalKey::Character(String::from(name)),
-        modifiers: Modifiers {
-            control: true,
-            ..Modifiers::default()
-        },
-        phase: KeyPhase::Press,
     }
 }
 
@@ -194,15 +191,31 @@ fn move_filter_distinguishes_guaranteed_hit_and_priority() -> Result<(), Box<dyn
 }
 
 #[test]
-fn pokedex_form_uses_ctrl_f_text_events_and_debounced_ranges()
+fn pokedex_form_uses_select_text_events_and_debounced_ranges()
 -> Result<(), Box<dyn std::error::Error>> {
     let pokedex = demo_named("pokedex-seen-and-unseen")
         .ok_or("pokedex demo is missing")?
         .model()?;
     let mut ui = PageUiState::default();
     assert_eq!(
-        ui.handle_input(&control_key(PhysicalKeyCode::KeyF, "f"), None, &pokedex),
+        ui.handle_input(
+            &physical_key(PhysicalKeyCode::KeyL, "l", KeyPhase::Press),
+            None,
+            &pokedex
+        ),
         PageUiOutcome::Updated
+    );
+    assert!(matches!(
+        ui.pokedex_visual_state().filter_overlay,
+        PokedexFilterOverlay::Pokedex(_)
+    ));
+    assert_eq!(
+        ui.handle_input(
+            &physical_key(PhysicalKeyCode::KeyL, "l", KeyPhase::Release),
+            None,
+            &pokedex
+        ),
+        PageUiOutcome::Ignored
     );
     assert!(matches!(
         ui.pokedex_visual_state().filter_overlay,
@@ -211,7 +224,11 @@ fn pokedex_form_uses_ctrl_f_text_events_and_debounced_ranges()
 
     for _ in 0..3 {
         assert_eq!(
-            ui.handle_input(&key(NamedKey::Tab, KeyPhase::Press), None, &pokedex),
+            ui.handle_input(
+                &physical_key(PhysicalKeyCode::KeyE, "e", KeyPhase::Press),
+                None,
+                &pokedex
+            ),
             PageUiOutcome::Updated
         );
     }
@@ -272,12 +289,20 @@ fn pokedex_ability_select_filters_text_events_and_commits_keyboard_choice()
         .model()?;
     let mut ui = PageUiState::default();
     assert_eq!(
-        ui.handle_input(&control_key(PhysicalKeyCode::KeyF, "f"), None, &pokedex),
+        ui.handle_input(
+            &physical_key(PhysicalKeyCode::KeyL, "l", KeyPhase::Press),
+            None,
+            &pokedex
+        ),
         PageUiOutcome::Updated
     );
     for _ in 0..7 {
         assert_eq!(
-            ui.handle_input(&key(NamedKey::Tab, KeyPhase::Press), None, &pokedex),
+            ui.handle_input(
+                &physical_key(PhysicalKeyCode::KeyE, "e", KeyPhase::Press),
+                None,
+                &pokedex
+            ),
             PageUiOutcome::Updated
         );
     }
@@ -324,14 +349,12 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         .model()?;
     let mut ui = PageUiState::default();
     assert_eq!(
-        ui.handle_key(&key(NamedKey::Tab, KeyPhase::Press), &world),
+        ui.handle_key(
+            &physical_key(PhysicalKeyCode::KeyR, "r", KeyPhase::Press),
+            &world
+        ),
         PageUiOutcome::Intent(PageIntent::OpenPause)
     );
-    assert_eq!(
-        ui.handle_key(&key(NamedKey::Function(5), KeyPhase::Press), &world),
-        PageUiOutcome::Intent(PageIntent::OpenSaveConfirm)
-    );
-
     let pause = demo_named("world-pause-menu")
         .ok_or("pause demo is missing")?
         .model()?;
@@ -342,7 +365,7 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
     assert_eq!(ui.focus(), PageFocus::PauseMenu(1));
     assert_eq!(
         ui.handle_key(
-            &physical_key(PhysicalKeyCode::KeyZ, "z", KeyPhase::Press),
+            &physical_key(PhysicalKeyCode::KeyJ, "j", KeyPhase::Press),
             &pause,
         ),
         PageUiOutcome::Intent(PageIntent::SelectPausePage(game_page_model::PausePage::Bag))
@@ -363,7 +386,7 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
     );
     assert_eq!(
         ui.handle_key(
-            &physical_key(PhysicalKeyCode::KeyX, "x", KeyPhase::Press),
+            &physical_key(PhysicalKeyCode::KeyK, "k", KeyPhase::Press),
             &bag
         ),
         PageUiOutcome::Intent(PageIntent::Close)
@@ -393,15 +416,6 @@ fn page_input_maps_keyboard_semantics_without_mouse_dependencies()
         PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(number)) if number.value() == 12
     ));
     assert!(matches!(pokedex_ui.focus(), PageFocus::PokedexBrowse(_)));
-    assert!(matches!(
-        pokedex_ui.handle_key(&key(NamedKey::End, KeyPhase::Press), &pokedex),
-        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
-    ));
-    assert!(matches!(pokedex_ui.focus(), PageFocus::PokedexBrowse(_)));
-    assert!(matches!(
-        pokedex_ui.handle_key(&key(NamedKey::Home, KeyPhase::Press), &pokedex),
-        PageUiOutcome::Intent(PageIntent::SelectPokedexEntry(_))
-    ));
     assert_eq!(
         pokedex_ui.handle_key(&key(NamedKey::ArrowRight, KeyPhase::Press), &pokedex),
         PageUiOutcome::Updated

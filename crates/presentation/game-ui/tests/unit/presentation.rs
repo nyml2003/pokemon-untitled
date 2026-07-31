@@ -4,56 +4,40 @@ use battle_session::Action;
 use game_data::CurrentDataSet;
 use game_session::{GameCommand, GameSession};
 use punctum_gpu::{PixelOffset, PixelSize};
-use punctum_input::{
-    KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode, TextEvent,
-};
+use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
 use world_application::{Direction, Position, WorldEvent};
 
 use super::*;
 
 fn key(name: NamedKey) -> KeyEvent {
+    let physical = match name {
+        NamedKey::ArrowUp => PhysicalKeyCode::KeyW,
+        NamedKey::ArrowDown => PhysicalKeyCode::KeyS,
+        NamedKey::ArrowLeft => PhysicalKeyCode::KeyA,
+        NamedKey::ArrowRight => PhysicalKeyCode::KeyD,
+        NamedKey::Enter => PhysicalKeyCode::KeyJ,
+        NamedKey::Escape => PhysicalKeyCode::KeyK,
+        _ => PhysicalKeyCode::Unidentified,
+    };
     KeyEvent {
-        physical: Some(PhysicalKeyCode::Unidentified),
+        physical: Some(physical),
         logical: LogicalKey::Named(name),
         modifiers: Modifiers::default(),
         phase: KeyPhase::Press,
     }
 }
 
-fn character(value: &str) -> KeyEvent {
-    KeyEvent {
-        physical: Some(PhysicalKeyCode::KeyP),
-        logical: LogicalKey::Character(value.into()),
-        modifiers: Modifiers::default(),
-        phase: KeyPhase::Press,
-    }
-}
-
 #[test]
-fn pokedex_opens_in_world_and_browses_a_bounded_catalog() {
+fn pokedex_browses_a_bounded_catalog_with_gba_controls() {
     let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 13).unwrap();
     let snapshot = game.snapshot();
-    let (mut state, update) = PresentationState::default().handle_key(
-        &character("p"),
-        None,
-        false,
-        &snapshot,
-        Vec::new(),
-    );
-    assert!(update.redraw);
+    let mut state = PresentationState {
+        pokedex: Some(PokedexUiSnapshot { selected_index: 0 }),
+        ..PresentationState::default()
+    };
     let (next, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
     state = next;
     assert_eq!(view.pokedex.unwrap().selected_index, 0);
-
-    let (next, update) = state.handle_key(&key(NamedKey::End), None, false, &snapshot, Vec::new());
-    state = next;
-    assert!(update.redraw);
-    let (next, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
-    state = next;
-    assert_eq!(
-        view.pokedex.unwrap().selected_index,
-        POKEDEX_ENTRY_COUNT - 1
-    );
 
     let (next, _) = state.handle_key(
         &key(NamedKey::ArrowRight),
@@ -65,7 +49,7 @@ fn pokedex_opens_in_world_and_browses_a_bounded_catalog() {
     state = next;
     let (next, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
     state = next;
-    assert_eq!(view.pokedex.unwrap().selected_index, 0);
+    assert_eq!(view.pokedex.unwrap().selected_index, 1);
 
     let (next, _) = state.handle_key(&key(NamedKey::Escape), None, false, &snapshot, Vec::new());
     let (_, view) = next.snapshot(&snapshot, PixelSize::new(30, 30));
@@ -76,13 +60,10 @@ fn pokedex_opens_in_world_and_browses_a_bounded_catalog() {
 fn pokedex_action_selects_an_entry_without_exposing_mutable_ui_state() {
     let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 13).unwrap();
     let snapshot = game.snapshot();
-    let (state, _) = PresentationState::default().handle_key(
-        &character("p"),
-        None,
-        false,
-        &snapshot,
-        Vec::new(),
-    );
+    let state = PresentationState {
+        pokedex: Some(PokedexUiSnapshot { selected_index: 0 }),
+        ..PresentationState::default()
+    };
     let (state, update) = state.handle_pokedex_action(PokedexAction::SelectEntry { index: 42 });
     assert!(update.redraw);
     let (_, view) = state.snapshot(&snapshot, PixelSize::new(30, 30));
@@ -92,31 +73,6 @@ fn pokedex_action_selects_an_entry_without_exposing_mutable_ui_state() {
         .handle_pokedex_action(PokedexAction::SelectEntry { index: 42 });
     assert!(!update.redraw);
     assert!(state.pokedex.is_none());
-}
-
-fn toggle(phase: KeyPhase, physical: bool) -> KeyEvent {
-    KeyEvent {
-        physical: physical.then_some(PhysicalKeyCode::KeyP),
-        logical: if physical {
-            LogicalKey::Unidentified
-        } else {
-            LogicalKey::Character("P".into())
-        },
-        modifiers: Modifiers {
-            control: true,
-            ..Modifiers::default()
-        },
-        phase,
-    }
-}
-
-fn entries() -> Vec<ConsoleEntry> {
-    ["/battle/move/one use", "/battle/team/two switch"]
-        .into_iter()
-        .map(|invocation| ConsoleEntry {
-            invocation: invocation.into(),
-        })
-        .collect()
 }
 
 #[test]
@@ -162,134 +118,6 @@ fn world_motion_uses_manual_time_and_emits_one_command_path() {
 }
 
 #[test]
-fn console_pauses_logical_time_without_a_resume_jump() {
-    let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 9).unwrap();
-    let mut presentation = PresentationState::default();
-    let mut toggle = key(NamedKey::Enter);
-    toggle.logical = LogicalKey::Character("p".into());
-    toggle.physical = Some(PhysicalKeyCode::KeyP);
-    toggle.modifiers.control = true;
-    (presentation, _) = presentation.handle_key(&toggle, None, false, &game.snapshot(), Vec::new());
-    assert!(presentation.is_console_open());
-
-    (presentation, _) = presentation.advance(Duration::from_secs(30), &game.snapshot());
-    assert_eq!(presentation.next_delay(&game.snapshot()), None);
-    (presentation, _) = presentation.handle_key(&toggle, None, false, &game.snapshot(), Vec::new());
-    assert!(!presentation.is_console_open());
-    assert_eq!(
-        presentation
-            .snapshot(&game.snapshot(), PixelSize::new(30, 30))
-            .1
-            .world_pixel_offset,
-        PixelOffset::new(0, 0)
-    );
-}
-
-#[test]
-fn console_ime_and_keyboard_paths_are_explicit_updates() {
-    let game = GameSession::new_demo(CurrentDataSet::embedded().unwrap(), 11).unwrap();
-    let snapshot = game.snapshot();
-    let state = PresentationState::default();
-    let (state, update) = state.handle_preedit("closed".into());
-    assert_eq!(update, PresentationUpdate::default());
-    let (state, update) = state.handle_commit("closed".into());
-    assert_eq!(update, PresentationUpdate::default());
-    let (state, update) = state.handle_key(
-        &toggle(KeyPhase::Release, false),
-        None,
-        false,
-        &snapshot,
-        entries(),
-    );
-    assert_eq!(update, PresentationUpdate::default());
-
-    let (mut state, update) = state.handle_key(
-        &toggle(KeyPhase::Press, false),
-        None,
-        false,
-        &snapshot,
-        entries(),
-    );
-    assert!(state.is_console_open());
-    assert!(update.redraw && update.ime_changed);
-    assert_eq!(state.console_view().items.len(), 2);
-    let (next, update) = state.handle_key(&key(NamedKey::Tab), None, false, &snapshot, Vec::new());
-    state = next;
-    assert_eq!(update, PresentationUpdate::default());
-
-    (state, _) = state.handle_preedit("拼音".into());
-    assert_eq!(state.console_view().preedit, "拼音");
-    let (next, update) = state.handle_key(
-        &key(NamedKey::ArrowDown),
-        None,
-        false,
-        &snapshot,
-        Vec::new(),
-    );
-    state = next;
-    assert_eq!(update, PresentationUpdate::default());
-    (state, _) = state.handle_commit(String::new());
-    (state, _) = state.handle_commit("battle".into());
-    assert_eq!(state.console_view().query, "battle");
-    (state, _) = state.handle_ime_disabled();
-    assert!(state.console_view().preedit.is_empty());
-
-    let text = TextEvent::new("x").unwrap();
-    let other = KeyEvent {
-        physical: None,
-        logical: LogicalKey::Unidentified,
-        modifiers: Modifiers::default(),
-        phase: KeyPhase::Repeat,
-    };
-    (state, _) = state.handle_key(&other, Some(&text), false, &snapshot, Vec::new());
-    assert!(state.console_view().query.ends_with('x'));
-    (state, _) = state.handle_key(
-        &key(NamedKey::Backspace),
-        None,
-        false,
-        &snapshot,
-        Vec::new(),
-    );
-    (state, _) = state.handle_key(&key(NamedKey::ArrowUp), None, false, &snapshot, Vec::new());
-    (state, _) = state.handle_key(
-        &key(NamedKey::ArrowDown),
-        None,
-        false,
-        &snapshot,
-        Vec::new(),
-    );
-
-    let (state, update) = state.console_execution_failed("runtime failed");
-    assert!(update.redraw);
-    assert_eq!(
-        state.console_view().diagnostic.as_deref(),
-        Some("runtime failed")
-    );
-    let (state, update) = state.console_execution_succeeded();
-    assert!(!state.is_console_open());
-    assert!(update.redraw && update.ime_changed);
-
-    let (mut state, _) = state.handle_key(
-        &toggle(KeyPhase::Press, true),
-        None,
-        false,
-        &snapshot,
-        entries(),
-    );
-    let (next, update) =
-        state.handle_key(&key(NamedKey::Enter), None, false, &snapshot, Vec::new());
-    state = next;
-    assert!(matches!(
-        update.action,
-        Some(PresentationAction::ExecuteConsole(_))
-    ));
-    let (state, update) =
-        state.handle_key(&key(NamedKey::Escape), None, false, &snapshot, Vec::new());
-    assert!(!state.is_console_open());
-    assert!(update.ime_changed);
-}
-
-#[test]
 fn timers_motion_and_direction_helpers_cover_all_boundaries() {
     use std::hint::black_box;
 
@@ -330,14 +158,16 @@ fn timers_motion_and_direction_helpers_cover_all_boundaries() {
         (NamedKey::ArrowLeft, Direction::Left),
         (NamedKey::ArrowRight, Direction::Right),
     ] {
-        assert_eq!(direction_for_key(&key(name)), Some(direction));
+        assert_eq!(
+            direction_for_control(GameControl::from_key_event(&key(name))),
+            Some(direction)
+        );
         assert_eq!(direction_from_index(direction_index(direction)), direction);
     }
-    assert_eq!(direction_for_key(&key(NamedKey::Enter)), None);
-    assert!(is_console_toggle(&toggle(KeyPhase::Press, true)));
-    assert!(is_console_toggle(&toggle(KeyPhase::Press, false)));
-    assert!(is_enter_press(&key(NamedKey::Enter)));
-    assert!(!is_enter_press(&key(NamedKey::Escape)));
+    assert_eq!(
+        direction_for_control(GameControl::from_key_event(&key(NamedKey::Enter))),
+        None
+    );
     let mut release = key(NamedKey::ArrowUp);
     release.phase = KeyPhase::Release;
     assert_eq!(console_intent_for_key(&release), None);

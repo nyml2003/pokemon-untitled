@@ -77,7 +77,7 @@ pub(super) fn project_pause_pokedex(
         layers.push(
             UiNode::auto()
                 .with_style(UiStyle {
-                    width: Dimension::Px(112),
+                    width: Dimension::Auto,
                     height: Dimension::Px(34),
                     position: Position::Absolute { left: 16, top: 16 },
                     ..UiStyle::default()

@@ -98,6 +98,45 @@ fn row_allocates_fill_and_aligns_children() {
         _ => panic!(),
     }
 }
+
+#[test]
+fn automatic_container_size_includes_flow_children() -> Result<(), Box<dyn std::error::Error>> {
+    let tree = UiTree::new(
+        UiNode::auto()
+            .with_style(UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                direction: FlexDirection::Column,
+                ..UiStyle::default()
+            })
+            .with_children([UiNode::auto()
+                .with_style(UiStyle {
+                    width: Dimension::Auto,
+                    height: Dimension::Auto,
+                    direction: FlexDirection::Column,
+                    gap: 4,
+                    ..UiStyle::default()
+                })
+                .with_children([
+                    fill(1, UiStyle::fixed(20, 10)),
+                    fill(2, UiStyle::fixed(30, 8)),
+                ])]),
+    )?;
+    let frame = tree.resolve(UiSize::new(80, 60))?;
+    let fills = frame
+        .commands()
+        .iter()
+        .filter_map(|command| match command {
+            UiDrawCommand::Fill { bounds, .. } => Some(*bounds),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fills,
+        [UiRect::new(0, 0, 20, 10), UiRect::new(0, 14, 30, 8)]
+    );
+    Ok(())
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TestAction {
     Back,

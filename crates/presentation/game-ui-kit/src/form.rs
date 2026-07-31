@@ -1,7 +1,8 @@
-use crate::{
-    ButtonOptions, GameUiTheme, PanelTone, TextTone, button_with_options, column, panel, row, text,
+use crate::{ButtonOptions, GameUiTheme, TextTone, button_with_options, column, modal, row, text};
+use punctum_ui::{
+    CrossAlign, Dimension, Insets, MainAlign, UiBorder, UiContent, UiKey, UiNode, UiPixelOffset,
+    UiStyle,
 };
-use punctum_ui::{CrossAlign, Dimension, Insets, MainAlign, UiKey, UiNode, UiPixelOffset, UiStyle};
 
 /// A single selectable value rendered by checkbox, radio, or select controls.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -13,36 +14,51 @@ pub struct FormOption<Action> {
     pub action: Action,
 }
 
-/// Projects the full-screen solid form surface.
+/// Projects a dimmed modal form surface with a centered, clipped content card.
 pub fn form_shell<Action>(
     theme: &GameUiTheme,
     scroll_y: u32,
     children: impl IntoIterator<Item = UiNode<Action>>,
 ) -> UiNode<Action> {
-    panel(
-        theme,
-        PanelTone::Screen,
-        UiStyle {
+    UiNode::auto()
+        .with_style(UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
-            clip: true,
+            main_align: MainAlign::Center,
+            cross_align: CrossAlign::Center,
+            padding: Insets::all(theme.large_spacing),
             ..UiStyle::default()
-        },
-        [column(
+        })
+        .with_content(UiContent::Fill(theme.modal_scrim))
+        .with_children([modal(
+            theme,
             UiStyle {
-                width: Dimension::Fill,
-                height: Dimension::Auto,
-                padding: Insets::all(theme.large_spacing.saturating_mul(2)),
-                gap: theme.large_spacing,
-                visual_offset: UiPixelOffset::new(
-                    0,
-                    i32::try_from(scroll_y).map_or(i32::MIN.saturating_add(1), |value| -value),
-                ),
+                width: Dimension::Ratio { units: 3, base: 4 },
+                height: Dimension::Ratio { units: 7, base: 8 },
+                direction: punctum_ui::FlexDirection::Column,
+                clip: true,
+                border: UiBorder {
+                    widths: Insets::all(1),
+                    color: theme.modal_border,
+                },
+                border_radius: theme.large_radius,
                 ..UiStyle::default()
             },
-            children,
-        )],
-    )
+            [column(
+                UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Auto,
+                    padding: Insets::all(theme.large_spacing.saturating_mul(2)),
+                    gap: theme.large_spacing,
+                    visual_offset: UiPixelOffset::new(
+                        0,
+                        i32::try_from(scroll_y).map_or(i32::MIN.saturating_add(1), |value| -value),
+                    ),
+                    ..UiStyle::default()
+                },
+                children,
+            )],
+        )])
 }
 
 /// Groups related form controls without introducing an additional panel surface.
@@ -287,38 +303,32 @@ pub fn toggle<Action>(
     .with_action(action)
 }
 
-/// Builds the compact filter entry with its magnifier command and result count.
+/// Builds the compact filter entry with its query command and active-condition summary.
 pub fn filter_summary<Action>(
     theme: &GameUiTheme,
     icon: UiNode<Action>,
-    result_count: usize,
     summary: impl Into<String>,
 ) -> UiNode<Action> {
+    let summary = summary.into();
+    let mut children = vec![icon];
+    if !summary.is_empty() {
+        children.push(text(
+            theme,
+            TextTone::Muted,
+            summary,
+            theme.body_text_size.saturating_sub(1).max(1),
+            Dimension::Auto,
+        ));
+    }
     row(
         UiStyle {
-            width: Dimension::Fill,
+            width: Dimension::Auto,
             height: Dimension::Px(34),
             gap: theme.small_spacing,
             cross_align: CrossAlign::Center,
             ..UiStyle::default()
         },
-        [
-            icon,
-            text(
-                theme,
-                TextTone::Muted,
-                format!("{result_count}"),
-                theme.body_text_size,
-                Dimension::Px(28),
-            ),
-            text(
-                theme,
-                TextTone::Muted,
-                summary,
-                theme.body_text_size.saturating_sub(1).max(1),
-                Dimension::Fill,
-            ),
-        ],
+        children,
     )
 }
 

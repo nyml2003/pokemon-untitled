@@ -3,14 +3,16 @@
 #![forbid(unsafe_code)]
 
 mod console;
+mod control;
 mod page;
 mod pokedex_filter;
 mod presentation;
 
 use battle_session::{Action, BattleInteraction, BattleObservation, MoveSlot, TeamSlot};
-use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey};
+use punctum_input::{KeyEvent, KeyPhase};
 
 pub use console::{ConsoleEntry, ConsoleIntent, ConsoleOutcome, ConsoleState, GameConsole};
+pub use control::GameControl;
 pub use page::{
     PageFocus, PageUiOutcome, PageUiState, PokedexDetailMode, PokedexFilterOverlay, PokedexScene,
     PokedexVisualState,
@@ -113,22 +115,20 @@ impl BattleUiState {
         debug_assert!(item_count > 0);
         self.selected_index = self.selected_index.min(item_count - 1);
         self.notice = None;
-        let outcome = match key.logical {
-            LogicalKey::Named(NamedKey::ArrowLeft) | LogicalKey::Named(NamedKey::ArrowUp) => {
+        let outcome = match GameControl::from_key_event(key) {
+            Some(GameControl::Left | GameControl::Up) => {
                 self.selected_index = (self.selected_index + item_count - 1) % item_count;
                 BattleUiOutcome::Updated
             }
-            LogicalKey::Named(NamedKey::ArrowRight) | LogicalKey::Named(NamedKey::ArrowDown) => {
+            Some(GameControl::Right | GameControl::Down) => {
                 self.selected_index = (self.selected_index + 1) % item_count;
                 BattleUiOutcome::Updated
             }
-            LogicalKey::Named(NamedKey::Escape)
-                if self.page != BattleMenuPage::Main && !self.replacement_mode =>
-            {
+            Some(GameControl::B) if self.page != BattleMenuPage::Main && !self.replacement_mode => {
                 self.reset();
                 BattleUiOutcome::Updated
             }
-            LogicalKey::Named(NamedKey::Enter) if key.phase == KeyPhase::Press => {
+            Some(GameControl::A) if key.phase == KeyPhase::Press => {
                 self.activate(observation, actions)
             }
             _ => BattleUiOutcome::Ignored,

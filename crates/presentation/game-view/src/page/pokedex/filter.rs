@@ -14,21 +14,15 @@ pub(super) fn compact_entry(
     visual: &PokedexVisualState,
 ) -> Result<UiNode<PageIntent>, UiBuildError> {
     let move_filter = visual.detail_mode == PokedexDetailMode::Moves;
-    let count = if move_filter {
-        visual.visible_move_indices.len()
-    } else {
-        visual.visible_entry_indices.len()
-    };
     Ok(filter_summary(
         &POKEDEX_THEME,
         icon_button(
             &POKEDEX_THEME,
             UiKey::new("page-pokedex-filter-toggle")?,
-            "🔍",
+            "⌕",
             false,
             PageIntent::TogglePokedexFilter,
         ),
-        count,
         compact_summary(visual, move_filter),
     ))
 }
@@ -102,7 +96,6 @@ fn pokedex_form(
         visual.form_scroll_y,
         [
             form_header(
-                visual.visible_entry_indices.len(),
                 PageIntent::PokedexFilter(PokedexFilterIntent::ResetPokedex),
                 "page-pokedex-filter-reset",
             )?,
@@ -265,7 +258,6 @@ fn move_form(
         visual.form_scroll_y,
         [
             form_header(
-                visual.visible_move_indices.len(),
                 PageIntent::PokedexFilter(PokedexFilterIntent::ResetMove),
                 "page-pokedex-move-filter-reset",
             )?,
@@ -386,11 +378,7 @@ fn move_form(
     ))
 }
 
-fn form_header(
-    count: usize,
-    reset: PageIntent,
-    reset_key: &str,
-) -> Result<UiNode<PageIntent>, UiBuildError> {
+fn form_header(reset: PageIntent, reset_key: &str) -> Result<UiNode<PageIntent>, UiBuildError> {
     Ok(game_ui_kit::row(
         UiStyle {
             width: Dimension::Fill,
@@ -398,17 +386,14 @@ fn form_header(
             padding: Insets::symmetric(0, 1),
             ..UiStyle::default()
         },
-        [
-            game_ui_kit::button(
-                &POKEDEX_THEME,
-                UiStyle::fixed(54, 30),
-                false,
-                [text_node("重置", TextTone::Default, 14)],
-            )
-            .with_key(UiKey::new(reset_key)?)
-            .with_action(reset),
-            compact_text_node(format!("{count}"), TextTone::Muted, 14),
-        ],
+        [game_ui_kit::button(
+            &POKEDEX_THEME,
+            UiStyle::fixed(54, 30),
+            false,
+            [text_node("重置", TextTone::Default, 14)],
+        )
+        .with_key(UiKey::new(reset_key)?)
+        .with_action(reset)],
     ))
 }
 

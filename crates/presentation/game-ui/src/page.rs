@@ -6,12 +6,12 @@ use game_page_model::{
     BagFilter, PageIntent, PageModel, PausePageModel, PokedexFilterIntent, PokedexMoveCategory,
     PokedexPageModel,
 };
-use punctum_input::{KeyEvent, KeyPhase, LogicalKey, NamedKey, PhysicalKeyCode, TextEvent};
+use punctum_input::{KeyEvent, KeyPhase, TextEvent};
 use punctum_ui::{FormPresentation, KeyboardFormState, KeyboardSingleColumnFixedHeightScrollView};
 
 use crate::{
-    MoveFilterItem, MoveFilterModel, PokedexFilterItem, PokedexFilterModel, move_filter_form,
-    pokedex_filter_form,
+    GameControl, MoveFilterItem, MoveFilterModel, PokedexFilterItem, PokedexFilterModel,
+    move_filter_form, pokedex_filter_form,
 };
 
 /// 玩家页面当前可见的键盘焦点。
@@ -201,13 +201,9 @@ enum PageKey {
     Confirm,
     Cancel,
     OpenPause,
-    OpenSave,
     PreviousCategory,
     NextCategory,
-    Home,
-    End,
     Backspace,
-    Space,
 }
 
 /// 不依赖窗口或渲染器的玩家页面输入状态。
@@ -525,11 +521,15 @@ impl PageUiState {
         model: &PageModel,
     ) -> PageUiOutcome {
         self.sync(model);
-        if is_pokedex_focus(self.focus) && is_pokedex_filter_toggle(key) {
+        let control = GameControl::from_key_event(key);
+        if key.phase == KeyPhase::Press
+            && is_pokedex_focus(self.focus)
+            && control == Some(GameControl::Select)
+        {
             return self.toggle_filter_overlay();
         }
         if self.filter_is_expanded() {
-            return self.handle_filter_input(key, text, model);
+            return self.handle_filter_input(key, control, text, model);
         }
         let Some(action) = page_key(key) else {
             return PageUiOutcome::Ignored;
@@ -544,12 +544,6 @@ impl PageUiState {
                 }
                 _ => PageUiOutcome::Ignored,
             },
-            PageKey::OpenSave => match model {
-                PageModel::World(world) if key.phase == KeyPhase::Press && world.save_available => {
-                    PageUiOutcome::Intent(PageIntent::OpenSaveConfirm)
-                }
-                _ => PageUiOutcome::Ignored,
-            },
             PageKey::Cancel if key.phase == KeyPhase::Press => match model {
                 PageModel::World(_) => PageUiOutcome::Ignored,
                 _ => PageUiOutcome::Intent(PageIntent::Close),
@@ -557,15 +551,10 @@ impl PageUiState {
             PageKey::Confirm if key.phase == KeyPhase::Press => self.confirm(model),
             PageKey::PreviousCategory => self.change_bag_category(model, false),
             PageKey::NextCategory => self.change_bag_category(model, true),
-            PageKey::Up
-            | PageKey::Down
-            | PageKey::Left
-            | PageKey::Right
-            | PageKey::Home
-            | PageKey::End => self.move_focus(action, model),
-            PageKey::Backspace | PageKey::Space | PageKey::Confirm | PageKey::Cancel => {
-                PageUiOutcome::Ignored
+            PageKey::Up | PageKey::Down | PageKey::Left | PageKey::Right => {
+                self.move_focus(action, model)
             }
+            PageKey::Backspace | PageKey::Confirm | PageKey::Cancel => PageUiOutcome::Ignored,
         }
     }
 
@@ -646,6 +635,7 @@ impl PageUiState {
     fn handle_filter_input(
         &mut self,
         key: &KeyEvent,
+        control: Option<GameControl>,
         text: Option<&TextEvent>,
         model: &PageModel,
     ) -> PageUiOutcome {
@@ -657,8 +647,11 @@ impl PageUiState {
         {
             return outcome;
         }
-        if matches!(key.logical, LogicalKey::Named(NamedKey::Tab)) {
-            return self.move_filter_tab(key.modifiers.shift);
+        if control == Some(GameControl::L) {
+            return self.move_filter_tab(true);
+        }
+        if control == Some(GameControl::R) {
+            return self.move_filter_tab(false);
         }
         let Some(action) = page_key(key) else {
             return PageUiOutcome::Ignored;
@@ -891,7 +884,7 @@ impl PageUiState {
             PokedexFilterItem::Types => {
                 let types = pokedex_type_options(model);
                 self.pokedex_type_cursor = move_cursor(self.pokedex_type_cursor, types.len(), key)?;
-                matches!(key, PageKey::Confirm | PageKey::Space)
+                (key == PageKey::Confirm)
                     .then(|| types.get(self.pokedex_type_cursor).copied())
                     .flatten()
                     .map(PokedexFilterIntent::ToggleType)
@@ -899,7 +892,7 @@ impl PageUiState {
             PokedexFilterItem::TypeMatch => match key {
                 PageKey::Left | PageKey::Up => Some(PokedexFilterIntent::SetTypeMatchAll(false)),
                 PageKey::Right | PageKey::Down => Some(PokedexFilterIntent::SetTypeMatchAll(true)),
-                PageKey::Confirm | PageKey::Space => Some(PokedexFilterIntent::SetTypeMatchAll(
+                PageKey::Confirm => Some(PokedexFilterIntent::SetTypeMatchAll(
                     self.pokedex_filter.type_match != crate::TypeMatch::All,
                 )),
                 _ => None,
@@ -907,16 +900,13 @@ impl PageUiState {
             PokedexFilterItem::Generations => {
                 self.pokedex_generation_cursor =
                     move_cursor(self.pokedex_generation_cursor, 3, key)?;
-                matches!(key, PageKey::Confirm | PageKey::Space)
+                (key == PageKey::Confirm)
                     .then_some(self.pokedex_generation_cursor.saturating_add(1) as u8)
                     .map(PokedexFilterIntent::ToggleGeneration)
             }
             PokedexFilterItem::Ability if self.pokedex_filter_state.opened_select().is_some() => {
                 let abilities = pokedex_ability_options(model, self.pokedex_filter.ability_query());
-                if matches!(
-                    key,
-                    PageKey::Up | PageKey::Down | PageKey::Home | PageKey::End
-                ) {
+                if matches!(key, PageKey::Up | PageKey::Down) {
                     self.pokedex_ability_cursor =
                         move_cursor(self.pokedex_ability_cursor, abilities.len(), key)?;
                     return None;
@@ -943,7 +933,7 @@ impl PageUiState {
                     None
                 }
             }
-            PokedexFilterItem::Reset if matches!(key, PageKey::Confirm | PageKey::Space) => {
+            PokedexFilterItem::Reset if key == PageKey::Confirm => {
                 Some(PokedexFilterIntent::ResetPokedex)
             }
             PokedexFilterItem::HeightMinimum
@@ -965,14 +955,14 @@ impl PageUiState {
             MoveFilterItem::Types => {
                 let types = move_type_options(model);
                 self.move_type_cursor = move_cursor(self.move_type_cursor, types.len(), key)?;
-                matches!(key, PageKey::Confirm | PageKey::Space)
+                (key == PageKey::Confirm)
                     .then(|| types.get(self.move_type_cursor).copied())
                     .flatten()
                     .map(PokedexFilterIntent::ToggleMoveType)
             }
             MoveFilterItem::Category => {
                 self.move_category_cursor = move_cursor(self.move_category_cursor, 4, key)?;
-                matches!(key, PageKey::Confirm | PageKey::Space).then(|| {
+                (key == PageKey::Confirm).then(|| {
                     PokedexFilterIntent::SelectMoveCategory(move_category_at(
                         self.move_category_cursor,
                     ))
@@ -980,10 +970,7 @@ impl PageUiState {
             }
             MoveFilterItem::Accuracy if self.move_filter_state.opened_select().is_some() => {
                 let accuracies = move_accuracy_options(model);
-                if matches!(
-                    key,
-                    PageKey::Up | PageKey::Down | PageKey::Home | PageKey::End
-                ) {
+                if matches!(key, PageKey::Up | PageKey::Down) {
                     self.move_accuracy_cursor =
                         move_cursor(self.move_accuracy_cursor, accuracies.len(), key)?;
                     return None;
@@ -1010,10 +997,10 @@ impl PageUiState {
                     None
                 }
             }
-            MoveFilterItem::Priority if matches!(key, PageKey::Confirm | PageKey::Space) => {
+            MoveFilterItem::Priority if key == PageKey::Confirm => {
                 Some(PokedexFilterIntent::ToggleMovePriority)
             }
-            MoveFilterItem::Reset if matches!(key, PageKey::Confirm | PageKey::Space) => {
+            MoveFilterItem::Reset if key == PageKey::Confirm => {
                 Some(PokedexFilterIntent::ResetMove)
             }
             MoveFilterItem::Name
@@ -1350,8 +1337,6 @@ impl PageUiState {
                 let changed = match direction {
                     PageKey::Up => scroll.move_up(),
                     PageKey::Down => scroll.move_down(),
-                    PageKey::Home => scroll.move_to_top(),
-                    PageKey::End => scroll.move_to_bottom(),
                     PageKey::Right => {
                         self.focus = PageFocus::PokedexDetailFacts;
                         self.set_pokedex_scene(PokedexScene::Detail);
@@ -1386,7 +1371,7 @@ impl PageUiState {
                         );
                         PageUiOutcome::Updated
                     }
-                    PageKey::Up | PageKey::Down | PageKey::Home | PageKey::End => {
+                    PageKey::Up | PageKey::Down => {
                         let mut scroll = KeyboardSingleColumnFixedHeightScrollView::new(
                             self.visible_entry_indices.len(),
                             POKEDEX_VISIBLE_ITEMS,
@@ -1396,8 +1381,6 @@ impl PageUiState {
                         let changed = match direction {
                             PageKey::Up => scroll.move_up(),
                             PageKey::Down => scroll.move_down(),
-                            PageKey::Home => scroll.move_to_top(),
-                            PageKey::End => scroll.move_to_bottom(),
                             _ => false,
                         };
                         if !changed {
@@ -1432,8 +1415,6 @@ impl PageUiState {
                 let changed = match direction {
                     PageKey::Up => scroll.move_up(),
                     PageKey::Down => scroll.move_down(),
-                    PageKey::Home => scroll.move_to_top(),
-                    PageKey::End => scroll.move_to_bottom(),
                     _ => false,
                 };
                 if !changed {
@@ -1522,62 +1503,18 @@ fn index_position(index: usize) -> i32 {
 }
 
 fn page_key(key: &KeyEvent) -> Option<PageKey> {
-    let physical = key.physical;
-    match key.logical {
-        LogicalKey::Named(NamedKey::ArrowUp) => Some(PageKey::Up),
-        LogicalKey::Named(NamedKey::ArrowDown) => Some(PageKey::Down),
-        LogicalKey::Named(NamedKey::ArrowLeft) => Some(PageKey::Left),
-        LogicalKey::Named(NamedKey::ArrowRight) => Some(PageKey::Right),
-        LogicalKey::Named(NamedKey::Home) => Some(PageKey::Home),
-        LogicalKey::Named(NamedKey::End) => Some(PageKey::End),
-        LogicalKey::Named(NamedKey::Enter) => Some(PageKey::Confirm),
-        LogicalKey::Named(NamedKey::Escape) => Some(PageKey::Cancel),
-        LogicalKey::Named(NamedKey::Backspace) => Some(PageKey::Backspace),
-        LogicalKey::Named(NamedKey::Space) => Some(PageKey::Space),
-        LogicalKey::Named(NamedKey::Tab) => Some(PageKey::OpenPause),
-        LogicalKey::Named(NamedKey::Function(5)) => Some(PageKey::OpenSave),
-        _ if physical == Some(PhysicalKeyCode::ArrowUp)
-            || physical == Some(PhysicalKeyCode::KeyW) =>
-        {
-            Some(PageKey::Up)
-        }
-        _ if physical == Some(PhysicalKeyCode::ArrowDown)
-            || physical == Some(PhysicalKeyCode::KeyS) =>
-        {
-            Some(PageKey::Down)
-        }
-        _ if physical == Some(PhysicalKeyCode::ArrowLeft)
-            || physical == Some(PhysicalKeyCode::KeyA) =>
-        {
-            Some(PageKey::Left)
-        }
-        _ if physical == Some(PhysicalKeyCode::ArrowRight)
-            || physical == Some(PhysicalKeyCode::KeyD) =>
-        {
-            Some(PageKey::Right)
-        }
-        _ if physical == Some(PhysicalKeyCode::Home) => Some(PageKey::Home),
-        _ if physical == Some(PhysicalKeyCode::End) => Some(PageKey::End),
-        _ if physical == Some(PhysicalKeyCode::Enter) || character_is(key, "z") => {
-            Some(PageKey::Confirm)
-        }
-        _ if physical == Some(PhysicalKeyCode::Escape) || character_is(key, "x") => {
-            Some(PageKey::Cancel)
-        }
-        _ if physical == Some(PhysicalKeyCode::Backspace) => Some(PageKey::Backspace),
-        _ if physical == Some(PhysicalKeyCode::Space) => Some(PageKey::Space),
-        _ if physical == Some(PhysicalKeyCode::Tab) => Some(PageKey::OpenPause),
-        _ if physical == Some(PhysicalKeyCode::F5) => Some(PageKey::OpenSave),
-        _ if physical == Some(PhysicalKeyCode::KeyQ) => Some(PageKey::PreviousCategory),
-        _ if physical == Some(PhysicalKeyCode::KeyE) => Some(PageKey::NextCategory),
-        _ => None,
+    match GameControl::from_key_event(key)? {
+        GameControl::Up => Some(PageKey::Up),
+        GameControl::Down => Some(PageKey::Down),
+        GameControl::Left => Some(PageKey::Left),
+        GameControl::Right => Some(PageKey::Right),
+        GameControl::A => Some(PageKey::Confirm),
+        GameControl::B => Some(PageKey::Cancel),
+        GameControl::L => Some(PageKey::PreviousCategory),
+        GameControl::R => Some(PageKey::NextCategory),
+        GameControl::Start => Some(PageKey::OpenPause),
+        GameControl::Select => None,
     }
-}
-
-fn is_pokedex_filter_toggle(key: &KeyEvent) -> bool {
-    key.phase == KeyPhase::Press
-        && key.modifiers.control
-        && key.physical == Some(PhysicalKeyCode::KeyF)
 }
 
 fn append_text(current: &str, text: &str) -> String {
@@ -1679,11 +1616,9 @@ fn move_cursor(index: usize, length: usize, key: PageKey) -> Option<usize> {
         return None;
     }
     match key {
-        PageKey::Left | PageKey::Up => Some(index.checked_sub(1).map_or(length - 1, |value| value)),
-        PageKey::Right | PageKey::Down => Some((index + 1) % length),
-        PageKey::Home => Some(0),
-        PageKey::End => Some(length - 1),
-        PageKey::Confirm | PageKey::Space => Some(index.min(length - 1)),
+        PageKey::Left | PageKey::Up => index.checked_sub(1),
+        PageKey::Right | PageKey::Down => index.checked_add(1).filter(|next| *next < length),
+        PageKey::Confirm => Some(index.min(length - 1)),
         _ => None,
     }
 }
@@ -1692,18 +1627,14 @@ const POKEDEX_VISIBLE_ITEMS: usize = 7;
 const POKEDEX_ITEM_HEIGHT: u32 = 52;
 const POKEDEX_MOVE_ITEM_HEIGHT: u32 = 44;
 
-fn character_is(key: &KeyEvent, expected: &str) -> bool {
-    matches!(&key.logical, LogicalKey::Character(value) if value.eq_ignore_ascii_case(expected))
-}
-
 fn move_menu(index: usize, direction: PageKey) -> usize {
     let row = index / 2;
     let column = index % 2;
     match direction {
-        PageKey::Left => row * 2 + (column + 1) % 2,
-        PageKey::Right => row * 2 + (column + 1) % 2,
-        PageKey::Up => ((row + 1) % 2) * 2 + column,
-        PageKey::Down => ((row + 1) % 2) * 2 + column,
+        PageKey::Left if column > 0 => index - 1,
+        PageKey::Right if column < 1 => index + 1,
+        PageKey::Up if row > 0 => index - 2,
+        PageKey::Down if row < 1 => index + 2,
         _ => index,
     }
 }
@@ -1713,8 +1644,8 @@ fn move_linear(index: usize, length: usize, direction: PageKey) -> Option<usize>
         return None;
     }
     match direction {
-        PageKey::Left | PageKey::Up => Some((index + length - 1) % length),
-        PageKey::Right | PageKey::Down => Some((index + 1) % length),
+        PageKey::Left | PageKey::Up => index.checked_sub(1),
+        PageKey::Right | PageKey::Down => index.checked_add(1).filter(|next| *next < length),
         _ => None,
     }
 }
@@ -1735,9 +1666,9 @@ fn move_grid(index: usize, length: usize, direction: PageKey, columns: usize) ->
 
 fn step_index(index: usize, length: usize, next: bool) -> usize {
     if next {
-        (index + 1) % length
+        index.saturating_add(1).min(length.saturating_sub(1))
     } else {
-        (index + length - 1) % length
+        index.saturating_sub(1)
     }
 }
 

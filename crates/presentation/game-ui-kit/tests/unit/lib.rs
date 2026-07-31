@@ -10,6 +10,8 @@ const THEME: GameUiTheme = GameUiTheme {
     selected: UiColor::new(10, 11, 12, 255),
     selected_text: UiColor::new(31, 32, 33, 255),
     card: UiColor::new(13, 14, 15, 255),
+    modal_scrim: UiColor::new(0, 0, 0, 144),
+    modal_border: UiColor::new(40, 41, 42, 255),
     image_backdrop: UiColor::new(16, 17, 18, 255),
     text: UiColor::new(19, 20, 21, 255),
     muted_text: UiColor::new(22, 23, 24, 255),
@@ -120,6 +122,33 @@ fn button_tab_bar_and_modal_use_their_theme_surfaces() {
     assert!(colors.contains(&THEME.selected));
     assert!(colors.contains(&THEME.panel));
     assert!(colors.contains(&THEME.card));
+}
+
+#[test]
+fn form_shell_dims_the_scene_and_centers_a_rounded_modal() -> Result<(), Box<dyn Error>> {
+    let frame = UiTree::<()>::new(form_shell(
+        &THEME,
+        0,
+        [text(&THEME, TextTone::Ink, "筛选", 12, Dimension::Fill)],
+    ))?
+    .resolve(UiSize::new(400, 300))?;
+
+    assert!(frame.commands().iter().any(|command| matches!(
+        command,
+        UiDrawCommand::Fill { bounds, color, .. }
+            if *color == THEME.modal_scrim && *bounds == punctum_ui::UiRect::new(0, 0, 400, 300)
+    )));
+    assert!(frame.commands().iter().any(|command| matches!(
+        command,
+        UiDrawCommand::Fill { bounds, color, border_radius, .. }
+            if *color == THEME.card
+                && bounds.x > 0
+                && bounds.y > 0
+                && bounds.width < 400
+                && bounds.height < 300
+                && border_radius.top_left > 0
+    )));
+    Ok(())
 }
 
 #[test]

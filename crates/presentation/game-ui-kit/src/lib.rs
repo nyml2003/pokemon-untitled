@@ -22,6 +22,8 @@ pub struct GameUiTheme {
     pub selected: UiColor,
     pub selected_text: UiColor,
     pub card: UiColor,
+    pub modal_scrim: UiColor,
+    pub modal_border: UiColor,
     pub image_backdrop: UiColor,
     pub text: UiColor,
     pub muted_text: UiColor,

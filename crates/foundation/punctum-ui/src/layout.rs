@@ -453,7 +453,7 @@ fn constrain<Action>(
     Ok(UiRect::new(offered.x, offered.y, width, height))
 }
 fn intrinsic_size<Action>(node: &UiNode<Action>, ratio_basis: UiSize) -> UiSize {
-    match &node.content {
+    let content = match &node.content {
         UiContent::Text {
             content, font_size, ..
         } => UiSize::new(
@@ -473,6 +473,82 @@ fn intrinsic_size<Action>(node: &UiNode<Action>, ratio_basis: UiSize) -> UiSize 
             UiSize::new(1, 1)
         }
         _ => UiSize::default(),
+    };
+    let children = intrinsic_flow_children_size(node, ratio_basis);
+    let horizontal_insets = node
+        .style
+        .border
+        .widths
+        .horizontal()
+        .saturating_add(node.style.padding.horizontal());
+    let vertical_insets = node
+        .style
+        .border
+        .widths
+        .vertical()
+        .saturating_add(node.style.padding.vertical());
+    UiSize::new(
+        content
+            .width
+            .max(children.width)
+            .saturating_add(horizontal_insets),
+        content
+            .height
+            .max(children.height)
+            .saturating_add(vertical_insets),
+    )
+}
+
+fn intrinsic_flow_children_size<Action>(node: &UiNode<Action>, ratio_basis: UiSize) -> UiSize {
+    let children = node
+        .children
+        .iter()
+        .filter(|child| matches!(child.style.position, Position::Flow))
+        .map(|child| intrinsic_outer_size(child, ratio_basis))
+        .collect::<Vec<_>>();
+    let gap = node
+        .style
+        .gap
+        .saturating_mul(children.len().saturating_sub(1) as u32);
+    match node.style.direction {
+        FlexDirection::Row => UiSize::new(
+            children
+                .iter()
+                .fold(gap, |width, child| width.saturating_add(child.width)),
+            children.iter().map(|child| child.height).max().unwrap_or(0),
+        ),
+        FlexDirection::Column => UiSize::new(
+            children.iter().map(|child| child.width).max().unwrap_or(0),
+            children
+                .iter()
+                .fold(gap, |height, child| height.saturating_add(child.height)),
+        ),
+        FlexDirection::Stack => UiSize::new(
+            children.iter().map(|child| child.width).max().unwrap_or(0),
+            children.iter().map(|child| child.height).max().unwrap_or(0),
+        ),
+    }
+}
+
+fn intrinsic_outer_size<Action>(node: &UiNode<Action>, ratio_basis: UiSize) -> UiSize {
+    let intrinsic = intrinsic_size(node, ratio_basis);
+    let width = intrinsic_dimension(node.style.width, ratio_basis.width, intrinsic.width)
+        .max(node.style.min_size.width);
+    let height = intrinsic_dimension(node.style.height, ratio_basis.height, intrinsic.height)
+        .max(node.style.min_size.height);
+    let (width, height) = node.style.max_size.map_or((width, height), |maximum| {
+        (width.min(maximum.width), height.min(maximum.height))
+    });
+    UiSize::new(
+        width.saturating_add(node.style.margin.horizontal()),
+        height.saturating_add(node.style.margin.vertical()),
+    )
+}
+
+fn intrinsic_dimension(value: Dimension, offered: u32, intrinsic: u32) -> u32 {
+    match value {
+        Dimension::Fill => 0,
+        _ => dimension(value, offered, intrinsic),
     }
 }
 fn dimension(dimension: Dimension, offered: u32, intrinsic: u32) -> u32 {
