@@ -275,7 +275,7 @@ fn switch(battle: &mut Battle, side: Side, to: TeamSlot) {
         from,
         to,
         pokemon: pokemon.id().clone(),
-        current_hp: pokemon.state.current_hp,
+        current_hp: pokemon.state.current_hp(),
     });
     activate_entry_ability(battle, side);
 }
@@ -550,7 +550,7 @@ fn resolve_hit(
             effectiveness: TypeEffectiveness::Immune,
         });
         if matches!(ability, Ability::WaterAbsorb | Ability::VoltAbsorb) {
-            let amount = (u64::from(target.state.max_hp) / 4).max(1);
+            let amount = (u64::from(target.state.max_hp()) / 4).max(1);
             let actual = heal(
                 &mut battle.teams[side_index(target_side)].members[target_slot.index()].state,
                 amount,
@@ -560,7 +560,7 @@ fn resolve_hit(
                     side: target_side,
                     pokemon: target.id().clone(),
                     amount: actual,
-                    current_hp: battle.active(target_side).state.current_hp,
+                    current_hp: battle.active(target_side).state.current_hp(),
                 });
             }
         }
@@ -704,7 +704,7 @@ fn resolve_hit(
         target_side,
         target: target.id().clone(),
         amount: actual,
-        remaining_hp: battle.active(target_side).state.current_hp,
+        remaining_hp: battle.active(target_side).state.current_hp(),
     });
     if battle.active(target_side).is_fainted() {
         battle.events.push(BattleEvent::Fainted {
@@ -883,7 +883,7 @@ fn apply_move_effect(
         } => {
             let slot = battle.active_slot(side);
             let pokemon = battle.active(side).id().clone();
-            let amount = (u64::from(battle.active(side).state.max_hp) * u64::from(numerator)
+            let amount = (u64::from(battle.active(side).state.max_hp()) * u64::from(numerator)
                 / u64::from(denominator))
             .max(1);
             let actual = heal(
@@ -901,7 +901,7 @@ fn apply_move_effect(
                     side,
                     pokemon,
                     amount: actual,
-                    current_hp: battle.active(side).state.current_hp,
+                    current_hp: battle.active(side).state.current_hp(),
                 });
             }
         }
@@ -964,7 +964,7 @@ fn apply_move_effect(
                     side,
                     pokemon: pokemon.clone(),
                     amount: healed,
-                    current_hp: battle.active(side).state.current_hp,
+                    current_hp: battle.active(side).state.current_hp(),
                 });
             }
             battle.events.push(BattleEvent::StatusApplied {
@@ -999,7 +999,7 @@ fn apply_move_effect(
                     side,
                     pokemon,
                     substitute_hp,
-                    current_hp: battle.active(side).state.current_hp,
+                    current_hp: battle.active(side).state.current_hp(),
                 });
             } else {
                 battle.events.push(BattleEvent::EffectFailed {
@@ -1276,9 +1276,11 @@ fn resolve_end_of_turn(battle: &mut Battle) {
         let pokemon = battle.active(side).clone();
         let damage = match status {
             MajorStatus::BadlyPoisoned { stage } => {
-                u64::from((pokemon.state.max_hp / 16).max(1)) * u64::from(stage)
+                u64::from((pokemon.state.max_hp() / 16).max(1)) * u64::from(stage)
             }
-            MajorStatus::Burn | MajorStatus::Poison => u64::from((pokemon.state.max_hp / 8).max(1)),
+            MajorStatus::Burn | MajorStatus::Poison => {
+                u64::from((pokemon.state.max_hp() / 8).max(1))
+            }
             MajorStatus::Freeze | MajorStatus::Paralysis | MajorStatus::Sleep { .. } => continue,
         };
         let actual = apply_damage(
@@ -1294,7 +1296,7 @@ fn resolve_end_of_turn(battle: &mut Battle) {
             target_side: side,
             target: pokemon.id().clone(),
             amount: actual,
-            remaining_hp: battle.active(side).state.current_hp,
+            remaining_hp: battle.active(side).state.current_hp(),
         });
         if battle.active(side).is_fainted() {
             battle.events.push(BattleEvent::Fainted {
@@ -1402,7 +1404,7 @@ fn resolve_weather_end_of_turn(battle: &mut Battle) {
             }
             let slot = battle.active_slot(side);
             let pokemon = battle.active(side).clone();
-            let amount = u64::from((pokemon.state.max_hp / 16).max(1));
+            let amount = u64::from((pokemon.state.max_hp() / 16).max(1));
             let actual = apply_damage(
                 &mut battle.teams[side_index(side)].members[slot.index()].state,
                 amount,
@@ -1414,7 +1416,7 @@ fn resolve_weather_end_of_turn(battle: &mut Battle) {
                 target_side: side,
                 target: pokemon.id().clone(),
                 amount: actual,
-                remaining_hp: battle.active(side).state.current_hp,
+                remaining_hp: battle.active(side).state.current_hp(),
             });
             if battle.active(side).is_fainted() {
                 battle.events.push(BattleEvent::Fainted {
@@ -1461,7 +1463,7 @@ fn resolve_weather_abilities_end_of_turn(battle: &mut Battle, weather: Weather) 
         }
         let slot = battle.active_slot(side);
         let pokemon = battle.active(side).clone();
-        let amount = u64::from((pokemon.state.max_hp / 16).max(1));
+        let amount = u64::from((pokemon.state.max_hp() / 16).max(1));
         let actual = heal(
             &mut battle.teams[side_index(side)].members[slot.index()].state,
             amount,
@@ -1478,7 +1480,7 @@ fn resolve_weather_abilities_end_of_turn(battle: &mut Battle, weather: Weather) 
             side,
             pokemon: pokemon.id().clone(),
             amount: actual,
-            current_hp: battle.active(side).state.current_hp,
+            current_hp: battle.active(side).state.current_hp(),
         });
     }
 }
@@ -1519,7 +1521,7 @@ fn apply_damaging_move_effect(
                     target_side: side,
                     target: attacker.id().clone(),
                     amount: actual,
-                    remaining_hp: battle.active(side).state.current_hp,
+                    remaining_hp: battle.active(side).state.current_hp(),
                 });
                 if battle.active(side).is_fainted() {
                     battle.events.push(BattleEvent::Fainted {
@@ -1538,7 +1540,7 @@ fn apply_damaging_move_effect(
                         side,
                         pokemon: attacker.id().clone(),
                         amount: actual,
-                        current_hp: battle.active(side).state.current_hp,
+                        current_hp: battle.active(side).state.current_hp(),
                     });
                 }
             }
@@ -1636,7 +1638,7 @@ fn apply_recoil(
         target_side: side,
         target: attacker.id().clone(),
         amount: actual,
-        remaining_hp: battle.active(side).state.current_hp,
+        remaining_hp: battle.active(side).state.current_hp(),
     });
     if battle.active(side).is_fainted() {
         battle.events.push(BattleEvent::Fainted {
@@ -1862,15 +1864,16 @@ fn elapse_weather(state: &mut WeatherState) -> Option<u8> {
 // ---- 状态变更辅助（操作 BattleState 的公开字段） ----
 
 fn apply_damage(state: &mut BattleState, damage: u64) -> u32 {
-    let actual = damage.min(u64::from(state.current_hp)) as u32;
-    state.current_hp -= actual;
+    let amount = damage.min(u64::from(state.current_hp()));
+    let (next, actual) = state.hp().damage(amount as u32);
+    state.set_hp(next);
     actual
 }
 
 fn heal(state: &mut BattleState, amount: u64) -> u32 {
-    let missing = state.max_hp - state.current_hp;
-    let actual = amount.min(u64::from(missing)) as u32;
-    state.current_hp += actual;
+    let amount = amount.min(u64::from(state.max_hp() - state.current_hp()));
+    let (next, actual) = state.hp().heal(amount as u32);
+    state.set_hp(next);
     actual
 }
 
@@ -1934,12 +1937,12 @@ fn refresh(state: &mut BattleState) -> Option<MajorStatusKind> {
 }
 
 fn rest(state: &mut BattleState) -> Option<(u32, Option<MajorStatus>)> {
-    if state.current_hp == state.max_hp && state.major_status.is_none() {
+    if state.current_hp() == state.max_hp() && state.major_status.is_none() {
         return None;
     }
     let previous_status = state.major_status;
-    let healed = state.max_hp - state.current_hp;
-    state.current_hp = state.max_hp;
+    let healed = state.max_hp() - state.current_hp();
+    state.set_hp(state.hp().heal(healed).0);
     state.major_status = Some(MajorStatus::Sleep { turns_remaining: 3 });
     Some((healed, previous_status))
 }
@@ -1952,11 +1955,11 @@ fn create_substitute(state: &mut BattleState) -> Option<u32> {
     {
         return None;
     }
-    let cost = (state.max_hp / 4).max(1);
-    if state.current_hp <= cost {
+    let cost = (state.max_hp() / 4).max(1);
+    if state.current_hp() <= cost {
         return None;
     }
-    state.current_hp -= cost;
+    state.set_hp(state.hp().damage(cost).0);
     state
         .volatile_statuses
         .set(VolatileStatus::Substitute, cost);

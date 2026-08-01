@@ -23,6 +23,20 @@ pub(crate) fn plan_ui_frame<Action>(
     let mut labels = Vec::new();
     for (z_index, command) in frame.commands().iter().enumerate() {
         match command {
+            UiDrawCommand::Weather {
+                bounds,
+                pattern,
+                frame,
+                color,
+                clip,
+            } => {
+                if let Some(bounds) = ui_visible_bounds(*bounds, *clip) {
+                    images.push(
+                        GpuPixelImage::new(bounds, white, ui_color(*color), z_index as i32)
+                            .with_weather(*pattern, *frame),
+                    );
+                }
+            }
             UiDrawCommand::Shadow {
                 bounds,
                 color,

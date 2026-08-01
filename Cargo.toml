@@ -59,6 +59,7 @@ members = [
     "crates/runtime/trainer-editor-cli",
     "crates/quality/game-e2e",
     "crates/quality/wslg-wgpu-clear-smoke",
+    "crates/quality/animation-lab",
 ]
 resolver = "2"
 

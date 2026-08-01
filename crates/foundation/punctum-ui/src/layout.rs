@@ -62,6 +62,14 @@ pub enum UiDrawCommand {
         color: UiColor,
         clip: UiRect,
     },
+    /// 全屏天气覆盖层；`pattern` 为天气类型码，`frame` 驱动粒子动画。
+    Weather {
+        bounds: UiRect,
+        pattern: u32,
+        frame: u32,
+        color: UiColor,
+        clip: UiRect,
+    },
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UiHitRegion {
@@ -232,6 +240,17 @@ fn resolve_node<Action: Clone>(
     let content_radius = radius.inset(node.style.border.widths).clamped(paint_bounds);
     match &node.content {
         UiContent::Empty => {}
+        UiContent::Weather {
+            pattern,
+            frame,
+            color,
+        } => buffers.commands.push(UiDrawCommand::Weather {
+            bounds: paint_bounds,
+            pattern: *pattern,
+            frame: *frame,
+            color: *color,
+            clip,
+        }),
         UiContent::Fill(color) => buffers.commands.push(UiDrawCommand::Fill {
             bounds: paint_bounds,
             color: *color,

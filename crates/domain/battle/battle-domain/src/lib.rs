@@ -12,6 +12,7 @@ mod battle_state;
 mod battle_unit;
 mod enums;
 mod error;
+mod hit_points;
 mod id;
 mod moves;
 mod species;
@@ -33,6 +34,7 @@ pub use enums::{
     WeatherMoveModifier, WeatherState,
 };
 pub use error::ValidationError;
+pub use hit_points::{HitPoints, HitPointsPhase};
 pub use id::{
     BattleUnitId, FormId, MAX_MOVES, MoveId, MoveSlot, NationalDexId, PokemonId, TEAM_SIZE,
     TeamSlot,

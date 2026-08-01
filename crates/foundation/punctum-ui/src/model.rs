@@ -422,6 +422,12 @@ impl UiStyle {
 pub enum UiContent {
     Empty,
     Fill(UiColor),
+    /// 全屏天气覆盖层；`pattern` 为天气类型码，`frame` 驱动粒子动画。
+    Weather {
+        pattern: u32,
+        frame: u32,
+        color: UiColor,
+    },
     RadarChart {
         values: [u16; 6],
         max: u16,

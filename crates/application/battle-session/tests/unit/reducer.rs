@@ -7,8 +7,7 @@ fn combatant(id: &str, hp: u32) -> CombatantScene {
         level: 50,
         primary_type: PokemonType::Normal,
         secondary_type: None,
-        current_hp: hp,
-        max_hp: 100,
+        hp: HitPoints::clamped(hp, 100),
         substitute_hp: None,
         major_status: None,
         stages: StatStages::neutral(),
@@ -63,7 +62,7 @@ fn reducer_rejects_inactive_targets_fainting_with_hp_and_final_mismatch() {
     ));
 
     let mut expected = scene();
-    expected.own.current_hp = 99;
+    expected.own.set_hp(99);
     let mismatch = reduce_events(scene(), &[], expected).unwrap_err();
     assert!(matches!(mismatch, ReplayError::FinalSceneMismatch { .. }));
     assert_eq!(reducer.scene.own.condition(), CombatantCondition::Able);

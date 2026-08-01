@@ -1,5 +1,6 @@
 use crate::enums::{Ability, BattleStats, MajorStatus, StatStages};
 use crate::error::ValidationError;
+use crate::hit_points::HitPoints;
 use crate::id::MAX_MOVES;
 use crate::moves::Move;
 use crate::volatile::VolatileStatuses;
@@ -10,10 +11,8 @@ pub struct BattleState {
     pub level: u8,
     /// 最终战斗能力值。
     pub stats: BattleStats,
-    /// 最大 HP。
-    pub max_hp: u32,
-    /// 当前 HP。
-    pub current_hp: u32,
+    /// 血条聚合根（含当前与最大 HP），只能通过 [`BattleState::hp`] 与 [`BattleState::set_hp`] 访问。
+    hp: HitPoints,
     /// 已携带招式（含剩余 PP）。
     pub moves: Vec<Move>,
     /// 当前生效的特性。
@@ -44,15 +43,6 @@ impl BattleState {
         if !(1..=100).contains(&level) {
             return Err(ValidationError::InvalidLevel { level });
         }
-        if max_hp == 0 {
-            return Err(ValidationError::ZeroMaxHp);
-        }
-        if current_hp > max_hp {
-            return Err(ValidationError::CurrentHpExceedsMax {
-                current: current_hp,
-                max: max_hp,
-            });
-        }
         if moves.is_empty() || moves.len() > MAX_MOVES {
             return Err(ValidationError::InvalidMoveCount { count: moves.len() });
         }
@@ -68,8 +58,7 @@ impl BattleState {
         Ok(Self {
             level,
             stats,
-            max_hp,
-            current_hp,
+            hp: HitPoints::new(current_hp, max_hp)?,
             moves,
             ability,
             major_status,
@@ -90,12 +79,22 @@ impl BattleState {
 
     /// 最大 HP。
     pub const fn max_hp(&self) -> u32 {
-        self.max_hp
+        self.hp.max()
     }
 
     /// 当前 HP。
     pub const fn current_hp(&self) -> u32 {
-        self.current_hp
+        self.hp.current()
+    }
+
+    /// 血条聚合根。
+    pub const fn hp(&self) -> HitPoints {
+        self.hp
+    }
+
+    /// 用新的血条值替换当前血条。
+    pub fn set_hp(&mut self, hp: HitPoints) {
+        self.hp = hp;
     }
 
     /// 已携带招式（含剩余 PP）。
@@ -125,6 +124,6 @@ impl BattleState {
 
     /// 是否已经倒下。
     pub const fn is_fainted(&self) -> bool {
-        self.current_hp == 0
+        self.hp.is_zero()
     }
 }

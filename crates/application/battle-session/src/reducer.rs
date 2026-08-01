@@ -1,8 +1,8 @@
 use battle_application::{
     Ability, BattleEvent, BattleObservation, BattleStat, BattleTransition, BattleUnit,
-    BattleUnitId, MajorStatus, MajorStatusKind, ObservedBattleOutcome, Participant, PokemonType,
-    RevealedCombatant, RevealedPokemonObservation, StatStages, TypeEffectiveness, UsedMove,
-    VolatileStatus, Weather, WeatherState,
+    BattleUnitId, HitPoints, MajorStatus, MajorStatusKind, ObservedBattleOutcome, Participant,
+    PokemonType, RevealedCombatant, RevealedPokemonObservation, StatStages, TypeEffectiveness,
+    UsedMove, VolatileStatus, Weather, WeatherState,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -18,8 +18,7 @@ pub struct CombatantScene {
     level: u8,
     primary_type: PokemonType,
     secondary_type: Option<PokemonType>,
-    current_hp: u32,
-    max_hp: u32,
+    hp: HitPoints,
     substitute_hp: Option<u32>,
     major_status: Option<MajorStatus>,
     stages: StatStages,
@@ -48,11 +47,21 @@ impl CombatantScene {
     }
 
     pub const fn current_hp(&self) -> u32 {
-        self.current_hp
+        self.hp.current()
     }
 
     pub const fn max_hp(&self) -> u32 {
-        self.max_hp
+        self.hp.max()
+    }
+
+    /// 血条聚合根。
+    pub const fn hp(&self) -> HitPoints {
+        self.hp
+    }
+
+    /// 用观察到的当前 HP 更新血条；数值被夹在有效范围内。
+    pub fn set_hp(&mut self, current: u32) {
+        self.hp = HitPoints::new(current.min(self.hp.max()), self.hp.max()).unwrap_or(self.hp);
     }
 
     pub const fn substitute_hp(&self) -> Option<u32> {
@@ -330,7 +339,7 @@ impl BattleSceneReducer {
             } => {
                 self.ensure_active(*target, pokemon)?;
                 let combatant = self.scene.combatant_mut(*target);
-                combatant.current_hp = *remaining_hp;
+                combatant.set_hp(*remaining_hp);
                 combatant.condition = if *remaining_hp == 0 {
                     CombatantCondition::Fainted
                 } else {
@@ -429,7 +438,7 @@ impl BattleSceneReducer {
                 current_hp,
             } => {
                 self.ensure_active(*participant, pokemon)?;
-                self.scene.combatant_mut(*participant).current_hp = *current_hp;
+                self.scene.combatant_mut(*participant).set_hp(*current_hp);
                 BattleCue::Healed {
                     participant: *participant,
                     amount: *amount,
@@ -484,7 +493,7 @@ impl BattleSceneReducer {
                 self.ensure_active(*participant, pokemon)?;
                 let combatant = self.scene.combatant_mut(*participant);
                 combatant.substitute_hp = Some(*substitute_hp);
-                combatant.current_hp = *current_hp;
+                combatant.set_hp(*current_hp);
                 BattleCue::SubstituteCreated {
                     participant: *participant,
                     substitute_hp: *substitute_hp,
@@ -602,10 +611,10 @@ impl BattleSceneReducer {
             } => {
                 self.ensure_active(*participant, pokemon)?;
                 let combatant = self.scene.combatant_mut(*participant);
-                if combatant.current_hp != 0 {
+                if combatant.current_hp() != 0 {
                     return Err(ReplayError::FaintedWithHp {
                         participant: *participant,
-                        current_hp: combatant.current_hp,
+                        current_hp: combatant.current_hp(),
                     });
                 }
                 combatant.condition = CombatantCondition::Fainted;
@@ -658,8 +667,7 @@ fn scene_from_pokemon(pokemon: &BattleUnit) -> CombatantScene {
             .copied()
             .unwrap_or(PokemonType::Normal),
         secondary_type: pokemon.types().get(1).copied(),
-        current_hp: pokemon.current_hp(),
-        max_hp: pokemon.max_hp(),
+        hp: pokemon.state.hp(),
         substitute_hp: pokemon
             .state
             .volatile_statuses
@@ -677,8 +685,7 @@ fn scene_from_revealed(pokemon: &RevealedPokemonObservation) -> CombatantScene {
         level: pokemon.level(),
         primary_type: pokemon.primary_type(),
         secondary_type: pokemon.secondary_type(),
-        current_hp: pokemon.current_hp(),
-        max_hp: pokemon.max_hp(),
+        hp: pokemon.hp(),
         substitute_hp: pokemon.substitute_hp(),
         major_status: pokemon.major_status(),
         stages: pokemon.stages(),
@@ -693,8 +700,7 @@ fn scene_from_combatant(pokemon: &RevealedCombatant) -> CombatantScene {
         level: pokemon.level(),
         primary_type: pokemon.primary_type(),
         secondary_type: pokemon.secondary_type(),
-        current_hp: pokemon.current_hp(),
-        max_hp: pokemon.max_hp(),
+        hp: pokemon.hp(),
         substitute_hp: pokemon.substitute_hp(),
         major_status: pokemon.major_status(),
         stages: pokemon.stages(),

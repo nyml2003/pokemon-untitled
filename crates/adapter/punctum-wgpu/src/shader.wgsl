@@ -222,10 +222,96 @@ fn radar_fragment(input: VertexOutput) -> vec4<f32> {
     return color;
 }
 
+/// 确定性坐标哈希，用于天气粒子的伪随机分布。
+fn hash_pixel(coord: vec2<u32>) -> f32 {
+    let p = vec2<f32>(f32(coord.x), f32(coord.y)) * vec2<f32>(127.1, 311.7);
+    return fract(sin(dot(p, vec2<f32>(269.5, 183.3))) * 43758.5453);
+}
+
+/// 雨：斜向雨线，随帧下滑。
+fn weather_rain(input: VertexOutput, frame: u32, tint: vec4<f32>) -> vec4<f32> {
+    let size = input.pixel_size;
+    let point = input.local_pixel;
+    let column = u32(point.x) / 9u;
+    let cell = hash_pixel(vec2<u32>(column, 1u));
+    let travel = (f32(frame) * 9.0 + cell * 36.0) % (size.y + 24.0);
+    let top = travel - 18.0;
+    let length = 7.0;
+    if point.y < top || point.y > top + length {
+        return vec4<f32>(0.0);
+    }
+    let slope = 2.5;
+    let line_x = f32(column) * 9.0 + cell * 6.0 + (point.y - top) * slope;
+    let dist = abs(point.x - line_x);
+    let coverage = 1.0 - smoothstep(0.2, 0.9, dist);
+    return vec4<f32>(tint.rgb, tint.a * coverage);
+}
+
+/// 沙暴：随风斜向飘移的黄褐沙粒。
+fn weather_sandstorm(input: VertexOutput, frame: u32, tint: vec4<f32>) -> vec4<f32> {
+    let point = input.local_pixel;
+    let cell = vec2<u32>(u32(point.x) / 7u, u32(point.y) / 7u);
+    let random = hash_pixel(cell);
+    let drift = f32(frame % 13u);
+    let on = (random * 20.0 + drift) % 13.0 < 3.0;
+    if !on {
+        return vec4<f32>(0.0);
+    }
+    let grain_x = f32(cell.x) * 7.0 + random * 6.0 - drift;
+    let grain_y = f32(cell.y) * 7.0 + random * 5.0;
+    let dist = distance(point, vec2<f32>(grain_x, grain_y));
+    let coverage = 1.0 - smoothstep(0.8, 1.6, dist);
+    return vec4<f32>(tint.rgb, tint.a * coverage);
+}
+
+/// 晴天：从中心向外衰减的暖色光晕与轻微热浪。
+fn weather_sun(input: VertexOutput, tint: vec4<f32>) -> vec4<f32> {
+    let size = input.pixel_size;
+    let point = input.local_pixel;
+    let center = size * 0.5;
+    let dist = distance(point, center);
+    let max_dist = max(length(size * 0.5), 1.0);
+    let halo = 1.0 - dist / max_dist;
+    let heat = 0.5 + 0.5 * sin((point.x + point.y) * 0.02);
+    return vec4<f32>(tint.rgb, tint.a * (0.35 + 0.65 * halo) * (0.8 + 0.2 * heat));
+}
+
+/// 冰雹：缓慢下落的淡青冰粒。
+fn weather_hail(input: VertexOutput, frame: u32, tint: vec4<f32>) -> vec4<f32> {
+    let point = input.local_pixel;
+    let cell = vec2<u32>(u32(point.x) / 8u, u32(point.y) / 8u);
+    let random = hash_pixel(cell);
+    let speed = f32((frame * 5u + cell.y * 7u) % 32u) - 16.0;
+    let grain_x = f32(cell.x) * 8.0 + random * 5.0;
+    let grain_y = f32(cell.y) * 8.0 + random * 6.0 - speed;
+    let dist = distance(point, vec2<f32>(grain_x, grain_y));
+    let coverage = 1.0 - smoothstep(0.9, 1.8, dist);
+    return vec4<f32>(tint.rgb, tint.a * coverage);
+}
+
+fn weather_fragment(input: VertexOutput) -> vec4<f32> {
+    let pattern = u32(input.corner_radii.x);
+    let frame = u32(input.corner_radii.y);
+    let tint = input.tint;
+    if pattern == 0u {
+        return weather_rain(input, frame, tint);
+    }
+    if pattern == 1u {
+        return weather_sandstorm(input, frame, tint);
+    }
+    if pattern == 2u {
+        return weather_sun(input, tint);
+    }
+    return weather_hail(input, frame, tint);
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if input.primitive == 3u {
         return radar_fragment(input);
+    }
+    if input.primitive == 4u {
+        return weather_fragment(input);
     }
 
     let color = textureSample(atlas_texture, atlas_sampler, input.uv) * input.tint;
@@ -241,3 +327,4 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
     return vec4<f32>(color.rgb, color.a * coverage);
 }
+

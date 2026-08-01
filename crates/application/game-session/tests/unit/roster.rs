@@ -386,3 +386,19 @@ fn supported_non_damage_effects_keep_their_gen_three_semantics() {
     record.effect_id = Some(58);
     assert_eq!(move_effect(&record), None);
 }
+
+#[test]
+fn debug_presets_build_valid_teams_and_matching_manifests() {
+    let data = CurrentDataSet::embedded().unwrap();
+    for preset in DEBUG_PRESETS {
+        let (player, opponent, manifest) = debug_teams(&data, preset).unwrap();
+        assert_eq!(player.members().len(), 6);
+        assert_eq!(opponent.members().len(), 6);
+        assert_eq!(manifest.player().len(), 6);
+        assert_eq!(manifest.opponent().len(), 6);
+        for pokemon in player.members().iter().chain(opponent.members()) {
+            assert!(!pokemon.moves().is_empty());
+            assert!(pokemon.current_hp() > 0);
+        }
+    }
+}

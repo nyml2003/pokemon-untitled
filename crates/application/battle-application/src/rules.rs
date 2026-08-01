@@ -220,7 +220,7 @@ pub(crate) fn low_hp_type_boost_applies(
     attacker: &BattleUnit,
     move_type: Option<PokemonType>,
 ) -> bool {
-    attacker.state.current_hp * 3 <= attacker.state.max_hp
+    attacker.state.current_hp() * 3 <= attacker.state.max_hp()
         && matches!(
             (attacker.state.ability.first().copied(), move_type),
             (Some(Ability::Blaze), Some(PokemonType::Fire))

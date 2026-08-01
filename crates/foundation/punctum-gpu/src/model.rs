@@ -120,6 +120,7 @@ pub struct GpuAtlas {
     size: PixelSize,
     rgba8: Vec<u8>,
     resources: BTreeMap<ResourceId, PixelRect>,
+    fingerprint: u64,
 }
 
 impl GpuAtlas {
@@ -161,15 +162,22 @@ impl GpuAtlas {
             }
         }
 
+        let fingerprint = fnv1a(&rgba8);
         Ok(Self {
             size,
             rgba8,
             resources: entries,
+            fingerprint,
         })
     }
 
     pub const fn size(&self) -> PixelSize {
         self.size
+    }
+
+    /// 基于像素内容的确定性指纹，用于检测图集内容是否变化。
+    pub const fn fingerprint(&self) -> u64 {
+        self.fingerprint
     }
 
     pub fn rgba8(&self) -> &[u8] {
@@ -179,6 +187,16 @@ impl GpuAtlas {
     pub fn resource(&self, id: ResourceId) -> Option<PixelRect> {
         self.resources.get(&id).copied()
     }
+}
+
+/// FNV-1a 哈希，用作图集内容的确定性指纹。
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 fn checked_rgba8_length(size: PixelSize) -> Result<usize, GpuAtlasError> {
@@ -350,12 +368,20 @@ pub struct GpuPixelImage {
     pub z_index: i32,
     pub(crate) circle: Option<GpuPixelCircle>,
     pub(crate) radar: Option<RadarInstanceData>,
+    pub(crate) weather: Option<GpuWeather>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct GpuPixelCircle {
     pub(crate) center: PixelOffset,
     pub(crate) radius: u32,
+}
+
+/// 全屏天气覆盖实例：pattern 为天气类型码，frame 驱动粒子动画。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct GpuWeather {
+    pub(crate) pattern: u32,
+    pub(crate) frame: u32,
 }
 
 impl GpuPixelImage {
@@ -369,6 +395,7 @@ impl GpuPixelImage {
             z_index,
             circle: None,
             radar: None,
+            weather: None,
         }
     }
 
@@ -390,6 +417,11 @@ impl GpuPixelImage {
 
     pub const fn with_radar(mut self, radar: RadarInstanceData) -> Self {
         self.radar = Some(radar);
+        self
+    }
+
+    pub const fn with_weather(mut self, pattern: u32, frame: u32) -> Self {
+        self.weather = Some(GpuWeather { pattern, frame });
         self
     }
 }

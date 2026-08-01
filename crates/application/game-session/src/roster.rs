@@ -58,6 +58,12 @@ pub enum RosterError {
         level: u8,
         required_pp: u8,
     },
+    InvalidPresetSize {
+        actual: usize,
+    },
+    UnknownMoveIdentifier {
+        identifier: String,
+    },
     Ruleset(RulesetError),
     InvalidBattleModel(ValidationError),
     InvalidTraining(StatProjectionError),
@@ -230,6 +236,236 @@ pub fn sprite_manifest(
             .map(|member| member.pokemon_form_id)
             .collect(),
     })
+}
+
+/// 调试队伍中的一只宝可梦：全国图鉴编号与固定招式 identifier。
+pub struct DebugPokemon {
+    pub dex: u32,
+    pub moves: &'static [&'static str],
+}
+
+/// 一组预置调试队伍，招式固定以便针对特定技能组合测试。
+pub struct DebugTeamPreset {
+    pub name: &'static str,
+    pub player: &'static [DebugPokemon],
+    pub opponent: &'static [DebugPokemon],
+}
+
+/// 晴天队：晴天手开晴后日光束瞬发、火系威力翻倍。
+const SUNNY_ROSTER: &[DebugPokemon] = &[
+    fire(
+        6,
+        &["overheat", "fire-blast", "flamethrower", "double-edge"],
+    ),
+    fire(59, &["sunny-day", "overheat", "fire-blast", "flamethrower"]),
+    fire(38, &["sunny-day", "flamethrower", "fire-blast", "overheat"]),
+    fire(78, &["sunny-day", "solar-beam", "fire-blast", "overheat"]),
+    grass(3, &["sunny-day", "solar-beam", "giga-drain", "sludge-bomb"]),
+    grass(103, &["sunny-day", "solar-beam", "giga-drain", "psychic"]),
+];
+
+/// 雨天队：雨天手开雨后水系威力翻倍、打雷必中。
+const RAINY_ROSTER: &[DebugPokemon] = &[
+    water(9, &["rain-dance", "surf", "blizzard", "waterfall"]),
+    water(130, &["rain-dance", "hydro-pump", "surf", "waterfall"]),
+    water(131, &["rain-dance", "surf", "ice-beam", "blizzard"]),
+    water(134, &["rain-dance", "surf", "waterfall", "blizzard"]),
+    electric(
+        25,
+        &["rain-dance", "thunder", "thunderbolt", "thunder-punch"],
+    ),
+    electric(145, &["rain-dance", "thunder", "thunderbolt", "drill-peck"]),
+];
+
+/// 沙暴队：沙暴手开沙后岩石系特防提升，地面系免疫沙暴伤害。
+const SAND_ROSTER: &[DebugPokemon] = &[
+    ground(
+        112,
+        &["sandstorm", "earthquake", "rock-slide", "brick-break"],
+    ),
+    rock(
+        76,
+        &["sandstorm", "earthquake", "rock-slide", "double-edge"],
+    ),
+    rock(142, &["sandstorm", "rock-slide", "aerial-ace", "fly"]),
+    ground(28, &["sandstorm", "earthquake", "slash", "double-edge"]),
+    ground(51, &["earthquake", "dig", "rock-slide", "double-edge"]),
+    rock(95, &["sandstorm", "rock-slide", "earthquake", "dig"]),
+];
+
+/// 冰雹队：冰雹手开雹后冰系受益、暴风雪必中。
+const HAIL_ROSTER: &[DebugPokemon] = &[
+    ice(144, &["hail", "blizzard", "ice-beam", "fly"]),
+    ice(87, &["hail", "ice-beam", "blizzard", "surf"]),
+    water(131, &["hail", "blizzard", "ice-beam", "surf"]),
+    ice(124, &["hail", "ice-beam", "blizzard", "psychic"]),
+    ice(91, &["hail", "ice-beam", "surf", "blizzard"]),
+    water(9, &["hail", "ice-beam", "blizzard", "surf"]),
+];
+
+/// 调试窗口可切换的预置测试队伍组合。
+pub const DEBUG_PRESETS: &[DebugTeamPreset] = &[
+    DebugTeamPreset {
+        name: "晴天队",
+        player: SUNNY_ROSTER,
+        opponent: RAINY_ROSTER,
+    },
+    DebugTeamPreset {
+        name: "雨天队",
+        player: RAINY_ROSTER,
+        opponent: SAND_ROSTER,
+    },
+    DebugTeamPreset {
+        name: "沙暴队",
+        player: SAND_ROSTER,
+        opponent: HAIL_ROSTER,
+    },
+    DebugTeamPreset {
+        name: "冰雹队",
+        player: HAIL_ROSTER,
+        opponent: SUNNY_ROSTER,
+    },
+    DebugTeamPreset {
+        name: "传说队",
+        player: &[
+            psychic(150, &["psychic", "calm-mind", "barrier", "hyper-beam"]),
+            dragon(149, &["dragon-claw", "dragon-rage", "aerial-ace", "fly"]),
+            water(130, &["hydro-pump", "surf", "waterfall", "hyper-beam"]),
+            ghost(94, &["shadow-ball", "sludge-bomb", "lick", "night-shade"]),
+            fire(6, &["overheat", "fire-blast", "flamethrower", "fly"]),
+            electric(
+                25,
+                &["thunderbolt", "thunder", "thunder-punch", "thunder-wave"],
+            ),
+        ],
+        opponent: &[
+            psychic(151, &["psychic", "swift", "calm-mind", "hyper-beam"]),
+            psychic(65, &["psychic", "confusion", "calm-mind", "recover"]),
+            ground(
+                112,
+                &["earthquake", "rock-slide", "double-edge", "brick-break"],
+            ),
+            fighting(
+                68,
+                &["focus-punch", "cross-chop", "karate-chop", "brick-break"],
+            ),
+            normal(143, &["body-slam", "hyper-beam", "earthquake", "rest"]),
+            fire(59, &["overheat", "fire-blast", "flamethrower", "ember"]),
+        ],
+    },
+];
+
+const fn fire(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn water(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn electric(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn grass(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn psychic(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn dragon(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn ghost(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn ground(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn fighting(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn normal(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+const fn rock(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+const fn ice(dex: u32, moves: &'static [&'static str]) -> DebugPokemon {
+    DebugPokemon { dex, moves }
+}
+
+/// 用一组预置队伍构建双方队伍与精灵清单。
+pub fn debug_teams(
+    data: &CurrentDataSet,
+    preset: &DebugTeamPreset,
+) -> Result<(Team, Team, DemoSpriteManifest), RosterError> {
+    let player = fixed_team(data, preset.player)?;
+    let opponent = fixed_team(data, preset.opponent)?;
+    let manifest = DemoSpriteManifest {
+        player: preset
+            .player
+            .iter()
+            .map(|entry| PokemonFormId(entry.dex))
+            .collect(),
+        opponent: preset
+            .opponent
+            .iter()
+            .map(|entry| PokemonFormId(entry.dex))
+            .collect(),
+    };
+    Ok((player, opponent, manifest))
+}
+
+/// 从固定配置构建一支队伍，招式按 identifier 解析并校验该物种可学。
+fn fixed_team(data: &CurrentDataSet, roster: &[DebugPokemon]) -> Result<Team, RosterError> {
+    if roster.len() != TEAM_SIZE {
+        return Err(RosterError::InvalidPresetSize {
+            actual: roster.len(),
+        });
+    }
+    let members = roster
+        .iter()
+        .map(|entry| {
+            let form = PokemonFormId(entry.dex);
+            let move_ids = entry
+                .moves
+                .iter()
+                .map(|identifier| {
+                    let record = data
+                        .move_iter()
+                        .find(|record| record.identifier == *identifier)
+                        .ok_or_else(|| RosterError::UnknownMoveIdentifier {
+                            identifier: (*identifier).to_owned(),
+                        })?;
+                    if !data.can_learn_at_level(form, record.id, DEMO_LEVEL) {
+                        return Err(RosterError::MoveNotLearnable {
+                            pokemon: form,
+                            battle_move: record.id,
+                        });
+                    }
+                    Ok(record.id)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            if move_ids.is_empty() {
+                return Err(RosterError::MissingPokemon(form));
+            }
+            Ok(RosterMember {
+                pokemon_form_id: form,
+                level: DEMO_LEVEL,
+                move_ids,
+                training: TrainingValues::perfect_untrained(),
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    build_team(data, "preset", &members)
 }
 
 fn random_members(data: &CurrentDataSet, seed: u64) -> Result<Vec<RosterMember>, RosterError> {

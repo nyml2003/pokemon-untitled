@@ -812,3 +812,37 @@ fn transparent_shadow_is_skipped() {
         other => panic!("expected only fill, found {other:?}"),
     }
 }
+
+#[test]
+fn weather_node_emits_weather_command() {
+    let tree: UiTree = UiTree::new(
+        UiNode::auto()
+            .with_style(UiStyle {
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                ..UiStyle::default()
+            })
+            .with_content(UiContent::Weather {
+                pattern: 0,
+                frame: 12,
+                color: UiColor::new(1, 2, 3, 90),
+            }),
+    )
+    .unwrap();
+    let frame = tree.resolve(UiSize::new(100, 100)).unwrap();
+    match &frame.commands()[0] {
+        UiDrawCommand::Weather {
+            bounds,
+            pattern,
+            frame,
+            color,
+            ..
+        } => {
+            assert_eq!(*pattern, 0);
+            assert_eq!(*frame, 12);
+            assert_eq!(*bounds, UiRect::new(0, 0, 100, 100));
+            assert_eq!(*color, UiColor::new(1, 2, 3, 90));
+        }
+        _ => panic!("expected weather command"),
+    }
+}

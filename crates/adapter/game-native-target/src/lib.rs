@@ -46,6 +46,12 @@ impl<'window> NativeTarget<'window> {
         })
     }
 
+    /// 用新资源刷新 GPU 图集；调试队伍切换后图集改变时必须调用。
+    pub fn update_assets(&mut self, assets: &NativeAssets) -> Result<(), NativeTargetError> {
+        self.runtime.update_atlas(assets.atlas())?;
+        Ok(())
+    }
+
     pub const fn surface_size(&self) -> PixelSize {
         self.runtime.surface_size()
     }

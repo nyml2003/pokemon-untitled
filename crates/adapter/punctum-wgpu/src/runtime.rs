@@ -91,6 +91,7 @@ pub struct GpuRuntime<'window> {
     configured: bool,
     reconfigure_pending: bool,
     atlas_size: PixelSize,
+    atlas_fingerprint: u64,
     max_instances: u32,
     instance_buffer: wgpu::Buffer,
     instance_capacity: u32,
@@ -186,6 +187,7 @@ impl<'window> GpuRuntime<'window> {
             configured,
             reconfigure_pending: false,
             atlas_size: atlas.size(),
+            atlas_fingerprint: atlas.fingerprint(),
             max_instances,
             instance_buffer,
             instance_capacity: 1,
@@ -218,6 +220,27 @@ impl<'window> GpuRuntime<'window> {
         self.config.height = size.height;
         self.configured = true;
         self.reconfigure_pending = true;
+    }
+
+    /// 用新图集刷新纹理与绑定组；仅当图集内容指纹变化时重建，同一 device 内完成。
+    pub fn update_atlas(&mut self, atlas: &GpuAtlas) -> Result<(), GpuRuntimeError> {
+        if atlas.fingerprint() == self.atlas_fingerprint {
+            return Ok(());
+        }
+        let texture = create_atlas_texture(&self.device, &self.queue, atlas);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        self.atlas_view = view;
+        self.bind_group = create_bind_group(
+            &self.device,
+            &self.bind_group_layout,
+            &self.uniform_buffer,
+            &self.atlas_view,
+            &self.sampler,
+            &self.radar_buffer,
+        );
+        self.atlas_size = atlas.size();
+        self.atlas_fingerprint = atlas.fingerprint();
+        Ok(())
     }
 
     pub fn present_surface(

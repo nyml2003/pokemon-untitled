@@ -96,6 +96,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "animation-lab"
+version = "0.0.0"
+dependencies = [
+ "game-assets",
+ "game-native-target",
+ "punctum-gpu",
+ "punctum-ui",
+ "winit",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"

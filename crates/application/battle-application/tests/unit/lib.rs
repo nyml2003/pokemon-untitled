@@ -127,7 +127,7 @@ fn creation_rejects_a_team_without_a_conscious_pokemon() {
         .map(|member| {
             let species = member.species().clone();
             let mut state = member.state().clone();
-            state.current_hp = 0;
+            state.set_hp(state.hp().damage(state.hp().max()).0);
             BattleUnit::new(species, member.id().clone(), state).unwrap()
         })
         .collect();

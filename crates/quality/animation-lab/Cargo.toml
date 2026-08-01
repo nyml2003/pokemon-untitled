@@ -1,0 +1,13 @@
+[package]
+name = "animation-lab"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+game-assets = { workspace = true }
+game-native-target = { workspace = true }
+punctum-gpu = { workspace = true }
+punctum-ui = { workspace = true }
+winit = "0.30.13"

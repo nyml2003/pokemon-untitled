@@ -22,7 +22,7 @@ use game_native_target::{
 };
 use game_page_model::{PageEffect, PageIntent, PageModel, PageState, PlayerRoute, project_page};
 use game_scene_view::{SceneFrame, SceneViewInput, game_viewport, project_scene};
-use game_session::{ProductCommand, ProductSession};
+use game_session::{DEBUG_PRESETS, GameScene, ProductCommand, ProductSession};
 use game_ui::{GameControl, GameRuntime, PageUiOutcome, PageUiState};
 use game_view::project_page_model_with_visual_state;
 use map::load_map;
@@ -30,8 +30,11 @@ use map_project::MapProject;
 use map_render::AtomicTileCatalog;
 use narrative::load_narrative_scripts;
 use punctum_gpu::{PixelSize, Rgba8};
-use punctum_input::KeyPhase;
-use punctum_ui::{UiFrame, UiInteraction, UiInteractionTarget, UiSize};
+use punctum_input::{KeyPhase, PhysicalKeyCode};
+use punctum_ui::{
+    Dimension, Insets, Position, UiBorderRadius, UiColor, UiContent, UiFrame, UiInteraction,
+    UiInteractionTarget, UiNode, UiSize, UiStyle, UiTree,
+};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
@@ -66,6 +69,8 @@ struct CreatureGameApp {
     last_ui_instant: Instant,
     window: Option<Arc<Window>>,
     runtime: Option<NativeTarget<'static>>,
+    debug_preset_index: usize,
+    debug_preset_active: bool,
 }
 
 /// 以系统时钟与进程号派生每次启动不同的队伍随机种子。
@@ -122,6 +127,8 @@ impl CreatureGameApp {
             last_ui_instant: now,
             window: None,
             runtime: None,
+            debug_preset_index: 0,
+            debug_preset_active: false,
         })
     }
 
@@ -336,9 +343,32 @@ impl CreatureGameApp {
                 return;
             }
         };
+        let plan = match self.debug_badge_frame(surface_size) {
+            Some(badge) => {
+                let badge = FramePlan::from_ui_frame(&badge, &self.assets, PAGE_TEXT_SCALE);
+                match (Ok(plan), badge) {
+                    (Ok(plan), Ok(badge)) => Ok(FramePlan::compose(plan, badge)),
+                    (Err(error), _) | (_, Err(error)) => Err(error),
+                }
+            }
+            None => Ok(plan),
+        };
+        let plan = match plan {
+            Ok(plan) => plan,
+            Err(error) => {
+                eprintln!("debug badge planning failed: {error}");
+                event_loop.exit();
+                return;
+            }
+        };
         let (Some(window), Some(runtime)) = (&self.window, &mut self.runtime) else {
             return;
         };
+        if let Err(error) = runtime.update_assets(&self.assets) {
+            eprintln!("atlas refresh failed: {error}");
+            event_loop.exit();
+            return;
+        }
         match runtime.present(&plan) {
             Ok(PresentOutcome::Reconfigured | PresentOutcome::SurfaceLost) => {
                 runtime.resize(runtime.surface_size());
@@ -357,6 +387,83 @@ impl CreatureGameApp {
             runtime.resize(pixel_size(size));
         }
         self.request_redraw();
+    }
+
+    /// 用调试预置队伍重建游戏与精灵资源；只应在世界场景调用。
+    fn restart_with_debug_preset(&mut self, preset_index: usize) -> Result<(), String> {
+        let preset = DEBUG_PRESETS.get(preset_index).ok_or("调试队伍索引越界")?;
+        let data = CurrentDataSet::embedded().map_err(|error| format!("数据加载失败：{error}"))?;
+        let loaded_map = load_map().map_err(|error| format!("地图加载失败：{error}"))?;
+        let scripts = load_narrative_scripts().map_err(|error| format!("脚本加载失败：{error}"))?;
+        let world = world_application::WorldApplication::from_map_project_with_scripts(
+            &loaded_map.project,
+            scripts,
+        )
+        .map_err(|error| format!("世界构建失败：{error:?}"))?;
+        let game = GameRuntime::new_with_debug_preset(data, world, preset)
+            .map_err(|error| format!("游戏构建失败：{error:?}"))?;
+        let manifest = game
+            .sprite_manifest()
+            .ok_or("游戏运行时不可用")?
+            .map_err(|error| format!("精灵清单失败：{error:?}"))?;
+        let assets = sprites::load_host_assets(
+            &manifest,
+            &self.pokedex,
+            game.snapshot().ok_or("游戏运行时不可用")?.world(),
+            loaded_map.images,
+        )
+        .map_err(|error| format!("精灵资源加载失败：{error}"))?;
+        self.game = game;
+        self.assets = assets;
+        self.map_project = loaded_map.project;
+        self.map_catalog = loaded_map.catalog;
+        self.debug_preset_index = preset_index;
+        self.debug_preset_active = true;
+        self.status = Some(format!("调试队伍 {}：{}", preset_index + 1, preset.name));
+        self.request_redraw();
+        Ok(())
+    }
+
+    /// 在角落叠加调试提示：未切换时提示按键，切换后显示当前队伍。
+    fn debug_badge_frame(&self, size: PixelSize) -> Option<UiFrame> {
+        let label = if self.debug_preset_active {
+            let preset = DEBUG_PRESETS.get(self.debug_preset_index)?;
+            format!(
+                "调试队伍 {}：{}（F5 切换）",
+                self.debug_preset_index + 1,
+                preset.name
+            )
+        } else {
+            "按 F5 切换调试队伍".to_owned()
+        };
+        let tree = UiTree::new(
+            UiNode::auto()
+                .with_style(UiStyle {
+                    width: Dimension::Fill,
+                    height: Dimension::Fill,
+                    ..UiStyle::default()
+                })
+                .with_children([UiNode::auto()
+                    .with_style(UiStyle {
+                        position: Position::Absolute { left: 12, top: 12 },
+                        padding: Insets::all(8),
+                        border_radius: UiBorderRadius::all(8),
+                        ..UiStyle::default()
+                    })
+                    .with_content(UiContent::Fill(UiColor::new(18, 24, 32, 220)))
+                    .with_children([UiNode::auto()
+                        .with_style(UiStyle {
+                            padding: Insets::all(2),
+                            ..UiStyle::default()
+                        })
+                        .with_content(UiContent::Text {
+                            content: label,
+                            color: UiColor::new(240, 220, 140, 255),
+                            font_size: 16,
+                        })])]),
+        )
+        .ok()?;
+        tree.resolve(UiSize::new(size.width, size.height)).ok()
     }
 
     fn handle_key(&mut self, event: winit::event::KeyEvent) {
@@ -386,6 +493,22 @@ impl CreatureGameApp {
             }
         };
         if matches!(model, PageModel::World(_)) {
+            if key.phase == KeyPhase::Press && key.physical == Some(PhysicalKeyCode::F5) {
+                let in_battle = self
+                    .game
+                    .snapshot()
+                    .is_some_and(|snapshot| snapshot.scene() == GameScene::Battle);
+                if in_battle {
+                    self.status = Some("请在非战斗场景按 F5 切换调试队伍".to_owned());
+                } else {
+                    let next = (self.debug_preset_index + 1) % DEBUG_PRESETS.len();
+                    if let Err(error) = self.restart_with_debug_preset(next) {
+                        self.status = Some(error);
+                    }
+                }
+                self.request_redraw();
+                return;
+            }
             let control = GameControl::from_key_event(&key);
             if key.phase == KeyPhase::Press && control == Some(GameControl::Start) {
                 self.dispatch_page_intent(PageIntent::OpenPause);
@@ -692,7 +815,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Some(exit) = thin_slice::run_from_arguments(std::env::args_os().skip(1))? {
         return exit;
     }
-    let event_loop = EventLoop::new()?;
+    let event_loop = EventLoop::new().map_err(|error| {
+        std::io::Error::other(format!(
+            "窗口系统初始化失败，可能是 WSLg 显示会话不可用（切换显示器/分辨率后常见）；请重启 WSL（wsl --shutdown）后重试：{error}"
+        ))
+    })?;
     let mut app = CreatureGameApp::new()?;
     event_loop.run_app(&mut app)?;
     Ok(())

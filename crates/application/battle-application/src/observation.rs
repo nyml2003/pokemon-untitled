@@ -1,7 +1,7 @@
 use battle_domain::{
     Ability, Action, Battle, BattleError, BattleEvent as DomainEvent,
     BattleOutcome as DomainBattleOutcome, BattlePhase, BattleStat, BattleUnit, BattleUnitId,
-    DamageSource as DomainDamageSource, MAX_MOVES, MajorStatus, MajorStatusKind, Move,
+    DamageSource as DomainDamageSource, HitPoints, MAX_MOVES, MajorStatus, MajorStatusKind, Move,
     MoveCategory, MoveId, MoveSlot, PokemonType, Side, StatStages,
     SubmitOutcome as DomainSubmitOutcome, TEAM_SIZE, TeamSlot, TypeEffectiveness,
     UsedMove as DomainUsedMove, VolatileStatus, Weather, WeatherState,
@@ -135,8 +135,7 @@ pub struct RevealedPokemonObservation {
     level: u8,
     primary_type: PokemonType,
     secondary_type: Option<PokemonType>,
-    max_hp: u32,
-    current_hp: u32,
+    hp: HitPoints,
     substitute_hp: Option<u32>,
     major_status: Option<MajorStatus>,
     stages: StatStages,
@@ -165,11 +164,16 @@ impl RevealedPokemonObservation {
     }
 
     pub const fn max_hp(&self) -> u32 {
-        self.max_hp
+        self.hp.max()
     }
 
     pub const fn current_hp(&self) -> u32 {
-        self.current_hp
+        self.hp.current()
+    }
+
+    /// 血条聚合根。
+    pub const fn hp(&self) -> HitPoints {
+        self.hp
     }
 
     pub const fn substitute_hp(&self) -> Option<u32> {
@@ -185,7 +189,7 @@ impl RevealedPokemonObservation {
     }
 
     pub const fn is_fainted(&self) -> bool {
-        self.current_hp == 0
+        self.hp.is_zero()
     }
 
     pub fn revealed_moves(&self) -> &[RevealedMoveObservation] {
@@ -200,8 +204,7 @@ pub struct RevealedCombatant {
     level: u8,
     primary_type: PokemonType,
     secondary_type: Option<PokemonType>,
-    max_hp: u32,
-    current_hp: u32,
+    hp: HitPoints,
     substitute_hp: Option<u32>,
     major_status: Option<MajorStatus>,
     stages: StatStages,
@@ -229,11 +232,16 @@ impl RevealedCombatant {
     }
 
     pub const fn max_hp(&self) -> u32 {
-        self.max_hp
+        self.hp.max()
     }
 
     pub const fn current_hp(&self) -> u32 {
-        self.current_hp
+        self.hp.current()
+    }
+
+    /// 血条聚合根。
+    pub const fn hp(&self) -> HitPoints {
+        self.hp
     }
 
     pub const fn substitute_hp(&self) -> Option<u32> {
@@ -586,7 +594,7 @@ fn damage_projections(
     attacker: &BattleUnit,
     defender: &BattleUnit,
 ) -> Vec<DamageProjection> {
-    let max_hp = u64::from(defender.state.max_hp.max(1));
+    let max_hp = u64::from(defender.state.max_hp().max(1));
     attacker
         .moves()
         .iter()
@@ -730,8 +738,7 @@ fn revealed_pokemon(
             .copied()
             .unwrap_or(PokemonType::Normal),
         secondary_type: pokemon.types().get(1).copied(),
-        max_hp: pokemon.max_hp(),
-        current_hp: pokemon.current_hp(),
+        hp: pokemon.state.hp(),
         substitute_hp: pokemon
             .state
             .volatile_statuses
@@ -766,8 +773,7 @@ fn revealed_pokemon_at(
             .copied()
             .unwrap_or(PokemonType::Normal),
         secondary_type: pokemon.types().get(1).copied(),
-        max_hp: pokemon.max_hp(),
-        current_hp,
+        hp: HitPoints::clamped(current_hp, pokemon.max_hp()),
         substitute_hp: pokemon
             .state
             .volatile_statuses

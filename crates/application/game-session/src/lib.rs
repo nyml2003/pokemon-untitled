@@ -23,7 +23,7 @@ pub use product_session::{
     ProductBattleSnapshot, ProductCommand, ProductError, ProductEvent, ProductEvents,
     ProductSession, ProductSnapshot,
 };
-pub use roster::{DemoSpriteManifest, RosterError};
+pub use roster::{DEBUG_PRESETS, DebugTeamPreset, DemoSpriteManifest, RosterError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameScene {
@@ -135,6 +135,7 @@ pub struct GameSession {
     battle: Option<GameBattleSession>,
     scene: GameScene,
     roster_seed: u64,
+    debug_preset: Option<&'static roster::DebugTeamPreset>,
 }
 
 impl GameSession {
@@ -152,7 +153,14 @@ impl GameSession {
             battle: None,
             scene: GameScene::World,
             roster_seed,
+            debug_preset: None,
         })
+    }
+
+    /// 使用调试预置队伍；切换队伍发生在世界场景。
+    pub fn with_debug_preset(mut self, preset: &'static roster::DebugTeamPreset) -> Self {
+        self.debug_preset = Some(preset);
+        self
     }
 
     pub fn new_demo(data: CurrentDataSet, roster_seed: u64) -> Result<Self, GameError> {
@@ -168,9 +176,15 @@ impl GameSession {
     }
 
     pub fn sprite_manifest(&self) -> Result<DemoSpriteManifest, GameError> {
-        roster::sprite_manifest(&self.data, self.roster_seed)
-            .map_err(GameSetupError::from)
-            .map_err(Into::into)
+        match self.debug_preset {
+            Some(preset) => roster::debug_teams(&self.data, preset)
+                .map(|(_, _, manifest)| manifest)
+                .map_err(GameSetupError::from)
+                .map_err(Into::into),
+            None => roster::sprite_manifest(&self.data, self.roster_seed)
+                .map_err(GameSetupError::from)
+                .map_err(Into::into),
+        }
     }
 
     pub fn legal_player_actions(&self) -> Vec<Action> {
@@ -227,7 +241,11 @@ impl GameSession {
         self.refresh_world_observation()?;
         let event = outcome.event();
         if outcome.starts_battle() {
-            self.battle = Some(GameBattleSession::new(&self.data, self.roster_seed)?);
+            self.battle = Some(GameBattleSession::new(
+                &self.data,
+                self.roster_seed,
+                self.debug_preset,
+            )?);
             self.scene = GameScene::Battle;
             return Ok(GameEvents::two(
                 GameEvent::World(event),
@@ -315,8 +333,18 @@ struct GameBattleSession {
 }
 
 impl GameBattleSession {
-    fn new(data: &CurrentDataSet, roster_seed: u64) -> Result<Self, GameSetupError> {
-        let (player_team, opponent_team) = roster::demo_teams(data, roster_seed)?;
+    fn new(
+        data: &CurrentDataSet,
+        roster_seed: u64,
+        preset: Option<&roster::DebugTeamPreset>,
+    ) -> Result<Self, GameSetupError> {
+        let (player_team, opponent_team) = match preset {
+            Some(preset) => {
+                let (player, opponent, _) = roster::debug_teams(data, preset)?;
+                (player, opponent)
+            }
+            None => roster::demo_teams(data, roster_seed)?,
+        };
         let own_sprite_ids = player_team
             .members()
             .iter()

@@ -171,7 +171,10 @@ pub fn plan_pixels(
                     has_radar = true;
                     (3, image.corner_radii)
                 }
-                None => (1, image.corner_radii),
+                None => match image.weather {
+                    Some(weather) => (4, [weather.pattern, weather.frame, 0, 0]),
+                    None => (1, image.corner_radii),
+                },
             },
         };
         instances.push(InstanceData {

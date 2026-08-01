@@ -1,8 +1,8 @@
 use crate::{
     Ability, Accuracy, Battle, BattleError, BattleOutcome, BattlePhase, BattleState, BattleStats,
-    BattleUnit, BattleUnitId, FormId, Move, MoveId, NationalDexId, PokemonType, ReplacementSides,
-    Side, Species, StatBlock, StatStages, TEAM_SIZE, Team, TeamSlot, TypeEffectiveness,
-    ValidationError, VolatileStatus, VolatileStatuses,
+    BattleUnit, BattleUnitId, FormId, HitPoints, HitPointsPhase, Move, MoveId, NationalDexId,
+    PokemonType, ReplacementSides, Side, Species, StatBlock, StatStages, TEAM_SIZE, Team, TeamSlot,
+    TypeEffectiveness, ValidationError, VolatileStatus, VolatileStatuses,
 };
 
 fn move_id(id: &str) -> MoveId {
@@ -310,4 +310,65 @@ fn effectiveness_and_outcome_enums_cover_expected_variants() {
     );
     assert!(ReplacementSides::Both.contains(Side::One));
     assert!(!BattlePhase::Finished(BattleOutcome::Draw).requires_replacement(Side::One));
+}
+
+#[test]
+fn hit_points_derive_phase_across_health_bands() {
+    use HitPointsPhase::{Full, High, Low, Mid, Zero};
+
+    let full = HitPoints::new(100, 100).unwrap();
+    assert_eq!(full.phase(), Full);
+    assert_eq!(full.percent(), 100);
+    assert!(!full.is_zero());
+
+    assert_eq!(HitPoints::new(60, 100).unwrap().phase(), High);
+    assert_eq!(HitPoints::new(50, 100).unwrap().phase(), Mid);
+    assert_eq!(HitPoints::new(21, 100).unwrap().phase(), Mid);
+    assert_eq!(HitPoints::new(20, 100).unwrap().phase(), Low);
+    assert_eq!(HitPoints::new(19, 100).unwrap().phase(), Low);
+    assert_eq!(HitPoints::new(0, 100).unwrap().phase(), Zero);
+    assert!(HitPoints::new(0, 100).unwrap().is_zero());
+}
+
+#[test]
+fn hit_points_validate_current_against_max() {
+    assert_eq!(HitPoints::new(0, 0), Err(ValidationError::ZeroMaxHp));
+    assert_eq!(
+        HitPoints::new(11, 10),
+        Err(ValidationError::CurrentHpExceedsMax {
+            current: 11,
+            max: 10
+        })
+    );
+}
+
+#[test]
+fn hit_points_damage_and_heal_stay_within_bounds_and_report_actual() {
+    let (damaged, actual) = HitPoints::new(50, 100).unwrap().damage(30);
+    assert_eq!(actual, 30);
+    assert_eq!(damaged.current(), 20);
+
+    let (overkill, actual) = damaged.damage(100);
+    assert_eq!(actual, 20);
+    assert_eq!(overkill.current(), 0);
+
+    let (healed, actual) = overkill.heal(40);
+    assert_eq!(actual, 40);
+    assert_eq!(healed.current(), 40);
+
+    let (capped, actual) = healed.heal(1000);
+    assert_eq!(actual, 60);
+    assert_eq!(capped.current(), 100);
+    assert_eq!(capped.phase(), HitPointsPhase::Full);
+}
+
+#[test]
+fn hit_points_lock_is_explicit_and_does_not_change_health() {
+    let hp = HitPoints::new(40, 100).unwrap();
+    let locked = hp.lock();
+    assert!(locked.is_locked());
+    assert_eq!(locked.current(), 40);
+    assert_eq!(locked.percent(), 40);
+    assert!(!locked.unlock().is_locked());
+    assert_eq!(locked.unlock(), hp);
 }

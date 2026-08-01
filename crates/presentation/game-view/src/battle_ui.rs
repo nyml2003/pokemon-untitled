@@ -6,8 +6,9 @@ use super::{
 };
 use super::{assets::*, common::*};
 use battle_session::{
-    Action, BattleObservation, BattleSessionSnapshot, BattleUnit, DamageProjection, MoveCategory,
-    Participant, PokemonType, TypeEffectiveness,
+    Action, BattleObservation, BattleSessionSnapshot, BattleUnit, DamageProjection, HitPoints,
+    HitPointsPhase, MoveCategory, Participant, PokemonType, TypeEffectiveness, Weather,
+    WeatherState,
 };
 use game_data::PokedexData;
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction};
@@ -18,8 +19,8 @@ use game_ui_kit::{
 };
 use punctum_gpu::Rgba8;
 use punctum_ui::{
-    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
-    UiContentId, UiKey, UiNode, UiStyle, UiTree,
+    CrossAlign, Dimension, FlexDirection, Insets, MainAlign, Position, UiBuildError, UiColor,
+    UiContent, UiContentId, UiKey, UiNode, UiStyle, UiTree,
 };
 
 /// 属性图标显示尺寸：真实资源 32x16（2:1）放大两倍。
@@ -319,6 +320,16 @@ pub fn project_battle_ui(
         BattleMenuPage::Pokemon => UiNode::auto(),
         BattleMenuPage::Hidden => UiNode::auto(),
     };
+    // 战斗菜单选中招式时，在对方血条上标出命中后可能剩余的 HP 区间。
+    let opponent_preview = if page == BattleMenuPage::Fight && !actions.contains(&Action::Struggle)
+    {
+        observation
+            .and_then(|observation| observation.own().active_move_projections().get(selected))
+            .filter(|projection| projection.min_percent() > 0 || projection.max_percent() > 0)
+            .map(|projection| (projection.min_percent(), projection.max_percent()))
+    } else {
+        None
+    };
 
     UiTree::new(panel(
         8_000,
@@ -355,11 +366,16 @@ pub fn project_battle_ui(
                                 8_100,
                                 opponent.name(),
                                 opponent.level(),
-                                opponent.current_hp(),
-                                opponent.max_hp(),
+                                if opponent_preview.is_some() {
+                                    opponent.hp().lock()
+                                } else {
+                                    opponent.hp()
+                                },
+                                sprite_frame,
                                 OPPONENT_ACCENT.into_ui(),
                                 opponent.primary_type(),
                                 opponent.secondary_type(),
+                                opponent_preview,
                             ),
                             image(
                                 8_110,
@@ -404,14 +420,17 @@ pub fn project_battle_ui(
                                 8_300,
                                 own.name(),
                                 own.level(),
-                                own.current_hp(),
-                                own.max_hp(),
+                                own.hp(),
+                                sprite_frame,
                                 PLAYER_ACCENT.into_ui(),
                                 own.primary_type(),
                                 own.secondary_type(),
+                                None,
                             ),
                         ]),
                 ]),
+            weather_overlay_node(snapshot.scene().weather(), sprite_frame)
+                .unwrap_or_else(UiNode::auto),
             panel(
                 8_200,
                 UiStyle {
@@ -1032,7 +1051,7 @@ fn selected_team_member_panel(
                     ..UiStyle::default()
                 })
                 .with_children(types),
-            hp_bar(id + 8, pokemon.current_hp(), pokemon.max_hp()),
+            hp_bar(id + 8, pokemon.state.hp(), sprite_frame),
             text(
                 id + 12,
                 if pokemon.is_fainted() {
@@ -1126,7 +1145,7 @@ fn team_member_card(
                         18,
                         Dimension::Fill,
                     ),
-                    hp_bar(id + 4, pokemon.current_hp(), pokemon.max_hp()),
+                    hp_bar(id + 4, pokemon.state.hp(), sprite_frame),
                 ]),
             text(
                 id + 9,
@@ -1150,26 +1169,197 @@ fn team_member_card(
         ])
 }
 
-fn hp_bar(_id: u32, hp: u32, max_hp: u32) -> UiNode {
-    UiNode::auto()
-        .with_style(UiStyle {
-            width: Dimension::Fill,
-            height: Dimension::Px(12),
-            border_radius: punctum_ui::UiBorderRadius::all(6),
-            ..UiStyle::default()
-        })
-        .with_content(UiContent::Fill(HP_TRACK_EDGE.into_ui()))
-        .with_children([UiNode::auto()
+fn hp_bar(_id: u32, hp: HitPoints, frame: usize) -> UiNode {
+    hp_track(hp, frame, None)
+}
+
+/// 渲染带律动特效与可选伤害预览的血条。
+///
+/// 双方血条常态律动：高光随阶段呼吸（高血慢、黄血中速、红血急促），
+/// 红血时填充与边框随快节奏闪烁，倒下显示灰色；被锁定（选中招式瞄准）
+/// 时高光叠加琥珀警示色。
+/// `preview` 是选中招式对该宝可梦的最小/最大伤害百分比：
+/// 命中后至少扣除 `min`（必扣带），随机 85-100 的差值形成浮动带，
+/// 两段用不同透明度区分。
+fn hp_track(hp: HitPoints, frame: usize, preview: Option<(u8, u8)>) -> UiNode {
+    let max_hp = hp.max().max(1);
+    let current = hp.current().min(max_hp);
+    let fast_pulse = frame.is_multiple_of(2);
+    let fill = hp_fill_color(hp, fast_pulse);
+    let mut children = vec![
+        UiNode::auto()
             .with_style(UiStyle {
                 width: Dimension::Ratio {
-                    units: hp,
-                    base: max_hp.max(1),
+                    units: current,
+                    base: max_hp,
                 },
                 height: Dimension::Fill,
                 border_radius: punctum_ui::UiBorderRadius::all(6),
                 ..UiStyle::default()
             })
-            .with_content(UiContent::Fill(hp_color(hp, max_hp).into_ui()))])
+            .with_content(UiContent::Fill(fill.into_ui())),
+    ];
+    if let Some(gloss) = hp_gloss_color(hp, frame) {
+        children.push(
+            UiNode::auto()
+                .with_style(UiStyle {
+                    width: Dimension::Ratio {
+                        units: current.saturating_sub(4),
+                        base: max_hp,
+                    },
+                    height: Dimension::Px(3),
+                    margin: Insets {
+                        top: 2,
+                        left: 2,
+                        right: 0,
+                        bottom: 0,
+                    },
+                    border_radius: punctum_ui::UiBorderRadius::all(2),
+                    ..UiStyle::default()
+                })
+                .with_content(UiContent::Fill(gloss.into_ui())),
+        );
+    }
+    if let Some((min_percent, max_percent)) = preview {
+        let damage_max = u32::from(max_percent) * max_hp / 100;
+        let damage_min = u32::from(min_percent) * max_hp / 100;
+        let float_start = current.saturating_sub(damage_max);
+        let base_start = current.saturating_sub(damage_min);
+        if base_start < current {
+            children.push(
+                UiNode::auto()
+                    .with_style(UiStyle {
+                        width: Dimension::Fill,
+                        height: Dimension::Fill,
+                        direction: FlexDirection::Row,
+                        ..UiStyle::default()
+                    })
+                    .with_children([
+                        UiNode::auto().with_style(UiStyle {
+                            width: Dimension::Ratio {
+                                units: float_start,
+                                base: max_hp,
+                            },
+                            height: Dimension::Fill,
+                            ..UiStyle::default()
+                        }),
+                        UiNode::auto()
+                            .with_style(UiStyle {
+                                width: Dimension::Ratio {
+                                    units: base_start - float_start,
+                                    base: max_hp,
+                                },
+                                height: Dimension::Fill,
+                                border_radius: punctum_ui::UiBorderRadius::all(4),
+                                ..UiStyle::default()
+                            })
+                            .with_content(UiContent::Fill(HP_PREVIEW_BAND.into_ui())),
+                        UiNode::auto()
+                            .with_style(UiStyle {
+                                width: Dimension::Ratio {
+                                    units: current - base_start,
+                                    base: max_hp,
+                                },
+                                height: Dimension::Fill,
+                                border_radius: punctum_ui::UiBorderRadius::all(4),
+                                ..UiStyle::default()
+                            })
+                            .with_content(UiContent::Fill(HP_PREVIEW_BASE.into_ui())),
+                    ]),
+            );
+        }
+    }
+    UiNode::auto()
+        .with_style(UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(14),
+            direction: FlexDirection::Stack,
+            padding: Insets::all(1),
+            border: punctum_ui::UiBorder {
+                widths: Insets::all(1),
+                color: hp_border_color(hp, fast_pulse).into_ui(),
+            },
+            border_radius: punctum_ui::UiBorderRadius::all(7),
+            ..UiStyle::default()
+        })
+        .with_content(UiContent::Fill(HP_TRACK_EDGE.into_ui()))
+        .with_children(children)
+}
+
+/// 满血与高血使用绿色，黄血脉动使用黄色，红血按快节奏在红与亮红之间切换。
+fn hp_fill_color(hp: HitPoints, fast_pulse: bool) -> Rgba8 {
+    match hp.phase() {
+        HitPointsPhase::Zero => Rgba8::new(96, 108, 116, 255),
+        HitPointsPhase::Low if fast_pulse => HP_LOW_GLOW,
+        HitPointsPhase::Low => HP_LOW,
+        HitPointsPhase::Mid => HP_MID,
+        HitPointsPhase::Full | HitPointsPhase::High => HP_GOOD,
+    }
+}
+
+/// 高光条常态呼吸：高血慢、黄血中速、红血急促，全部阶段随帧周期亮暗；
+/// 锁定时高光替换为琥珀警示色。
+fn hp_gloss_color(hp: HitPoints, frame: usize) -> Option<Rgba8> {
+    if hp.phase() == HitPointsPhase::Zero {
+        return None;
+    }
+    let breathing = match hp.phase() {
+        HitPointsPhase::Full | HitPointsPhase::High => frame.is_multiple_of(6),
+        HitPointsPhase::Mid => frame.is_multiple_of(3),
+        HitPointsPhase::Low => frame.is_multiple_of(2),
+        HitPointsPhase::Zero => false,
+    };
+    let color = if hp.is_locked() {
+        HP_PREVIEW_BAND
+    } else {
+        HP_GLOSS
+    };
+    breathing.then_some(color)
+}
+
+/// 边框色：红血随快节奏闪红，锁定时闪琥珀，其余保持轨道色。
+fn hp_border_color(hp: HitPoints, fast_pulse: bool) -> Rgba8 {
+    if hp.is_locked() {
+        return if fast_pulse {
+            HP_PREVIEW_BAND
+        } else {
+            HP_TRACK_EDGE
+        };
+    }
+    match hp.phase() {
+        HitPointsPhase::Low if fast_pulse => HP_LOW_GLOW,
+        HitPointsPhase::Low => HP_LOW,
+        _ => HP_TRACK_EDGE,
+    }
+}
+
+/// 根据天气生成全屏覆盖节点；无天气时返回 `None`。
+fn weather_overlay_node(weather: Option<WeatherState>, frame: usize) -> Option<UiNode> {
+    let (pattern, color) = weather_effect(weather?.weather())?;
+    Some(
+        UiNode::auto()
+            .with_style(UiStyle {
+                position: Position::Absolute { left: 0, top: 0 },
+                width: Dimension::Fill,
+                height: Dimension::Fill,
+                ..UiStyle::default()
+            })
+            .with_content(UiContent::Weather {
+                pattern,
+                frame: frame as u32,
+                color: color.into_ui(),
+            }),
+    )
+}
+
+/// 把领域天气映射为天气图案码与覆盖颜色。
+fn weather_effect(weather: Weather) -> Option<(u32, Rgba8)> {
+    match weather {
+        Weather::Rain => Some((0, Rgba8::new(120, 160, 220, 90))),
+        Weather::Sandstorm => Some((1, Rgba8::new(205, 180, 110, 110))),
+        Weather::Sun => Some((2, Rgba8::new(255, 220, 140, 80))),
+        Weather::Hail => Some((3, Rgba8::new(180, 210, 235, 90))),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1177,11 +1367,12 @@ fn battle_status_panel(
     id: u32,
     name: &str,
     level: u8,
-    hp: u32,
-    max_hp: u32,
+    hp: HitPoints,
+    frame: usize,
     accent: UiColor,
     primary: PokemonType,
     secondary: Option<PokemonType>,
+    preview: Option<(u8, u8)>,
 ) -> UiNode {
     let mut types = vec![image(
         id + 30,
@@ -1235,28 +1426,10 @@ fn battle_status_panel(
                     ..UiStyle::default()
                 })
                 .with_children(types),
-            UiNode::auto()
-                .with_style(UiStyle {
-                    width: Dimension::Fill,
-                    height: Dimension::Px(14),
-                    border_radius: punctum_ui::UiBorderRadius::all(7),
-                    ..UiStyle::default()
-                })
-                .with_content(UiContent::Fill(HP_TRACK_EDGE.into_ui()))
-                .with_children([UiNode::auto()
-                    .with_style(UiStyle {
-                        width: Dimension::Ratio {
-                            units: hp,
-                            base: max_hp.max(1),
-                        },
-                        height: Dimension::Fill,
-                        border_radius: punctum_ui::UiBorderRadius::all(7),
-                        ..UiStyle::default()
-                    })
-                    .with_content(UiContent::Fill(hp_color(hp, max_hp).into_ui()))]),
+            hp_track(hp, frame, preview),
             text(
                 id + 7,
-                format!("HP {hp}/{max_hp}（{}%）", hp_percent(hp, max_hp)),
+                format!("HP {}/{}（{}%）", hp.current(), hp.max(), hp.percent()),
                 BATTLE_MUTED.into_ui(),
                 15,
                 Dimension::Fill,
@@ -1299,15 +1472,6 @@ fn console_item(id: u32, content: &str, selected: bool) -> UiNode {
             Dimension::Fill,
         )])
 }
-
-fn hp_color(hp: u32, max_hp: u32) -> Rgba8 {
-    match hp_percent(hp, max_hp) {
-        0..=20 => HP_LOW,
-        21..=50 => HP_MID,
-        _ => HP_GOOD,
-    }
-}
-
 /// 当前 HP 占最大 HP 的整数百分比。
 fn hp_percent(hp: u32, max_hp: u32) -> u32 {
     (u64::from(hp) * 100 / u64::from(max_hp.max(1))) as u32

@@ -9,13 +9,13 @@ mod rules;
 pub use battle_domain::{
     Ability, Accuracy, Action, BattleError, BattleOutcome, BattlePhase, BattleStat, BattleState,
     BattleStats, BattleUnit, BattleUnitId, CalculatedStats, EffectTarget, EffortValues, FormId,
-    IllegalActionReason, IndividualValues, MAX_EFFORT_VALUE, MAX_INDIVIDUAL_VALUE, MAX_MOVES,
-    MAX_STAT_STAGE, MAX_TOTAL_EFFORT_VALUE, MIN_STAT_STAGE, MajorStatus, MajorStatusKind, Move,
-    MoveCategory, MoveEffect, MoveId, MoveSlot, NationalDexId, Nature, NonHpStat, PokemonType,
-    ReplacementSides, Side, Species, StageChanges, StatBlock, StatName, StatProjectionError,
-    StatStages, TEAM_SIZE, Team, TeamSlot, TrainingValues, TypeEffectiveness, ValidationError,
-    VolatileStatus, VolatileStatuses, Weather, WeatherAccuracyModifier, WeatherMoveModifier,
-    WeatherState, calculate_gen3_stats,
+    HitPoints, HitPointsPhase, IllegalActionReason, IndividualValues, MAX_EFFORT_VALUE,
+    MAX_INDIVIDUAL_VALUE, MAX_MOVES, MAX_STAT_STAGE, MAX_TOTAL_EFFORT_VALUE, MIN_STAT_STAGE,
+    MajorStatus, MajorStatusKind, Move, MoveCategory, MoveEffect, MoveId, MoveSlot, NationalDexId,
+    Nature, NonHpStat, PokemonType, ReplacementSides, Side, Species, StageChanges, StatBlock,
+    StatName, StatProjectionError, StatStages, TEAM_SIZE, Team, TeamSlot, TrainingValues,
+    TypeEffectiveness, ValidationError, VolatileStatus, VolatileStatuses, Weather,
+    WeatherAccuracyModifier, WeatherMoveModifier, WeatherState, calculate_gen3_stats,
 };
 pub use observation::{
     BattleEvent, BattleObservation, BattleTransition, DamageProjection, DamageSource,

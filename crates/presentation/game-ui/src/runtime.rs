@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use game_data::CurrentDataSet;
-use game_session::{GameCommand, GameError, GameSession, GameSnapshot};
+use game_session::{DebugTeamPreset, GameCommand, GameError, GameSession, GameSnapshot};
 use punctum_gpu::PixelSize;
 use punctum_input::{KeyEvent, TextEvent};
 use world_application::WorldApplication;
@@ -40,6 +40,19 @@ impl GameRuntime {
     ) -> Result<Self, GameError> {
         Ok(Self {
             game: Some(GameSession::new(data, world, roster_seed)?),
+            presentation: PresentationState::default(),
+            console: GameConsole::default(),
+        })
+    }
+
+    /// 使用调试预置队伍创建运行时。
+    pub fn new_with_debug_preset(
+        data: CurrentDataSet,
+        world: WorldApplication,
+        preset: &'static DebugTeamPreset,
+    ) -> Result<Self, GameError> {
+        Ok(Self {
+            game: Some(GameSession::new(data, world, 0)?.with_debug_preset(preset)),
             presentation: PresentationState::default(),
             console: GameConsole::default(),
         })

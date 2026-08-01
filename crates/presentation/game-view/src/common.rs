@@ -44,6 +44,12 @@ pub(crate) const HP_TRACK_EDGE: Rgba8 = Rgba8::new(38, 46, 55, 255);
 pub(crate) const HP_GOOD_GLOW: Rgba8 = Rgba8::new(119, 231, 142, 255);
 pub(crate) const HP_MID_GLOW: Rgba8 = Rgba8::new(255, 214, 101, 255);
 pub(crate) const HP_LOW_GLOW: Rgba8 = Rgba8::new(255, 133, 111, 255);
+/// 血条顶部的高光白条。
+pub(crate) const HP_GLOSS: Rgba8 = Rgba8::new(255, 255, 255, 70);
+/// 选中技能时血条上标出可能剩余 HP 区间的半透明带。
+pub(crate) const HP_PREVIEW_BAND: Rgba8 = Rgba8::new(255, 196, 84, 180);
+/// 血条预览中"必扣伤害"段的淡琥珀带。
+pub(crate) const HP_PREVIEW_BASE: Rgba8 = Rgba8::new(255, 196, 84, 80);
 pub(crate) const TEXT: Rgba8 = Rgba8::new(244, 246, 239, 255);
 pub(crate) const MUTED_TEXT: Rgba8 = Rgba8::new(182, 194, 194, 255);
 pub(crate) const CONSOLE_ERROR: Rgba8 = Rgba8::new(255, 142, 126, 255);
