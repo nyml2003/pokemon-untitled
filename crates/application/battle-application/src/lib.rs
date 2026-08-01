@@ -2,17 +2,20 @@
 
 #![forbid(unsafe_code)]
 
+mod engine;
 mod observation;
+mod rules;
 
 pub use battle_domain::{
-    Ability, Accuracy, Action, BattleError, BattleOutcome, BattlePhase, BattleStat, BattleStats,
-    CalculatedStats, EffectTarget, EffortValues, IllegalActionReason, IndividualValues,
-    MAX_EFFORT_VALUE, MAX_INDIVIDUAL_VALUE, MAX_MOVES, MAX_STAT_STAGE, MAX_TOTAL_EFFORT_VALUE,
-    MIN_STAT_STAGE, MajorStatus, MajorStatusKind, Move, MoveCategory, MoveEffect, MoveId, MoveSlot,
-    Nature, NonHpStat, Pokemon, PokemonId, PokemonType, ReplacementSides, Side, StageChanges,
-    StatBlock, StatName, StatProjectionError, StatStages, TEAM_SIZE, Team, TeamSlot,
-    TrainingValues, TypeEffectiveness, ValidationError, Weather, WeatherAccuracyModifier,
-    WeatherMoveModifier, WeatherState, calculate_gen3_stats,
+    Ability, Accuracy, Action, BattleError, BattleOutcome, BattlePhase, BattleStat, BattleState,
+    BattleStats, BattleUnit, BattleUnitId, CalculatedStats, EffectTarget, EffortValues, FormId,
+    IllegalActionReason, IndividualValues, MAX_EFFORT_VALUE, MAX_INDIVIDUAL_VALUE, MAX_MOVES,
+    MAX_STAT_STAGE, MAX_TOTAL_EFFORT_VALUE, MIN_STAT_STAGE, MajorStatus, MajorStatusKind, Move,
+    MoveCategory, MoveEffect, MoveId, MoveSlot, NationalDexId, Nature, NonHpStat, PokemonType,
+    ReplacementSides, Side, Species, StageChanges, StatBlock, StatName, StatProjectionError,
+    StatStages, TEAM_SIZE, Team, TeamSlot, TrainingValues, TypeEffectiveness, ValidationError,
+    VolatileStatus, VolatileStatuses, Weather, WeatherAccuracyModifier, WeatherMoveModifier,
+    WeatherState, calculate_gen3_stats,
 };
 pub use observation::{
     BattleEvent, BattleObservation, BattleTransition, DamageSource, ObservedBattleOutcome,
@@ -22,6 +25,19 @@ pub use observation::{
 
 use battle_domain::{Battle, BattleCommand};
 use std::sync::Arc;
+
+/// 提交一条命令并结算战斗状态机。
+pub fn submit_battle(
+    battle: &mut Battle,
+    command: BattleCommand,
+) -> Result<battle_domain::SubmitOutcome, BattleError> {
+    engine::submit(battle, command)
+}
+
+/// 查询指定阵营当前可提交的动作。
+pub fn legal_actions_battle(battle: &Battle, side: Side) -> Vec<Action> {
+    engine::legal_actions(battle, side)
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BattlePerspective {
@@ -64,7 +80,7 @@ impl BattleApplication {
     }
 
     pub fn legal_actions(&self, perspective: &BattlePerspective) -> Vec<Action> {
-        self.battle.legal_actions(perspective.side)
+        engine::legal_actions(&self.battle, perspective.side)
     }
 
     pub fn submit(
@@ -73,7 +89,7 @@ impl BattleApplication {
         action: Action,
     ) -> Result<SubmitOutcome, BattleError> {
         let viewer = perspective.side;
-        let outcome = self.battle.submit(BattleCommand::new(viewer, action))?;
+        let outcome = engine::submit(&mut self.battle, BattleCommand::new(viewer, action))?;
         observation::submit_outcome(&self.battle, outcome, viewer)
     }
 

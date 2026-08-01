@@ -1,5 +1,5 @@
 use battle_application::{
-    Accuracy, BattleApplication, BattleStats, Move, MoveId, Pokemon, PokemonId, PokemonType,
+    Accuracy, BattleApplication, BattleStats, BattleUnit, BattleUnitId, Move, MoveId, PokemonType,
     TEAM_SIZE, Team,
 };
 use battle_session::{BattleCoordinator, BattleSession, OpponentPolicy};
@@ -642,7 +642,7 @@ fn battle_move(name: &str, power: u16) -> Move {
     Move::new(
         MoveId::new(name).unwrap(),
         name,
-        PokemonType::Normal,
+        vec![PokemonType::Normal],
         power,
         Accuracy::AlwaysHit,
         20,
@@ -652,22 +652,31 @@ fn battle_move(name: &str, power: u16) -> Move {
     .unwrap()
 }
 
-fn pokemon(name: &str, hp: u32, attack: u16, speed: u16, power: u16) -> Pokemon {
-    Pokemon::new(
-        PokemonId::new(name).unwrap(),
+fn pokemon(name: &str, hp: u32, attack: u16, speed: u16, power: u16) -> BattleUnit {
+    let species = battle_application::Species::new(
         name,
-        50,
-        PokemonType::Normal,
-        None,
-        hp,
-        hp,
-        BattleStats::new(attack, 50, attack, 50, speed).unwrap(),
-        vec![battle_move(&format!("{name}-move"), power)],
+        battle_application::StatBlock::new(45, 49, 49, 65, 65, 45),
+        battle_application::NationalDexId::new(1),
+        battle_application::FormId::new(0),
+        vec![PokemonType::Normal],
+        vec![],
     )
-    .unwrap()
+    .unwrap();
+    let state = battle_application::BattleState::new(
+        50,
+        BattleStats::new(attack, 50, attack, 50, speed).unwrap(),
+        hp,
+        hp,
+        vec![battle_move(&format!("{name}-move"), power)],
+        vec![],
+        None,
+        battle_application::StatStages::neutral(),
+    )
+    .unwrap();
+    BattleUnit::new(species, BattleUnitId::new(name).unwrap(), state).unwrap()
 }
 
-fn team(prefix: &str, lead: Pokemon) -> Team {
+fn team(prefix: &str, lead: BattleUnit) -> Team {
     let mut members = vec![lead];
     for index in 1..TEAM_SIZE {
         members.push(pokemon(&format!("{prefix}-{index}"), 100, 50, 50, 40));

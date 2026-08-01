@@ -3,7 +3,7 @@
 use super::{assets::*, common::*};
 use battle_session::{
     Ability, Action, BattleCue, BattleInteraction, BattleObservation, BattleSessionSnapshot,
-    MoveCategory, ObservedBattleOutcome, Participant, Pokemon, PokemonType, TypeEffectiveness,
+    BattleUnit, MoveCategory, ObservedBattleOutcome, Participant, PokemonType, TypeEffectiveness,
     UsedMove,
 };
 use game_assets::AssetKey;
@@ -299,7 +299,15 @@ pub fn project_battle(
                 ));
             }
             if let Some(battle_move) = moves.get(selected_index) {
-                images.push(type_icon_image(23, 18, battle_move.move_type()));
+                images.push(type_icon_image(
+                    23,
+                    18,
+                    battle_move
+                        .move_types()
+                        .first()
+                        .copied()
+                        .unwrap_or(PokemonType::Normal),
+                ));
                 images.push(move_category_icon_image(26, 18, battle_move.category()));
                 labels.push(label(
                     TextRole::ActionDetail(selected_index),
@@ -709,8 +717,12 @@ fn project_pokemon_page(
     images.extend(type_icon_images(
         3,
         16,
-        selected_pokemon.primary_type(),
-        selected_pokemon.secondary_type(),
+        selected_pokemon
+            .types()
+            .first()
+            .copied()
+            .unwrap_or(PokemonType::Normal),
+        selected_pokemon.types().get(1).copied(),
     ));
     draw_hp_bar(
         &mut images,
@@ -1025,7 +1037,7 @@ pub fn world_character_asset(
     ))
 }
 
-pub(crate) fn active_pokemon(observation: &BattleObservation) -> &Pokemon {
+pub(crate) fn active_pokemon(observation: &BattleObservation) -> &BattleUnit {
     &observation.own().members()[observation.own().active_slot().index()]
 }
 
@@ -1142,7 +1154,7 @@ fn draw_team_card(
     col: u32,
     row: u32,
     selected: bool,
-    pokemon: &Pokemon,
+    pokemon: &BattleUnit,
 ) {
     images.push(rounded_image(
         col,

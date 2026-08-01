@@ -2,7 +2,7 @@ use super::*;
 
 fn combatant(id: &str, hp: u32) -> CombatantScene {
     CombatantScene {
-        id: PokemonId::new(id).unwrap(),
+        id: BattleUnitId::new(id).unwrap(),
         name: id.into(),
         level: 50,
         primary_type: PokemonType::Normal,
@@ -30,7 +30,7 @@ fn reducer_rejects_inactive_targets_fainting_with_hp_and_final_mismatch() {
     let inactive = reducer
         .apply(&BattleEvent::MoveUsed {
             participant: Participant::Own,
-            pokemon: PokemonId::new("bench").unwrap(),
+            pokemon: BattleUnitId::new("bench").unwrap(),
             used_move: UsedMove::Struggle,
         })
         .unwrap_err();
@@ -42,7 +42,7 @@ fn reducer_rejects_inactive_targets_fainting_with_hp_and_final_mismatch() {
     let fainted = reducer
         .apply(&BattleEvent::Fainted {
             participant: Participant::Opponent,
-            pokemon: PokemonId::new("opponent").unwrap(),
+            pokemon: BattleUnitId::new("opponent").unwrap(),
         })
         .unwrap_err();
     assert!(matches!(fainted, ReplayError::FaintedWithHp { .. }));
@@ -51,7 +51,7 @@ fn reducer_rejects_inactive_targets_fainting_with_hp_and_final_mismatch() {
         .apply(&BattleEvent::Critical {
             participant: Participant::Opponent,
             target: Participant::Own,
-            pokemon: PokemonId::new("own").unwrap(),
+            pokemon: BattleUnitId::new("own").unwrap(),
         })
         .unwrap()
         .unwrap();

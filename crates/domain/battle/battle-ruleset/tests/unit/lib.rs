@@ -1,6 +1,7 @@
 use battle_domain::{
-    Accuracy, Action, BattleCommand, BattlePhase, BattleStats, Move, MoveId, MoveSlot, Pokemon,
-    PokemonId, PokemonType, Side, TEAM_SIZE, Team,
+    Accuracy, Action, BattleCommand, BattlePhase, BattleState, BattleStats, BattleUnit,
+    BattleUnitId, FormId, Move, MoveId, MoveSlot, NationalDexId, PokemonType, Side, Species,
+    StatBlock, StatStages, TEAM_SIZE, Team,
 };
 use game_data::{CurrentDataSet, PokemonFormId, SpeciesId};
 
@@ -18,7 +19,7 @@ fn replay_team(
         let move_ = Move::new(
             MoveId::new(format!("{prefix}-move-{index}")).map_err(|error| format!("{error:?}"))?,
             "replay-strike",
-            PokemonType::Normal,
+            vec![PokemonType::Normal],
             240,
             Accuracy::AlwaysHit,
             10,
@@ -26,19 +27,33 @@ fn replay_team(
             0,
         )
         .map_err(|error| format!("{error:?}"))?;
+        let species = Species::new(
+            "replay-member",
+            StatBlock::new(45, 49, 49, 65, 65, 45),
+            NationalDexId::new(1),
+            FormId::new(0),
+            vec![PokemonType::Normal],
+            vec![],
+        )
+        .map_err(|error| format!("{error:?}"))?;
+        let state = BattleState::new(
+            50,
+            BattleStats::new(lead_attack, 50, 50, 50, lead_speed)
+                .map_err(|error| format!("{error:?}"))?,
+            lead_hp,
+            current_hp,
+            vec![move_],
+            vec![],
+            None,
+            StatStages::neutral(),
+        )
+        .map_err(|error| format!("{error:?}"))?;
         members.push(
-            Pokemon::new(
-                PokemonId::new(format!("{prefix}-{index}"))
+            BattleUnit::new(
+                species,
+                BattleUnitId::new(format!("{prefix}-{index}"))
                     .map_err(|error| format!("{error:?}"))?,
-                "replay-member",
-                50,
-                PokemonType::Normal,
-                None,
-                lead_hp,
-                current_hp,
-                BattleStats::new(lead_attack, 50, 50, 50, lead_speed)
-                    .map_err(|error| format!("{error:?}"))?,
-                vec![move_],
+                state,
             )
             .map_err(|error| format!("{error:?}"))?,
         );

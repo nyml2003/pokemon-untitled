@@ -1,3 +1,5 @@
+use crate::pokemon::{BattleUnit, BattleUnitId};
+
 /// 一支对战队伍必须包含的成员数量。
 pub const TEAM_SIZE: usize = 6;
 /// 一只宝可梦可携带的招式数量上限。
@@ -40,7 +42,7 @@ impl TeamSlot {
         self.0 as usize
     }
 
-    pub(crate) const fn from_valid_index(index: usize) -> Self {
+    pub const fn from_valid_index(index: usize) -> Self {
         Self(index as u8)
     }
 }
@@ -65,7 +67,7 @@ impl MoveSlot {
         self.0 as usize
     }
 
-    pub(crate) const fn from_valid_index(index: usize) -> Self {
+    pub const fn from_valid_index(index: usize) -> Self {
         Self(index as u8)
     }
 }
@@ -318,27 +320,6 @@ impl StatStages {
         *value = stage;
         Ok(())
     }
-
-    fn change(&mut self, stat: BattleStat, amount: i8) -> Option<i8> {
-        let stage = match stat {
-            BattleStat::Attack => &mut self.attack,
-            BattleStat::Defense => &mut self.defense,
-            BattleStat::SpecialAttack => &mut self.special_attack,
-            BattleStat::SpecialDefense => &mut self.special_defense,
-            BattleStat::Speed => &mut self.speed,
-            BattleStat::Accuracy => &mut self.accuracy,
-            BattleStat::Evasion => &mut self.evasion,
-        };
-        let next = (*stage)
-            .saturating_add(amount)
-            .clamp(MIN_STAT_STAGE, MAX_STAT_STAGE);
-        if next == *stage {
-            None
-        } else {
-            *stage = next;
-            Some(next)
-        }
-    }
 }
 
 /// 一次招式效果要施加到七项能力阶级上的增减量。
@@ -470,13 +451,6 @@ impl WeatherState {
             turns_remaining: None,
         }
     }
-
-    pub(crate) fn elapse(&mut self) -> Option<bool> {
-        let turns_remaining = self.turns_remaining?;
-        let next = turns_remaining.saturating_sub(1);
-        self.turns_remaining = Some(next);
-        Some(next > 0)
-    }
 }
 
 impl MajorStatus {
@@ -554,6 +528,7 @@ impl MoveEffect {
         Ok(Self::InflictMajorStatus { status, chance })
     }
 
+    /// 创建无概率改变能力阶级的效果；`StageChanges` 已由构造时校验保证有效。
     pub const fn change_stages(target: EffectTarget, changes: StageChanges) -> Self {
         Self::ChangeStages { target, changes }
     }
@@ -617,10 +592,12 @@ impl MoveEffect {
         }
     }
 
+    /// 返回效果是否允许招式威力为 0（固定伤害类效果）。
     pub const fn permits_zero_power(self) -> bool {
         matches!(self, Self::FixedDamage(_))
     }
 
+    /// 返回效果是否为不造成伤害的次要效果。
     pub const fn is_non_damaging_secondary_effect(self) -> bool {
         matches!(
             self,
@@ -770,11 +747,16 @@ impl Accuracy {
 /// 已验证且均大于零的五项战斗能力值。
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct BattleStats {
-    attack: u16,
-    defense: u16,
-    special_attack: u16,
-    special_defense: u16,
-    speed: u16,
+    /// 攻击。
+    pub attack: u16,
+    /// 防御。
+    pub defense: u16,
+    /// 特攻。
+    pub special_attack: u16,
+    /// 特防。
+    pub special_defense: u16,
+    /// 速度。
+    pub speed: u16,
 }
 
 impl BattleStats {
@@ -837,19 +819,19 @@ impl BattleStats {
     }
 }
 
-/// 可在对战中消耗 PP 并携带一个附加效果的招式定义。
+/// 可在对战中消耗 PP 并携带附加效果的招式定义。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Move {
     id: MoveId,
     name: String,
-    move_type: PokemonType,
+    move_types: Vec<PokemonType>,
     category: MoveCategory,
     power: u16,
     accuracy: Accuracy,
     max_pp: u8,
     current_pp: u8,
     priority: i8,
-    effect: MoveEffect,
+    effects: Vec<MoveEffect>,
     weather_accuracy: Option<WeatherAccuracyModifier>,
     weather_move: Option<WeatherMoveModifier>,
 }
@@ -860,18 +842,22 @@ impl Move {
     pub fn new(
         id: MoveId,
         name: impl Into<String>,
-        move_type: PokemonType,
+        move_types: Vec<PokemonType>,
         power: u16,
         accuracy: Accuracy,
         max_pp: u8,
         current_pp: u8,
         priority: i8,
     ) -> Result<Self, ValidationError> {
+        let primary = move_types
+            .first()
+            .copied()
+            .ok_or(ValidationError::EmptyMoveType)?;
         Self::new_with_category(
             id,
             name,
-            move_type,
-            MoveCategory::for_gen3_type(move_type),
+            move_types,
+            MoveCategory::for_gen3_type(primary),
             power,
             accuracy,
             max_pp,
@@ -885,7 +871,7 @@ impl Move {
     pub fn new_with_category(
         id: MoveId,
         name: impl Into<String>,
-        move_type: PokemonType,
+        move_types: Vec<PokemonType>,
         category: MoveCategory,
         power: u16,
         accuracy: Accuracy,
@@ -896,14 +882,14 @@ impl Move {
         Self::new_with_category_and_effect(
             id,
             name,
-            move_type,
+            move_types,
             category,
             power,
             accuracy,
             max_pp,
             current_pp,
             priority,
-            MoveEffect::None,
+            Vec::new(),
         )
     }
 
@@ -914,26 +900,26 @@ impl Move {
     pub fn new_with_category_and_effect(
         id: MoveId,
         name: impl Into<String>,
-        move_type: PokemonType,
+        move_types: Vec<PokemonType>,
         category: MoveCategory,
         power: u16,
         accuracy: Accuracy,
         max_pp: u8,
         current_pp: u8,
         priority: i8,
-        effect: MoveEffect,
+        effects: Vec<MoveEffect>,
     ) -> Result<Self, ValidationError> {
         Self::from_parts(
             id,
             name.into(),
-            move_type,
+            move_types,
             category,
             power,
             accuracy,
             max_pp,
             current_pp,
             priority,
-            effect,
+            effects,
         )
     }
 
@@ -941,19 +927,25 @@ impl Move {
     fn from_parts(
         id: MoveId,
         name: String,
-        move_type: PokemonType,
+        move_types: Vec<PokemonType>,
         category: MoveCategory,
         power: u16,
         accuracy: Accuracy,
         max_pp: u8,
         current_pp: u8,
         priority: i8,
-        effect: MoveEffect,
+        effects: Vec<MoveEffect>,
     ) -> Result<Self, ValidationError> {
         if name.trim().is_empty() {
             return Err(ValidationError::EmptyMoveName);
         }
-        if power == 0 && category != MoveCategory::Status && !effect.permits_zero_power() {
+        if move_types.is_empty() {
+            return Err(ValidationError::EmptyMoveType);
+        }
+        if power == 0
+            && category != MoveCategory::Status
+            && !effects.iter().any(|effect| effect.permits_zero_power())
+        {
             return Err(ValidationError::ZeroMovePower);
         }
         if let Accuracy::Percent(value) = accuracy
@@ -973,14 +965,14 @@ impl Move {
         Ok(Self {
             id,
             name,
-            move_type,
+            move_types,
             category,
             power,
             accuracy,
             max_pp,
             current_pp,
             priority,
-            effect,
+            effects,
             weather_accuracy: None,
             weather_move: None,
         })
@@ -994,8 +986,8 @@ impl Move {
         &self.name
     }
 
-    pub const fn move_type(&self) -> PokemonType {
-        self.move_type
+    pub fn move_types(&self) -> &[PokemonType] {
+        &self.move_types
     }
 
     pub const fn category(&self) -> MoveCategory {
@@ -1018,12 +1010,17 @@ impl Move {
         self.current_pp
     }
 
+    /// 消耗一点 PP。
+    pub fn spend_pp(&mut self) {
+        self.current_pp = self.current_pp.saturating_sub(1);
+    }
+
     pub const fn priority(&self) -> i8 {
         self.priority
     }
 
-    pub const fn effect(&self) -> MoveEffect {
-        self.effect
+    pub fn effects(&self) -> &[MoveEffect] {
+        &self.effects
     }
 
     /// 返回新的招式值，并为其设置命中率天气修正。
@@ -1045,519 +1042,18 @@ impl Move {
     pub const fn weather_move(&self) -> Option<WeatherMoveModifier> {
         self.weather_move
     }
-
-    pub(crate) fn spend_pp(&mut self) {
-        self.current_pp = self.current_pp.saturating_sub(1);
-    }
 }
 
-/// 一只可进入战斗的宝可梦及其可变战斗状态。
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Pokemon {
-    id: PokemonId,
-    name: String,
-    level: u8,
-    primary_type: PokemonType,
-    secondary_type: Option<PokemonType>,
-    max_hp: u32,
-    current_hp: u32,
-    stats: BattleStats,
-    moves: Vec<Move>,
-    ability: Option<Ability>,
-    substitute_hp: Option<u32>,
-    major_status: Option<MajorStatus>,
-    stages: StatStages,
-    protect_streak: u8,
-}
-
-impl Pokemon {
-    /// 创建不带特性的宝可梦。
-    ///
-    /// 等级必须在 1 至 100 之间，当前 HP 不得超过最大 HP，且招式列表必须含一至四个不同标识的招式。
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        id: PokemonId,
-        name: impl Into<String>,
-        level: u8,
-        primary_type: PokemonType,
-        secondary_type: Option<PokemonType>,
-        max_hp: u32,
-        current_hp: u32,
-        stats: BattleStats,
-        moves: Vec<Move>,
-    ) -> Result<Self, ValidationError> {
-        Self::from_parts(
-            id,
-            name.into(),
-            level,
-            primary_type,
-            secondary_type,
-            max_hp,
-            current_hp,
-            stats,
-            moves,
-            None,
-            None,
-            None,
-            StatStages::neutral(),
-            0,
-        )
-    }
-
-    /// 创建带有一个特性的宝可梦。
-    ///
-    /// 其余输入限制与 [`Pokemon::new`] 相同。
-    #[allow(clippy::too_many_arguments)]
-    pub fn new_with_ability(
-        id: PokemonId,
-        name: impl Into<String>,
-        level: u8,
-        primary_type: PokemonType,
-        secondary_type: Option<PokemonType>,
-        max_hp: u32,
-        current_hp: u32,
-        stats: BattleStats,
-        moves: Vec<Move>,
-        ability: Ability,
-    ) -> Result<Self, ValidationError> {
-        Self::from_parts(
-            id,
-            name.into(),
-            level,
-            primary_type,
-            secondary_type,
-            max_hp,
-            current_hp,
-            stats,
-            moves,
-            Some(ability),
-            None,
-            None,
-            StatStages::neutral(),
-            0,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn from_parts(
-        id: PokemonId,
-        name: String,
-        level: u8,
-        primary_type: PokemonType,
-        secondary_type: Option<PokemonType>,
-        max_hp: u32,
-        current_hp: u32,
-        stats: BattleStats,
-        moves: Vec<Move>,
-        ability: Option<Ability>,
-        substitute_hp: Option<u32>,
-        major_status: Option<MajorStatus>,
-        stages: StatStages,
-        protect_streak: u8,
-    ) -> Result<Self, ValidationError> {
-        if name.trim().is_empty() {
-            return Err(ValidationError::EmptyPokemonName);
-        }
-        if !(1..=100).contains(&level) {
-            return Err(ValidationError::InvalidLevel { level });
-        }
-        if secondary_type == Some(primary_type) {
-            return Err(ValidationError::DuplicatePokemonType { primary_type });
-        }
-        if max_hp == 0 {
-            return Err(ValidationError::ZeroMaxHp);
-        }
-        if current_hp > max_hp {
-            return Err(ValidationError::CurrentHpExceedsMax {
-                current: current_hp,
-                max: max_hp,
-            });
-        }
-        if moves.is_empty() || moves.len() > MAX_MOVES {
-            return Err(ValidationError::InvalidMoveCount { count: moves.len() });
-        }
-        for left in 0..moves.len() {
-            for right in (left + 1)..moves.len() {
-                if moves[left].id == moves[right].id {
-                    return Err(ValidationError::DuplicateMoveId {
-                        id: moves[left].id.clone(),
-                    });
-                }
-            }
-        }
-        Ok(Self {
-            id,
-            name,
-            level,
-            primary_type,
-            secondary_type,
-            max_hp,
-            current_hp,
-            stats,
-            moves,
-            ability,
-            substitute_hp,
-            major_status,
-            stages,
-            protect_streak,
-        })
-    }
-
-    pub fn id(&self) -> &PokemonId {
-        &self.id
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn level(&self) -> u8 {
-        self.level
-    }
-
-    pub const fn primary_type(&self) -> PokemonType {
-        self.primary_type
-    }
-
-    pub const fn secondary_type(&self) -> Option<PokemonType> {
-        self.secondary_type
-    }
-
-    pub const fn max_hp(&self) -> u32 {
-        self.max_hp
-    }
-
-    pub const fn current_hp(&self) -> u32 {
-        self.current_hp
-    }
-
-    pub const fn stats(&self) -> BattleStats {
-        self.stats
-    }
-
-    pub const fn physical_attack(&self) -> u16 {
-        let attack = match (self.ability, self.major_status) {
-            (Some(Ability::Guts), Some(_)) => self.stats.attack.saturating_mul(3) / 2,
-            (_, Some(MajorStatus::Burn)) => self.stats.attack / 2,
-            (
-                _,
-                Some(
-                    MajorStatus::BadlyPoisoned { .. }
-                    | MajorStatus::Freeze
-                    | MajorStatus::Paralysis
-                    | MajorStatus::Poison
-                    | MajorStatus::Sleep { .. },
-                ),
-            )
-            | (_, None) => self.stats.attack,
-        };
-        match self.ability {
-            Some(Ability::HugePower | Ability::PurePower) => attack.saturating_mul(2),
-            Some(Ability::Hustle) => attack.saturating_mul(3) / 2,
-            _ => attack,
-        }
-    }
-
-    pub fn physical_attack_ability_is_active(&self) -> bool {
-        matches!(
-            self.ability,
-            Some(Ability::HugePower | Ability::PurePower | Ability::Hustle)
-        ) || (self.ability == Some(Ability::Guts) && self.major_status.is_some())
-    }
-
-    pub const fn accuracy_ability(
-        &self,
-        category: MoveCategory,
-        accuracy: Accuracy,
-    ) -> Option<Ability> {
-        match (self.ability, category, accuracy) {
-            (Some(Ability::CompoundEyes), _, Accuracy::Percent(_)) => Some(Ability::CompoundEyes),
-            (Some(Ability::Hustle), MoveCategory::Physical, Accuracy::Percent(_)) => {
-                Some(Ability::Hustle)
-            }
-            _ => None,
-        }
-    }
-
-    /// 返回应用攻击特性和攻击阶级后的物理攻击值。
-    pub fn effective_attack(&self) -> u16 {
-        stage_modified_stat(self.physical_attack(), self.stages.get(BattleStat::Attack))
-    }
-
-    /// 返回应用防御特性和防御阶级后的物理防御值。
-    pub fn effective_defense(&self) -> u16 {
-        let defense = if self.ability == Some(Ability::MarvelScale) && self.major_status.is_some() {
-            self.stats.defense.saturating_mul(3) / 2
-        } else {
-            self.stats.defense
-        };
-        stage_modified_stat(defense, self.stages.get(BattleStat::Defense))
-    }
-
-    pub fn defense_ability_is_active(&self) -> bool {
-        self.ability == Some(Ability::MarvelScale) && self.major_status.is_some()
-    }
-
-    pub fn effective_special_attack(&self) -> u16 {
-        stage_modified_stat(
-            self.stats.special_attack,
-            self.stages.get(BattleStat::SpecialAttack),
-        )
-    }
-
-    pub fn effective_special_defense(&self) -> u16 {
-        stage_modified_stat(
-            self.stats.special_defense,
-            self.stages.get(BattleStat::SpecialDefense),
-        )
-    }
-
-    pub fn effective_speed(&self) -> u16 {
-        let speed = match self.major_status {
-            Some(MajorStatus::Paralysis) => (self.stats.speed / 4).max(1),
-            Some(
-                MajorStatus::BadlyPoisoned { .. }
-                | MajorStatus::Burn
-                | MajorStatus::Freeze
-                | MajorStatus::Poison
-                | MajorStatus::Sleep { .. },
-            )
-            | None => self.stats.speed,
-        };
-        stage_modified_stat(speed, self.stages.get(BattleStat::Speed))
-    }
-
-    /// 返回应用天气速度特性后的有效速度。
-    pub fn effective_speed_in_weather(&self, weather: Option<Weather>) -> u16 {
-        match (self.ability, weather) {
-            (Some(Ability::Chlorophyll), Some(Weather::Sun))
-            | (Some(Ability::SwiftSwim), Some(Weather::Rain)) => {
-                self.effective_speed().saturating_mul(2)
-            }
-            _ => self.effective_speed(),
-        }
-    }
-
-    pub fn moves(&self) -> &[Move] {
-        &self.moves
-    }
-
-    pub const fn ability(&self) -> Option<Ability> {
-        self.ability
-    }
-
-    pub const fn substitute_hp(&self) -> Option<u32> {
-        self.substitute_hp
-    }
-
-    pub const fn major_status(&self) -> Option<MajorStatus> {
-        self.major_status
-    }
-
-    pub const fn stages(&self) -> StatStages {
-        self.stages
-    }
-
-    pub const fn is_fainted(&self) -> bool {
-        self.current_hp == 0
-    }
-
-    pub(crate) fn move_mut(&mut self, slot: MoveSlot) -> Option<&mut Move> {
-        self.moves.get_mut(slot.index())
-    }
-
-    pub(crate) fn apply_damage(&mut self, damage: u64) -> u32 {
-        let actual = damage.min(u64::from(self.current_hp)) as u32;
-        self.current_hp -= actual;
-        actual
-    }
-
-    pub(crate) fn heal(&mut self, amount: u64) -> u32 {
-        let missing = self.max_hp - self.current_hp;
-        let actual = amount.min(u64::from(missing)) as u32;
-        self.current_hp += actual;
-        actual
-    }
-
-    pub(crate) fn create_substitute(&mut self) -> Option<u32> {
-        if self.substitute_hp.is_some() {
-            return None;
-        }
-        let cost = (self.max_hp / 4).max(1);
-        if self.current_hp <= cost {
-            return None;
-        }
-        self.current_hp -= cost;
-        self.substitute_hp = Some(cost);
-        Some(cost)
-    }
-
-    pub(crate) fn damage_substitute(&mut self, damage: u64) -> Option<(u32, u32, bool)> {
-        let hp = self.substitute_hp?;
-        let actual = damage.min(u64::from(hp)) as u32;
-        let remaining = hp - actual;
-        self.substitute_hp = (remaining > 0).then_some(remaining);
-        Some((actual, remaining, remaining == 0))
-    }
-
-    pub(crate) fn change_stage(&mut self, stat: BattleStat, amount: i8) -> Option<i8> {
-        self.stages.change(stat, amount)
-    }
-
-    pub(crate) fn reset_switch_modifiers(&mut self) {
-        self.stages = StatStages::neutral();
-        self.protect_streak = 0;
-        self.substitute_hp = None;
-        if matches!(self.major_status, Some(MajorStatus::BadlyPoisoned { .. })) {
-            self.major_status = Some(MajorStatus::BadlyPoisoned { stage: 1 });
-        }
-    }
-
-    pub(crate) const fn protect_streak(&self) -> u8 {
-        self.protect_streak
-    }
-
-    pub(crate) fn record_protect_success(&mut self) {
-        self.protect_streak = self.protect_streak.saturating_add(1);
-    }
-
-    pub(crate) fn reset_protect_streak(&mut self) {
-        self.protect_streak = 0;
-    }
-
-    pub(crate) fn inflict_major_status(&mut self, status: MajorStatus) -> bool {
-        if self.major_status.is_some() || self.is_immune_to(status.kind()) {
-            return false;
-        }
-        self.major_status = Some(status);
-        true
-    }
-
-    pub(crate) fn advance_sleep(&mut self) -> Option<u8> {
-        let MajorStatus::Sleep { turns_remaining } = self.major_status? else {
-            return None;
-        };
-        let next = turns_remaining.saturating_sub(1);
-        self.major_status = (next > 0).then_some(MajorStatus::Sleep {
-            turns_remaining: next,
-        });
-        Some(next)
-    }
-
-    pub(crate) fn advance_badly_poison(&mut self) -> Option<u8> {
-        let MajorStatus::BadlyPoisoned { stage } = self.major_status? else {
-            return None;
-        };
-        let next = stage.saturating_add(1);
-        self.major_status = Some(MajorStatus::BadlyPoisoned { stage: next });
-        Some(next)
-    }
-
-    pub(crate) fn rest(&mut self) -> Option<(u32, Option<MajorStatus>)> {
-        if self.current_hp == self.max_hp && self.major_status.is_none() {
-            return None;
-        }
-        let previous_status = self.major_status;
-        let healed = self.max_hp - self.current_hp;
-        self.current_hp = self.max_hp;
-        // The action check decrements before deciding whether the Pokemon acts,
-        // so three ticks produce the two skipped turns of generation-three Rest.
-        self.major_status = Some(MajorStatus::Sleep { turns_remaining: 3 });
-        Some((healed, previous_status))
-    }
-
-    pub(crate) fn refresh(&mut self) -> Option<MajorStatusKind> {
-        let status = self.major_status?;
-        if !matches!(
-            status,
-            MajorStatus::BadlyPoisoned { .. }
-                | MajorStatus::Burn
-                | MajorStatus::Paralysis
-                | MajorStatus::Poison
-        ) {
-            return None;
-        }
-        self.major_status = None;
-        Some(status.kind())
-    }
-
-    pub(crate) fn cure_major_status(&mut self) -> Option<MajorStatusKind> {
-        let status = self.major_status?;
-        self.major_status = None;
-        Some(status.kind())
-    }
-
-    fn is_immune_to(&self, status: MajorStatusKind) -> bool {
-        self.ability_blocks_status(status).is_some()
-            || match status {
-                MajorStatusKind::Burn => {
-                    self.primary_type == PokemonType::Fire
-                        || self.secondary_type == Some(PokemonType::Fire)
-                }
-                MajorStatusKind::Freeze => {
-                    self.primary_type == PokemonType::Ice
-                        || self.secondary_type == Some(PokemonType::Ice)
-                }
-                MajorStatusKind::Poison | MajorStatusKind::BadlyPoisoned => {
-                    self.primary_type == PokemonType::Poison
-                        || self.secondary_type == Some(PokemonType::Poison)
-                        || self.primary_type == PokemonType::Steel
-                        || self.secondary_type == Some(PokemonType::Steel)
-                }
-                MajorStatusKind::Paralysis | MajorStatusKind::Sleep => false,
-            }
-    }
-
-    pub(crate) const fn ability_blocks_status(&self, status: MajorStatusKind) -> Option<Ability> {
-        match (self.ability, status) {
-            (Some(Ability::Immunity), MajorStatusKind::Poison | MajorStatusKind::BadlyPoisoned)
-            | (Some(Ability::Limber), MajorStatusKind::Paralysis)
-            | (Some(Ability::WaterVeil), MajorStatusKind::Burn)
-            | (Some(Ability::Insomnia | Ability::VitalSpirit), MajorStatusKind::Sleep)
-            | (Some(Ability::MagmaArmor), MajorStatusKind::Freeze) => self.ability,
-            _ => None,
-        }
-    }
-
-    pub(crate) const fn ability_blocks_move(&self, move_type: PokemonType) -> Option<Ability> {
-        match (self.ability, move_type) {
-            (Some(Ability::Levitate), PokemonType::Ground)
-            | (Some(Ability::FlashFire), PokemonType::Fire)
-            | (Some(Ability::WaterAbsorb), PokemonType::Water)
-            | (Some(Ability::VoltAbsorb), PokemonType::Electric) => self.ability,
-            _ => None,
-        }
-    }
-
-    pub(crate) const fn ability_blocks_secondary_effect(&self) -> Option<Ability> {
-        match self.ability {
-            Some(Ability::ShieldDust) => Some(Ability::ShieldDust),
-            _ => None,
-        }
-    }
-
-    pub(crate) const fn ability_blocks_opponent_stat_drop(
-        &self,
-        stat: BattleStat,
-    ) -> Option<Ability> {
-        match (self.ability, stat) {
-            (Some(Ability::ClearBody | Ability::WhiteSmoke), _)
-            | (Some(Ability::HyperCutter), BattleStat::Attack)
-            | (Some(Ability::KeenEye), BattleStat::Accuracy) => self.ability,
-            _ => None,
-        }
-    }
-}
-
-/// 固定包含六只宝可梦且标识互不重复的对战队伍。
+/// 固定包含六只 BattleUnit 且标识互不重复的对战队伍。
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Team {
-    members: [Pokemon; TEAM_SIZE],
+    /// 六名成员。
+    pub members: [BattleUnit; TEAM_SIZE],
 }
 
 impl Team {
-    /// 从恰好六只且标识互不重复的宝可梦创建队伍。
-    pub fn new(members: Vec<Pokemon>) -> Result<Self, ValidationError> {
+    /// 从恰好六只且标识互不重复的战斗单位创建队伍。
+    pub fn new(members: Vec<BattleUnit>) -> Result<Self, ValidationError> {
         if members.len() != TEAM_SIZE {
             return Err(ValidationError::InvalidTeamSize {
                 count: members.len(),
@@ -1565,14 +1061,14 @@ impl Team {
         }
         for left in 0..members.len() {
             for right in (left + 1)..members.len() {
-                if members[left].id == members[right].id {
+                if members[left].id() == members[right].id() {
                     return Err(ValidationError::DuplicatePokemonId {
-                        id: members[left].id.clone(),
+                        id: members[left].id().clone(),
                     });
                 }
             }
         }
-        let members = members.try_into().map_err(|members: Vec<Pokemon>| {
+        let members = members.try_into().map_err(|members: Vec<BattleUnit>| {
             ValidationError::InvalidTeamSize {
                 count: members.len(),
             }
@@ -1581,28 +1077,20 @@ impl Team {
     }
 
     /// 返回按队伍槽位顺序排列的全部成员。
-    pub fn members(&self) -> &[Pokemon; TEAM_SIZE] {
+    pub fn members(&self) -> &[BattleUnit; TEAM_SIZE] {
         &self.members
     }
 
     /// 返回指定有效槽位中的成员。
-    pub fn member(&self, slot: TeamSlot) -> &Pokemon {
+    pub fn member(&self, slot: TeamSlot) -> &BattleUnit {
         &self.members[slot.index()]
-    }
-
-    pub(crate) fn member_mut(&mut self, slot: TeamSlot) -> &mut Pokemon {
-        &mut self.members[slot.index()]
     }
 
     pub(crate) fn first_living_slot(&self) -> Option<TeamSlot> {
         self.members
             .iter()
-            .position(|pokemon| !pokemon.is_fainted())
+            .position(|unit| !unit.is_fainted())
             .map(TeamSlot::from_valid_index)
-    }
-
-    pub(crate) fn has_living(&self) -> bool {
-        self.members.iter().any(|pokemon| !pokemon.is_fainted())
     }
 }
 
@@ -1615,6 +1103,8 @@ pub enum ValidationError {
     EmptyMoveId,
     EmptyPokemonName,
     EmptyMoveName,
+    EmptyMoveType,
+    EmptySpeciesType,
     InvalidLevel { level: u8 },
     DuplicatePokemonType { primary_type: PokemonType },
     ZeroMaxHp,
@@ -1631,15 +1121,5 @@ pub enum ValidationError {
     InvalidMoveCount { count: usize },
     InvalidTeamSize { count: usize },
     DuplicateMoveId { id: MoveId },
-    DuplicatePokemonId { id: PokemonId },
-}
-
-fn stage_modified_stat(value: u16, stage: i8) -> u16 {
-    let value = u32::from(value);
-    let adjusted = if stage >= 0 {
-        value * u32::from(2 + stage as u8) / 2
-    } else {
-        value * 2 / u32::from(2 + (-stage) as u8)
-    };
-    adjusted.max(1) as u16
+    DuplicatePokemonId { id: BattleUnitId },
 }

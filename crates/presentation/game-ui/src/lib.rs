@@ -240,7 +240,7 @@ fn prompt_data(interaction: &BattleInteraction) -> Option<(&BattleObservation, &
     }
 }
 
-fn active_pokemon(observation: &BattleObservation) -> &battle_session::Pokemon {
+fn active_pokemon(observation: &BattleObservation) -> &battle_session::BattleUnit {
     &observation.own().members()[observation.own().active_slot().index()]
 }
 

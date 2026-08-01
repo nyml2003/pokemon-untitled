@@ -7,6 +7,7 @@ rust-version.workspace = true
 
 [dependencies]
 battle-domain = { workspace = true }
+battle-application = { workspace = true }
 game-data = { workspace = true }
 
 [lib]

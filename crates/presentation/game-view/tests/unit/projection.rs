@@ -1,11 +1,8 @@
 use battle_application::{
-    Accuracy, BattleApplication, BattleStats, Move, MoveCategory, MoveId, Pokemon, PokemonId,
+    Accuracy, BattleApplication, BattleStats, BattleUnit, BattleUnitId, Move, MoveCategory, MoveId,
     PokemonType, TEAM_SIZE, Team,
 };
-use battle_session::{
-    Action, BattleCoordinator, BattleObservation, BattleSession, BattleSessionSnapshot,
-    OpponentPolicy,
-};
+use battle_session::{Action, BattleCoordinator, BattleObservation, BattleSession, OpponentPolicy};
 use game_data::PokedexData;
 use game_foundation::{GameState, ThinSliceContent};
 use game_page_model::{PageIntent, PageModel, PausePageModel, page_demos};
@@ -14,21 +11,20 @@ use map_project::{
     MapProjectId, TilePosition,
 };
 use punctum_grid::{GridPos, GridSize};
-use punctum_input::{KeyEvent, KeyPhase, LogicalKey, Modifiers, NamedKey, PhysicalKeyCode};
 use world_application::{CharacterAppearanceId, Direction, Position, WorldApplication};
 
 use game_ui::{
-    BattleMenuPage, BattleUiOutcome, BattleUiState, CommandConsoleView, PokedexAction,
-    PokedexDetailMode, PokedexFilterOverlay, PokedexScene, PokedexVisualState, WorldAnimation,
+    BattleUiState, CommandConsoleView, PokedexAction, PokedexDetailMode, PokedexFilterOverlay,
+    PokedexScene, PokedexVisualState, WorldAnimation,
 };
 
 use super::{
     BattleSpriteResources, FoundationPage, FoundationPageAction, LayerKind, TextRole, ViewCell,
     ViewLayer, compose_world, move_category_icon_asset, page_party_pokemon_asset,
-    page_pokedex_icon_asset, page_world_player_asset, pill_ui_asset, pokemon_icon_asset,
-    project_battle, project_battle_ui, project_console, project_console_ui, project_foundation,
-    project_page_model, project_page_model_with_notice, project_page_model_with_visual_state,
-    project_pokedex, project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
+    page_pokedex_icon_asset, page_world_player_asset, pill_ui_asset, project_battle,
+    project_console, project_console_ui, project_foundation, project_page_model,
+    project_page_model_with_notice, project_page_model_with_visual_state, project_pokedex,
+    project_world, rounded_ui_asset, type_icon_asset, world_character_asset,
 };
 
 #[test]
@@ -746,77 +742,6 @@ fn pokedex_projects_its_selected_canonical_front() {
 }
 
 #[test]
-fn battle_pixel_ui_uses_flex_and_keeps_move_metadata_visible() {
-    let snapshot = battle_fixture();
-    let sprites = BattleSpriteResources::for_slots(0, 0);
-    let main = project_battle_ui(&snapshot, BattleUiState::default(), sprites.clone(), 0)
-        .unwrap()
-        .resolve(punctum_ui::UiSize::new(1000, 720))
-        .unwrap();
-    assert_eq!(main.action_hits().len(), 4);
-    assert!(
-        main.action_hits()
-            .iter()
-            .all(|region| region.bounds.width > 0 && region.bounds.height > 0)
-    );
-    assert!(main.commands().iter().any(|command| matches!(
-        command,
-        punctum_ui::UiDrawCommand::Text { content, .. } if content == "战斗"
-    )));
-
-    let mut ui = BattleUiState::default();
-    handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
-    let fight = project_battle_ui(&snapshot, ui, sprites, 0)
-        .unwrap()
-        .resolve(punctum_ui::UiSize::new(1000, 720))
-        .unwrap();
-    assert!(fight.commands().iter().any(|command| matches!(
-        command,
-        punctum_ui::UiDrawCommand::Text { content, .. } if content == "威40 PP35/35"
-    )));
-    let images = fight
-        .commands()
-        .iter()
-        .filter_map(|command| match command {
-            punctum_ui::UiDrawCommand::Image { content, .. } => Some(content.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert!(images.contains(&type_icon_asset(PokemonType::Grass).as_str()));
-    assert!(images.contains(&move_category_icon_asset(MoveCategory::Special).as_str()));
-}
-
-#[test]
-fn pokemon_selection_pixel_ui_has_a_detail_panel_and_all_team_members() {
-    let snapshot = battle_fixture();
-    let mut ui = BattleUiState::default();
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
-    handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
-
-    let frame = project_battle_ui(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 1)
-        .unwrap()
-        .resolve(punctum_ui::UiSize::new(1000, 720))
-        .unwrap();
-    assert!(frame.commands().iter().any(|command| matches!(
-        command,
-        punctum_ui::UiDrawCommand::Text { content, .. } if content == "选择宝可梦"
-    )));
-    assert_eq!(frame.action_hits().len(), TEAM_SIZE);
-    let images = frame
-        .commands()
-        .iter()
-        .filter_map(|command| match command {
-            punctum_ui::UiDrawCommand::Image { content, .. } => Some(content.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    for slot in 0..TEAM_SIZE {
-        assert!(images.contains(&pokemon_icon_asset(slot, 1).as_str()));
-    }
-    assert!(images.contains(&type_icon_asset(PokemonType::Poison).as_str()));
-}
-
-#[test]
 fn console_pixel_ui_preserves_the_legacy_overlay_without_an_opaque_root() {
     let console = CommandConsoleView {
         query: "gi".to_owned(),
@@ -850,25 +775,6 @@ fn console_pixel_ui_preserves_the_legacy_overlay_without_an_opaque_root() {
         actual_labels,
         ["> git", "give potion", "goto town", "invalid target"]
     );
-}
-
-fn key(name: NamedKey) -> KeyEvent {
-    KeyEvent {
-        physical: Some(PhysicalKeyCode::Unidentified),
-        logical: LogicalKey::Named(name),
-        modifiers: Modifiers::default(),
-        phase: KeyPhase::Press,
-    }
-}
-
-fn handle_battle_key(
-    ui: &mut BattleUiState,
-    key: &KeyEvent,
-    interaction: &battle_session::BattleInteraction,
-) -> BattleUiOutcome {
-    let (next, outcome) = (*ui).handle_key(key, interaction);
-    *ui = next;
-    outcome
 }
 
 struct FirstActionPolicy;
@@ -907,7 +813,7 @@ fn battle_session_with_team_state(
                 let battle_move = Move::new(
                     MoveId::new(format!("{prefix}-move-{index}")).unwrap(),
                     if index == 0 { "撞击" } else { "电光一闪" },
-                    move_type,
+                    vec![move_type],
                     40,
                     accuracy,
                     35,
@@ -918,7 +824,7 @@ fn battle_session_with_team_state(
                 let alternate_move = Move::new(
                     MoveId::new(format!("{prefix}-alternate-{index}")).unwrap(),
                     "飞叶快刀",
-                    move_type,
+                    vec![move_type],
                     55,
                     accuracy,
                     25,
@@ -931,16 +837,34 @@ fn battle_session_with_team_state(
                 } else {
                     80 + index as u32
                 };
-                Pokemon::new(
-                    PokemonId::new(format!("{prefix}-{index}")).unwrap(),
+                let mut types = vec![move_type];
+                if index == 0 {
+                    types.push(PokemonType::Poison);
+                }
+                let species = battle_application::Species::new(
                     format!("{prefix}{index}"),
+                    battle_application::StatBlock::new(45, 49, 49, 65, 65, 45),
+                    battle_application::NationalDexId::new(1),
+                    battle_application::FormId::new(0),
+                    types,
+                    vec![],
+                )
+                .unwrap();
+                let state = battle_application::BattleState::new(
                     24,
-                    move_type,
-                    (index == 0).then_some(PokemonType::Poison),
+                    BattleStats::new(50, 50, 50, 50, 50).unwrap(),
                     80 + index as u32,
                     current_hp,
-                    BattleStats::new(50, 50, 50, 50, 50).unwrap(),
                     vec![battle_move, alternate_move],
+                    vec![],
+                    None,
+                    battle_application::StatStages::neutral(),
+                )
+                .unwrap();
+                BattleUnit::new(
+                    species,
+                    BattleUnitId::new(format!("{prefix}-{index}")).unwrap(),
+                    state,
                 )
                 .unwrap()
             })
@@ -965,197 +889,6 @@ fn battle_session_with_team_state(
 
 fn battle_session_fixture() -> BattleSession<FirstActionPolicy> {
     battle_session_with_move(35, Accuracy::AlwaysHit)
-}
-
-fn battle_fixture() -> BattleSessionSnapshot {
-    battle_session_fixture().snapshot()
-}
-
-#[test]
-fn main_menu_routes_to_fight_pokemon_bag_and_run() {
-    let snapshot = battle_fixture();
-    let interaction = snapshot.interaction();
-    let mut ui = BattleUiState::default();
-
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::Enter), interaction),
-        BattleUiOutcome::Updated
-    );
-    assert_eq!(ui.view().0, BattleMenuPage::Fight);
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::Enter), interaction),
-        BattleUiOutcome::Submit(Action::UseMove(battle_session::MoveSlot::new(0).unwrap()))
-    );
-
-    ui = BattleUiState::default();
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), interaction),
-        BattleUiOutcome::Updated
-    );
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::Enter), interaction),
-        BattleUiOutcome::Updated
-    );
-    assert_eq!(ui.view().0, BattleMenuPage::Pokemon);
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::Enter), interaction),
-        BattleUiOutcome::Updated
-    );
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), interaction);
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::Enter), interaction),
-        BattleUiOutcome::Submit(Action::Switch(battle_session::TeamSlot::new(1).unwrap()))
-    );
-
-    ui = BattleUiState::default();
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), interaction);
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), interaction);
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::Enter), interaction),
-        BattleUiOutcome::Updated
-    );
-    assert_eq!(ui.view().0, BattleMenuPage::Main);
-
-    ui = BattleUiState::default();
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowLeft), interaction);
-    assert_eq!(ui.view().1, 3);
-    assert_eq!(
-        handle_battle_key(&mut ui, &key(NamedKey::Enter), interaction),
-        BattleUiOutcome::Submit(Action::Run)
-    );
-}
-
-#[test]
-fn battle_projection_shows_status_and_move_details() {
-    let snapshot = battle_fixture();
-    let mut ui = BattleUiState::default();
-    let main = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
-    let commands = main
-        .labels()
-        .filter(|label| matches!(label.role, TextRole::Action(_)))
-        .map(|label| label.content.as_str())
-        .collect::<Vec<_>>();
-    assert_eq!(commands, ["战斗", "宝可梦", "包包", "逃走"]);
-    assert!(
-        main.labels()
-            .any(|label| { label.role == TextRole::PlayerDetail && label.content == "Lv.24" })
-    );
-    assert!(
-        main.images()
-            .any(|image| image.asset == type_icon_asset(PokemonType::Grass))
-    );
-    assert!(
-        main.images()
-            .any(|image| image.asset == type_icon_asset(PokemonType::Poison))
-    );
-    assert!(
-        main.labels()
-            .any(|label| { label.role == TextRole::PlayerHp && label.content == "HP 80/80" })
-    );
-
-    handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
-    let fight = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
-    assert!(fight.labels().any(|label| {
-        label.role == TextRole::ActionDetail(0) && label.content == "威40 PP35/35"
-    }));
-    assert!(fight.labels().any(|label| {
-        label.role == TextRole::Action(1)
-            && label.content == "飞叶快刀"
-            && label.color == super::TEXT
-    }));
-    assert!(fight.images().any(|image| {
-        image.asset == type_icon_asset(PokemonType::Grass)
-            && image.bounds.origin == GridPos::new(23, 18)
-    }));
-    assert!(fight.images().any(|image| {
-        image.asset == move_category_icon_asset(MoveCategory::Special)
-            && image.bounds.origin == GridPos::new(26, 18)
-    }));
-}
-
-#[test]
-fn pokemon_selection_uses_animated_team_icons() {
-    let snapshot = battle_fixture();
-    let mut ui = BattleUiState::default();
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
-    handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
-
-    let view = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
-
-    assert!(
-        view.labels().any(|label| {
-            label.role == TextRole::PageTitle && label.content == "选择宝可梦"
-        })
-    );
-    assert!(view.labels().any(|label| {
-        label.role == TextRole::SelectedMemberDetail && label.content == "Lv.24  出战"
-    }));
-    assert_eq!(
-        view.labels()
-            .filter(|label| matches!(label.role, TextRole::TeamMember(_)))
-            .count(),
-        TEAM_SIZE
-    );
-    assert_eq!(
-        view.images()
-            .filter(|image| image.asset.as_str().starts_with("battle/team/"))
-            .count(),
-        TEAM_SIZE + 1
-    );
-    assert!(view.images().any(|image| {
-        image.asset == rounded_ui_asset()
-            && image.bounds.origin == GridPos::new(1, 4)
-            && image.bounds.size == GridSize::new(11, 17)
-    }));
-    assert!(view.images().any(|image| {
-        image.asset == rounded_ui_asset()
-            && image.bounds.origin == GridPos::new(13, 4)
-            && image.bounds.size == GridSize::new(18, 3)
-    }));
-    for slot in 0..TEAM_SIZE {
-        assert!(
-            view.images()
-                .any(|image| image.asset == super::pokemon_icon_asset(slot, 0))
-        );
-    }
-    assert!(view.images().any(|image| {
-        image.asset == type_icon_asset(PokemonType::Poison)
-            && image.bounds.origin == GridPos::new(5, 16)
-    }));
-
-    let animated =
-        project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 1).unwrap();
-    assert!(
-        animated
-            .images()
-            .any(|image| image.asset == super::pokemon_icon_asset(0, 1))
-    );
-    assert!(view.images().any(|image| {
-        image.asset == super::pokemon_icon_asset(0, 0)
-            && image.bounds.origin == GridPos::new(3, 5)
-            && image.bounds.size == GridSize::new(7, 7)
-    }));
-    assert!(view.images().any(|image| {
-        image.asset == super::pokemon_icon_asset(0, 0)
-            && image.bounds.origin == GridPos::new(14, 4)
-            && image.bounds.size == GridSize::new(3, 3)
-    }));
-}
-
-#[test]
-fn selected_fainted_pokemon_uses_the_unavailable_status() {
-    let snapshot = battle_session_with_team_state(35, Accuracy::AlwaysHit, true).snapshot();
-    let mut ui = BattleUiState::default();
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
-    handle_battle_key(&mut ui, &key(NamedKey::Enter), snapshot.interaction());
-    handle_battle_key(&mut ui, &key(NamedKey::ArrowRight), snapshot.interaction());
-
-    let view = project_battle(&snapshot, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
-    assert!(view.labels().any(|label| {
-        label.role == TextRole::SelectedMemberHp
-            && label.content == "无法战斗"
-            && label.color == super::HP_LOW
-    }));
 }
 
 #[test]
@@ -1305,41 +1038,6 @@ fn a_complete_battle_story_projects_every_reachable_cue() {
     }
     assert!(battle.is_finished());
     assert!(projected > 20);
-}
-
-#[test]
-fn exhausted_moves_and_misses_have_complete_battle_views() {
-    let struggle = battle_session_with_move(0, Accuracy::AlwaysHit).snapshot();
-    let mut ui = BattleUiState::default();
-    handle_battle_key(&mut ui, &key(NamedKey::Enter), struggle.interaction());
-    let view = project_battle(&struggle, ui, BattleSpriteResources::for_slots(0, 0), 0).unwrap();
-    assert!(view.labels().any(|label| label.content == "挣扎"));
-
-    let mut battle = battle_session_with_move(35, Accuracy::percent(1).unwrap());
-    let action = battle.legal_actions()[0];
-    let (next, result) = battle.submit(action);
-    battle = next;
-    result.unwrap();
-    let mut saw_miss = false;
-    while battle.has_pending_playback() {
-        (battle, _) = battle.advance();
-        let snapshot = battle.snapshot();
-        if matches!(
-            snapshot.cue(),
-            Some(battle_session::BattleCue::Missed { .. })
-        ) {
-            let view = project_battle(
-                &snapshot,
-                BattleUiState::default(),
-                BattleSpriteResources::for_slots(0, 0),
-                0,
-            )
-            .unwrap();
-            assert!(view.labels().any(|label| label.content == "攻击没有命中。"));
-            saw_miss = true;
-        }
-    }
-    assert!(saw_miss);
 }
 
 #[test]

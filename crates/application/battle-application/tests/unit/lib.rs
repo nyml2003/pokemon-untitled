@@ -4,42 +4,11 @@ fn move_slot(index: usize) -> MoveSlot {
     MoveSlot::new(index).unwrap()
 }
 
-fn team(prefix: &str, speed: u16) -> Team {
-    let members = (0..TEAM_SIZE)
-        .map(|index| {
-            let battle_move = Move::new(
-                MoveId::new(format!("{prefix}-move-{index}")).unwrap(),
-                "Tackle",
-                PokemonType::Normal,
-                40,
-                Accuracy::AlwaysHit,
-                35,
-                35,
-                0,
-            )
-            .unwrap();
-            Pokemon::new(
-                PokemonId::new(format!("{prefix}-{index}")).unwrap(),
-                format!("{prefix}-{index}"),
-                50,
-                PokemonType::Normal,
-                None,
-                100,
-                100,
-                BattleStats::new(80, 80, 80, 80, speed).unwrap(),
-                vec![battle_move],
-            )
-            .unwrap()
-        })
-        .collect();
-    Team::new(members).unwrap()
-}
-
 fn battle_move(id: &str, power: u16, accuracy: Accuracy, pp: u8) -> Move {
     Move::new(
         MoveId::new(id).unwrap(),
         id,
-        PokemonType::Normal,
+        vec![PokemonType::Normal],
         power,
         accuracy,
         pp.max(1),
@@ -47,6 +16,60 @@ fn battle_move(id: &str, power: u16, accuracy: Accuracy, pp: u8) -> Move {
         0,
     )
     .unwrap()
+}
+
+fn unit(
+    id: &str,
+    name: &str,
+    move_type: PokemonType,
+    max_hp: u32,
+    current_hp: u32,
+    stats: BattleStats,
+    moves: Vec<Move>,
+) -> BattleUnit {
+    let species = Species::new(
+        name,
+        StatBlock::new(45, 49, 49, 65, 65, 45),
+        NationalDexId::new(1),
+        FormId::new(0),
+        vec![move_type],
+        vec![],
+    )
+    .unwrap();
+    let state = BattleState::new(
+        50,
+        stats,
+        max_hp,
+        current_hp,
+        moves,
+        vec![],
+        None,
+        StatStages::neutral(),
+    )
+    .unwrap();
+    BattleUnit::new(species, BattleUnitId::new(id).unwrap(), state).unwrap()
+}
+
+fn team(prefix: &str, speed: u16) -> Team {
+    let members = (0..TEAM_SIZE)
+        .map(|index| {
+            unit(
+                &format!("{prefix}-{index}"),
+                &format!("{prefix}-{index}"),
+                PokemonType::Normal,
+                100,
+                100,
+                BattleStats::new(80, 80, 80, 80, speed).unwrap(),
+                vec![battle_move(
+                    &format!("{prefix}-move-{index}"),
+                    40,
+                    Accuracy::AlwaysHit,
+                    35,
+                )],
+            )
+        })
+        .collect();
+    Team::new(members).unwrap()
 }
 
 fn pokemon(
@@ -57,22 +80,19 @@ fn pokemon(
     defense: u16,
     speed: u16,
     moves: Vec<Move>,
-) -> Pokemon {
-    Pokemon::new(
-        PokemonId::new(id).unwrap(),
+) -> BattleUnit {
+    unit(
         id,
-        50,
+        id,
         PokemonType::Normal,
-        None,
         max_hp,
         current_hp,
         BattleStats::new(attack, defense, attack, defense, speed).unwrap(),
         moves,
     )
-    .unwrap()
 }
 
-fn team_with_lead(prefix: &str, lead: Pokemon, bench_hp: u32) -> Team {
+fn team_with_lead(prefix: &str, lead: BattleUnit, bench_hp: u32) -> Team {
     let mut members = vec![lead];
     for index in 1..TEAM_SIZE {
         members.push(pokemon(
@@ -104,19 +124,11 @@ fn creation_rejects_a_team_without_a_conscious_pokemon() {
     let fainted_members = team("fainted", 80)
         .members()
         .iter()
-        .map(|pokemon| {
-            Pokemon::new(
-                pokemon.id().clone(),
-                pokemon.name(),
-                pokemon.level(),
-                pokemon.primary_type(),
-                pokemon.secondary_type(),
-                pokemon.max_hp(),
-                0,
-                pokemon.stats(),
-                pokemon.moves().to_vec(),
-            )
-            .unwrap()
+        .map(|member| {
+            let species = member.species().clone();
+            let mut state = member.state().clone();
+            state.current_hp = 0;
+            BattleUnit::new(species, member.id().clone(), state).unwrap()
         })
         .collect();
     let fainted = Team::new(fainted_members).unwrap();

@@ -6,7 +6,7 @@ use super::{
 };
 use super::{assets::*, common::*};
 use battle_session::{
-    Action, BattleObservation, BattleSessionSnapshot, MoveCategory, Participant, Pokemon,
+    Action, BattleObservation, BattleSessionSnapshot, BattleUnit, MoveCategory, Participant,
     PokemonType,
 };
 use game_data::PokedexData;
@@ -323,7 +323,11 @@ pub fn project_battle_ui(
                 .map(|battle_move| {
                     (
                         battle_move.name().to_owned(),
-                        battle_move.move_type(),
+                        battle_move
+                            .move_types()
+                            .first()
+                            .copied()
+                            .unwrap_or(PokemonType::Normal),
                         battle_move.category(),
                         format!(
                             "威{} PP{}/{}",
@@ -814,16 +818,23 @@ fn battle_pokemon_page_ui(
 fn selected_team_member_panel(
     id: u32,
     slot: usize,
-    pokemon: &Pokemon,
+    pokemon: &BattleUnit,
     active_slot: usize,
     sprite_frame: usize,
 ) -> UiNode {
     let mut types = vec![image(
         id + 5,
-        type_icon_asset(pokemon.primary_type()).as_str(),
+        type_icon_asset(
+            pokemon
+                .types()
+                .first()
+                .copied()
+                .unwrap_or(PokemonType::Normal),
+        )
+        .as_str(),
         UiStyle::fixed(72, 28),
     )];
-    if let Some(secondary) = pokemon.secondary_type() {
+    if let Some(secondary) = pokemon.types().get(1).copied() {
         types.push(image(
             id + 6,
             type_icon_asset(secondary).as_str(),
@@ -910,7 +921,7 @@ fn selected_team_member_panel(
 fn team_member_card(
     id: u32,
     slot: usize,
-    pokemon: &Pokemon,
+    pokemon: &BattleUnit,
     selected: bool,
     active: bool,
     sprite_frame: usize,

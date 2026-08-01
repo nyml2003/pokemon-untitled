@@ -1,8 +1,8 @@
 use battle_application::{
-    Ability, BattleEvent, BattleObservation, BattleStat, BattleTransition, MajorStatus,
-    MajorStatusKind, ObservedBattleOutcome, Participant, Pokemon, PokemonId, PokemonType,
+    Ability, BattleEvent, BattleObservation, BattleStat, BattleTransition, BattleUnit,
+    BattleUnitId, MajorStatus, MajorStatusKind, ObservedBattleOutcome, Participant, PokemonType,
     RevealedCombatant, RevealedPokemonObservation, StatStages, TypeEffectiveness, UsedMove,
-    Weather, WeatherState,
+    VolatileStatus, Weather, WeatherState,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,7 +13,7 @@ pub enum CombatantCondition {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CombatantScene {
-    id: PokemonId,
+    id: BattleUnitId,
     name: String,
     level: u8,
     primary_type: PokemonType,
@@ -27,7 +27,7 @@ pub struct CombatantScene {
 }
 
 impl CombatantScene {
-    pub const fn id(&self) -> &PokemonId {
+    pub const fn id(&self) -> &BattleUnitId {
         &self.id
     }
 
@@ -236,8 +236,8 @@ pub enum ReplayError {
     },
     EventTargetsInactivePokemon {
         participant: Participant,
-        expected: PokemonId,
-        actual: PokemonId,
+        expected: BattleUnitId,
+        actual: BattleUnitId,
     },
     FaintedWithHp {
         participant: Participant,
@@ -629,7 +629,7 @@ impl BattleSceneReducer {
     fn ensure_active(
         &self,
         participant: Participant,
-        pokemon: &PokemonId,
+        pokemon: &BattleUnitId,
     ) -> Result<(), ReplayError> {
         let active = match participant {
             Participant::Own => &self.scene.own,
@@ -647,16 +647,23 @@ impl BattleSceneReducer {
     }
 }
 
-fn scene_from_pokemon(pokemon: &Pokemon) -> CombatantScene {
+fn scene_from_pokemon(pokemon: &BattleUnit) -> CombatantScene {
     CombatantScene {
         id: pokemon.id().clone(),
         name: pokemon.name().to_owned(),
         level: pokemon.level(),
-        primary_type: pokemon.primary_type(),
-        secondary_type: pokemon.secondary_type(),
+        primary_type: pokemon
+            .types()
+            .first()
+            .copied()
+            .unwrap_or(PokemonType::Normal),
+        secondary_type: pokemon.types().get(1).copied(),
         current_hp: pokemon.current_hp(),
         max_hp: pokemon.max_hp(),
-        substitute_hp: pokemon.substitute_hp(),
+        substitute_hp: pokemon
+            .state
+            .volatile_statuses
+            .get(VolatileStatus::Substitute),
         major_status: pokemon.major_status(),
         stages: pokemon.stages(),
         condition: condition(pokemon.current_hp()),

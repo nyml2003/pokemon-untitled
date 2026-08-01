@@ -7,10 +7,10 @@ mod reducer;
 mod session;
 
 pub use battle_application::{
-    Ability, Action, BattleError, BattleObservation, BattleStat, MajorStatus, MajorStatusKind,
-    MoveCategory, MoveSlot, ObservedBattleOutcome, Participant, Pokemon, PokemonId, PokemonType,
-    StatStages, TEAM_SIZE, TeamSlot, TypeEffectiveness, UsedMove, Weather, WeatherAccuracyModifier,
-    WeatherMoveModifier, WeatherState,
+    Ability, Action, BattleError, BattleObservation, BattleStat, BattleUnit, BattleUnitId,
+    MajorStatus, MajorStatusKind, MoveCategory, MoveSlot, ObservedBattleOutcome, Participant,
+    PokemonType, StatStages, TEAM_SIZE, TeamSlot, TypeEffectiveness, UsedMove, Weather,
+    WeatherAccuracyModifier, WeatherMoveModifier, WeatherState,
 };
 pub use coordinator::{BattleCoordinator, OpponentPolicy};
 pub use reducer::{

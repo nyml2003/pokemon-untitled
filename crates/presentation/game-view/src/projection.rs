@@ -33,7 +33,7 @@ pub use scene::{
 };
 
 #[cfg(test)]
-pub(crate) use common::{HP_LOW, SPEECH_BUBBLE, TEXT};
+pub(crate) use common::SPEECH_BUBBLE;
 #[cfg(test)]
 pub(crate) use punctum_ui::UiColor;
 pub(crate) use scene::{

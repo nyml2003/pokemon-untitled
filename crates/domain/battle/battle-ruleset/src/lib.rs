@@ -226,7 +226,12 @@ impl BattleRuleset {
         let mut battle = Battle::new(team_one, team_two, seed)?;
         let mut events = Vec::new();
         for command in commands {
-            events.extend(battle.submit(*command)?.events().iter().cloned());
+            events.extend(
+                battle_application::submit_battle(&mut battle, *command)?
+                    .events()
+                    .iter()
+                    .cloned(),
+            );
         }
         Ok(BattleReplay {
             ruleset: self.reference.clone(),

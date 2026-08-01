@@ -3,10 +3,11 @@
 use std::collections::BTreeSet;
 
 use battle_application::{
-    Ability, Accuracy, BattleStat, EffectTarget, MAX_MOVES, MajorStatusKind, Move, MoveCategory,
-    MoveEffect, MoveId, Pokemon, PokemonId, PokemonType, StageChanges, StatBlock,
-    StatProjectionError, TEAM_SIZE, Team, TrainingValues, ValidationError, Weather,
-    WeatherAccuracyModifier, WeatherMoveModifier, calculate_gen3_stats,
+    Ability, Accuracy, BattleStat, BattleState, BattleUnit, BattleUnitId, EffectTarget, FormId,
+    MAX_MOVES, MajorStatusKind, Move, MoveCategory, MoveEffect, MoveId, NationalDexId, PokemonType,
+    Species, StageChanges, StatBlock, StatProjectionError, StatStages, TEAM_SIZE, Team,
+    TrainingValues, ValidationError, Weather, WeatherAccuracyModifier, WeatherMoveModifier,
+    calculate_gen3_stats,
 };
 use battle_ruleset::{BattleRuleset, RulesetError};
 use game_data::{
@@ -339,17 +340,10 @@ fn build_pokemon(
     data: &CurrentDataSet,
     prefix: &str,
     member: &RosterMember,
-) -> Result<Pokemon, RosterError> {
+) -> Result<BattleUnit, RosterError> {
     let record = data
         .pokemon(member.pokemon_form_id)
         .ok_or(RosterError::MissingPokemon(member.pokemon_form_id))?;
-    let primary_type = battle_type(data, record.types[0])?;
-    let secondary_type = record
-        .types
-        .get(1)
-        .copied()
-        .map(|id| battle_type(data, id))
-        .transpose()?;
     let moves = member
         .move_ids
         .iter()
@@ -383,32 +377,53 @@ fn build_pokemon(
         .filter(|entry| !entry.is_hidden)
         .find_map(|entry| data.ability_by_id(entry.ability_id))
         .and_then(battle_ability);
-    let build = |ability| match ability {
-        Some(ability) => Pokemon::new_with_ability(
-            PokemonId::new(format!("{prefix}-form-{}", member.pokemon_form_id.0))?,
+    let build = |ability: Option<Ability>| -> Result<BattleUnit, RosterError> {
+        let base = record.base_stats;
+        let base_stats = StatBlock::new(
+            base.hp,
+            base.attack,
+            base.defense,
+            base.special_attack,
+            base.special_defense,
+            base.speed,
+        );
+        let types = record
+            .types
+            .iter()
+            .map(|id| battle_type(data, *id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let default_abilities = record
+            .abilities
+            .iter()
+            .filter(|entry| !entry.is_hidden)
+            .filter_map(|entry| data.ability_by_id(entry.ability_id))
+            .filter_map(battle_ability)
+            .collect();
+        let species = Species::new(
             &record.display_name.localized,
+            base_stats,
+            NationalDexId::new(record.id.0 as u16),
+            FormId::new(record.id.0),
+            types,
+            default_abilities,
+        )?;
+        let state = BattleState::new(
             member.level,
-            primary_type,
-            secondary_type,
-            calculated.max_hp(),
-            calculated.max_hp(),
             calculated.battle(),
-            moves,
-            ability,
-        ),
-        None => Pokemon::new(
-            PokemonId::new(format!("{prefix}-form-{}", member.pokemon_form_id.0))?,
-            &record.display_name.localized,
-            member.level,
-            primary_type,
-            secondary_type,
             calculated.max_hp(),
             calculated.max_hp(),
-            calculated.battle(),
             moves,
-        ),
+            ability.into_iter().collect(),
+            None,
+            StatStages::neutral(),
+        )?;
+        Ok(BattleUnit::new(
+            species,
+            BattleUnitId::new(format!("{prefix}-form-{}", member.pokemon_form_id.0))?,
+            state,
+        )?)
     };
-    build(ability).map_err(Into::into)
+    build(ability)
 }
 
 fn battle_ability(record: &game_data::AbilityRecord) -> Option<Ability> {
@@ -497,14 +512,14 @@ fn battle_move_with_pp(
     Move::new_with_category_and_effect(
         MoveId::new(format!("pokeapi-move-{}", id.0))?,
         &record.display_name.localized,
-        battle_type(data, record.move_type)?,
+        vec![battle_type(data, record.move_type)?],
         category,
         power,
         accuracy,
         pp,
         current_pp,
         record.priority,
-        effect,
+        vec![effect],
     )
     .map(|battle_move| {
         let battle_move = match weather_accuracy(record) {
@@ -709,24 +724,12 @@ impl ProductRosterBuilder<'_> {
         max_hp: u32,
         current_hp: u32,
         current_pp: Option<u8>,
-    ) -> Result<Pokemon, RosterError> {
+    ) -> Result<BattleUnit, RosterError> {
         self.ruleset.validate_form(self.data, form)?;
         let record = self
             .data
             .pokemon(form)
             .ok_or(RosterError::MissingPokemon(form))?;
-        let primary = record
-            .types
-            .first()
-            .copied()
-            .ok_or(RosterError::MissingPokemon(form))?;
-        let primary_type = battle_type(self.data, primary)?;
-        let secondary_type = record
-            .types
-            .get(1)
-            .copied()
-            .map(|id| battle_type(self.data, id))
-            .transpose()?;
         let candidate = self
             .data
             .learnset(form)
@@ -763,20 +766,38 @@ impl ProductRosterBuilder<'_> {
             TrainingValues::perfect_untrained(),
         )?;
         let ability = self.ruleset.select_ability(self.data, form)?;
-        let id = PokemonId::new(format!("{prefix}-form-{}", form.0))?;
-        Pokemon::new_with_ability(
-            id,
+        let id = BattleUnitId::new(format!("{prefix}-form-{}", form.0))?;
+        let types = record
+            .types
+            .iter()
+            .map(|id| battle_type(self.data, *id))
+            .collect::<Result<Vec<_>, _>>()?;
+        let species = Species::new(
             &record.display_name.localized,
+            StatBlock::new(
+                record.base_stats.hp,
+                record.base_stats.attack,
+                record.base_stats.defense,
+                record.base_stats.special_attack,
+                record.base_stats.special_defense,
+                record.base_stats.speed,
+            ),
+            NationalDexId::new(form.0 as u16),
+            FormId::new(form.0),
+            types,
+            vec![],
+        )?;
+        let state = BattleState::new(
             level,
-            primary_type,
-            secondary_type,
+            calculated.battle(),
             max_hp,
             current_hp,
-            calculated.battle(),
             moves,
-            ability,
-        )
-        .map_err(Into::into)
+            vec![ability],
+            None,
+            StatStages::neutral(),
+        )?;
+        BattleUnit::new(species, id, state).map_err(Into::into)
     }
 }
 

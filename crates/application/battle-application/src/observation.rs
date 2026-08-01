@@ -1,10 +1,9 @@
 use battle_domain::{
     Ability, Action, Battle, BattleError, BattleEvent as DomainEvent,
-    BattleOutcome as DomainBattleOutcome, BattlePhase, BattleStat,
+    BattleOutcome as DomainBattleOutcome, BattlePhase, BattleStat, BattleUnit, BattleUnitId,
     DamageSource as DomainDamageSource, MajorStatus, MajorStatusKind, Move, MoveCategory, MoveId,
-    MoveSlot, Pokemon, PokemonId, PokemonType, Side, StatStages,
-    SubmitOutcome as DomainSubmitOutcome, TEAM_SIZE, TeamSlot, TypeEffectiveness,
-    UsedMove as DomainUsedMove, Weather, WeatherState,
+    MoveSlot, PokemonType, Side, StatStages, SubmitOutcome as DomainSubmitOutcome, TEAM_SIZE,
+    TeamSlot, TypeEffectiveness, UsedMove as DomainUsedMove, VolatileStatus, Weather, WeatherState,
 };
 
 use crate::Accuracy;
@@ -61,7 +60,7 @@ impl BattleObservation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnSideObservation {
     active_slot: TeamSlot,
-    members: [Pokemon; TEAM_SIZE],
+    members: [BattleUnit; TEAM_SIZE],
 }
 
 impl OwnSideObservation {
@@ -69,7 +68,7 @@ impl OwnSideObservation {
         self.active_slot
     }
 
-    pub const fn members(&self) -> &[Pokemon; TEAM_SIZE] {
+    pub const fn members(&self) -> &[BattleUnit; TEAM_SIZE] {
         &self.members
     }
 }
@@ -97,7 +96,7 @@ impl OpponentSideObservation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RevealedPokemonObservation {
-    id: PokemonId,
+    id: BattleUnitId,
     name: String,
     level: u8,
     primary_type: PokemonType,
@@ -111,7 +110,7 @@ pub struct RevealedPokemonObservation {
 }
 
 impl RevealedPokemonObservation {
-    pub fn id(&self) -> &PokemonId {
+    pub fn id(&self) -> &BattleUnitId {
         &self.id
     }
 
@@ -162,7 +161,7 @@ impl RevealedPokemonObservation {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RevealedCombatant {
-    id: PokemonId,
+    id: BattleUnitId,
     name: String,
     level: u8,
     primary_type: PokemonType,
@@ -175,7 +174,7 @@ pub struct RevealedCombatant {
 }
 
 impl RevealedCombatant {
-    pub fn id(&self) -> &PokemonId {
+    pub fn id(&self) -> &BattleUnitId {
         &self.id
     }
 
@@ -267,21 +266,21 @@ pub enum UsedMove {
 pub enum DamageSource {
     Move {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         used_move: UsedMove,
     },
     Recoil {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     Ability {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         ability: Ability,
     },
     Status {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         status: MajorStatus,
     },
     Weather {
@@ -308,73 +307,73 @@ pub enum BattleEvent {
     },
     MoveUsed {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         used_move: UsedMove,
     },
     OwnPpSpent {
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         move_slot: MoveSlot,
         remaining: u8,
     },
     StatusApplied {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         status: MajorStatus,
     },
     StatusFailed {
         participant: Participant,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         status: MajorStatusKind,
     },
     StatusPreventsAction {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         status: MajorStatus,
     },
     StatusCured {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         status: MajorStatusKind,
     },
     StatusAdvanced {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         status: MajorStatus,
     },
     ProtectionActivated {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     ProtectionFailed {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     MoveBlocked {
         participant: Participant,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     SubstituteCreated {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         substitute_hp: u32,
         current_hp: u32,
     },
     SubstituteBlocked {
         participant: Participant,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     SubstituteDamaged {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         amount: u32,
         remaining_hp: u32,
     },
     SubstituteBroke {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     WeatherStarted {
         weather: Weather,
@@ -389,57 +388,57 @@ pub enum BattleEvent {
     },
     AbilityActivated {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         ability: Ability,
     },
     Flinched {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     StatStageChanged {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         stat: BattleStat,
         change: i8,
         stage: i8,
     },
     Healed {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         amount: u32,
         current_hp: u32,
     },
     EffectFailed {
         participant: Participant,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     Missed {
         participant: Participant,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     Critical {
         participant: Participant,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     Effectiveness {
         participant: Participant,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         effectiveness: TypeEffectiveness,
     },
     Damage {
         source: DamageSource,
         target: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
         amount: u32,
         remaining_hp: u32,
     },
     Fainted {
         participant: Participant,
-        pokemon: PokemonId,
+        pokemon: BattleUnitId,
     },
     ForcedReplacement {
         participant: Participant,
@@ -568,7 +567,7 @@ fn opponent_observation(
     })
 }
 
-fn revealed_pokemon_ids(battle: &Battle, side: Side) -> Vec<PokemonId> {
+fn revealed_pokemon_ids(battle: &Battle, side: Side) -> Vec<BattleUnitId> {
     let mut revealed = Vec::new();
     for event in battle.events() {
         match event {
@@ -597,7 +596,7 @@ fn revealed_pokemon_ids(battle: &Battle, side: Side) -> Vec<PokemonId> {
     revealed
 }
 
-fn push_unique(revealed: &mut Vec<PokemonId>, pokemon: PokemonId) {
+fn push_unique(revealed: &mut Vec<BattleUnitId>, pokemon: BattleUnitId) {
     if !revealed.contains(&pokemon) {
         revealed.push(pokemon);
     }
@@ -606,7 +605,7 @@ fn push_unique(revealed: &mut Vec<PokemonId>, pokemon: PokemonId) {
 fn revealed_pokemon(
     battle: &Battle,
     side: Side,
-    pokemon_id: &PokemonId,
+    pokemon_id: &BattleUnitId,
 ) -> Result<RevealedPokemonObservation, BattleError> {
     let pokemon = battle
         .team(side)
@@ -620,11 +619,18 @@ fn revealed_pokemon(
         id: pokemon.id().clone(),
         name: pokemon.name().to_owned(),
         level: pokemon.level(),
-        primary_type: pokemon.primary_type(),
-        secondary_type: pokemon.secondary_type(),
+        primary_type: pokemon
+            .types()
+            .first()
+            .copied()
+            .unwrap_or(PokemonType::Normal),
+        secondary_type: pokemon.types().get(1).copied(),
         max_hp: pokemon.max_hp(),
         current_hp: pokemon.current_hp(),
-        substitute_hp: pokemon.substitute_hp(),
+        substitute_hp: pokemon
+            .state
+            .volatile_statuses
+            .get(VolatileStatus::Substitute),
         major_status: pokemon.major_status(),
         stages: pokemon.stages(),
         revealed_moves: revealed_moves(battle, side, pokemon)?,
@@ -634,7 +640,7 @@ fn revealed_pokemon(
 fn revealed_pokemon_at(
     battle: &Battle,
     side: Side,
-    pokemon_id: &PokemonId,
+    pokemon_id: &BattleUnitId,
     current_hp: u32,
 ) -> Result<RevealedCombatant, BattleError> {
     let pokemon = battle
@@ -649,11 +655,18 @@ fn revealed_pokemon_at(
         id: pokemon.id().clone(),
         name: pokemon.name().to_owned(),
         level: pokemon.level(),
-        primary_type: pokemon.primary_type(),
-        secondary_type: pokemon.secondary_type(),
+        primary_type: pokemon
+            .types()
+            .first()
+            .copied()
+            .unwrap_or(PokemonType::Normal),
+        secondary_type: pokemon.types().get(1).copied(),
         max_hp: pokemon.max_hp(),
         current_hp,
-        substitute_hp: pokemon.substitute_hp(),
+        substitute_hp: pokemon
+            .state
+            .volatile_statuses
+            .get(VolatileStatus::Substitute),
         major_status: pokemon.major_status(),
         stages: pokemon.stages(),
     })
@@ -662,7 +675,7 @@ fn revealed_pokemon_at(
 fn revealed_moves(
     battle: &Battle,
     side: Side,
-    pokemon: &Pokemon,
+    pokemon: &BattleUnit,
 ) -> Result<Vec<RevealedMoveObservation>, BattleError> {
     pokemon
         .moves()
@@ -682,7 +695,7 @@ fn revealed_moves(
         .map(|moves| moves.into_iter().flatten().collect())
 }
 
-fn move_was_used(battle: &Battle, side: Side, pokemon: &PokemonId, slot: MoveSlot) -> bool {
+fn move_was_used(battle: &Battle, side: Side, pokemon: &BattleUnitId, slot: MoveSlot) -> bool {
     battle.events().iter().any(|event| {
         matches!(
             event,
@@ -699,7 +712,11 @@ fn reveal_move(battle_move: &Move) -> RevealedMoveObservation {
     RevealedMoveObservation {
         id: battle_move.id().clone(),
         name: battle_move.name().to_owned(),
-        move_type: battle_move.move_type(),
+        move_type: battle_move
+            .move_types()
+            .first()
+            .copied()
+            .unwrap_or(PokemonType::Normal),
         category: battle_move.category(),
         power: battle_move.power(),
         accuracy: battle_move.accuracy(),
@@ -987,7 +1004,7 @@ fn observe_event(
 fn observe_used_move(
     battle: &Battle,
     side: Side,
-    pokemon: &PokemonId,
+    pokemon: &BattleUnitId,
     used_move: &DomainUsedMove,
 ) -> Result<UsedMove, BattleError> {
     match used_move {

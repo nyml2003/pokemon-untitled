@@ -6,7 +6,7 @@ mod battle_contract;
 mod product_session;
 mod roster;
 
-use battle_application::{Action, BattleApplication, BattleError, BattleObservation, PokemonId};
+use battle_application::{Action, BattleApplication, BattleError, BattleObservation, BattleUnitId};
 use battle_session::{
     BattleCoordinator, BattleSession, BattleSessionSnapshot, OpponentPolicy, SessionError,
 };
@@ -310,8 +310,8 @@ impl GameSession {
 
 struct GameBattleSession {
     session: BattleSession<DemoOpponentPolicy>,
-    own_sprite_ids: Vec<PokemonId>,
-    opponent_sprite_ids: Vec<PokemonId>,
+    own_sprite_ids: Vec<BattleUnitId>,
+    opponent_sprite_ids: Vec<BattleUnitId>,
 }
 
 impl GameBattleSession {
@@ -375,7 +375,7 @@ impl GameBattleSession {
     }
 }
 
-fn sprite_slot(ids: &[PokemonId], displayed: &PokemonId) -> usize {
+fn sprite_slot(ids: &[BattleUnitId], displayed: &BattleUnitId) -> usize {
     ids.iter().position(|id| id == displayed).unwrap_or(0)
 }
 

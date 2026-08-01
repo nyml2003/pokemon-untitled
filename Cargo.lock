@@ -232,6 +232,7 @@ dependencies = [
 name = "battle-ruleset"
 version = "0.0.0"
 dependencies = [
+ "battle-application",
  "battle-domain",
  "game-data",
 ]

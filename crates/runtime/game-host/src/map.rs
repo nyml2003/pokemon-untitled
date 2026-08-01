@@ -15,9 +15,7 @@ use map_project::{
 use map_render::AtomicTileCatalog;
 use map_tile_semantics::TileSemanticsCatalog;
 use serde::Deserialize;
-use world_project::{
-    PlacedMap, STANDARD_MAP_HEIGHT, STANDARD_MAP_WIDTH, WorldChunkCoord, WorldProject,
-};
+use world_project::{PlacedMap, WorldChunkCoord, WorldProject};
 
 pub struct LoadedMap {
     pub project: MapProject,
@@ -138,23 +136,9 @@ fn compose_world_map(
     world: &WorldProject,
     known: &BTreeSet<AtomicTileId>,
 ) -> Result<MapProject, Box<dyn Error>> {
-    let coordinates = world
-        .maps()
-        .map(|(coordinate, _)| coordinate)
-        .collect::<Vec<_>>();
-    let first = coordinates
-        .first()
-        .ok_or_else(|| invalid_data("world project has no maps"))?;
-    let (mut min_x, mut max_x) = (first.x(), first.x());
-    let (mut min_y, mut max_y) = (first.y(), first.y());
-    for coordinate in &coordinates[1..] {
-        min_x = min_x.min(coordinate.x());
-        max_x = max_x.max(coordinate.x());
-        min_y = min_y.min(coordinate.y());
-        max_y = max_y.max(coordinate.y());
-    }
-    let width = checked_extent(min_x, max_x, STANDARD_MAP_WIDTH)?;
-    let height = checked_extent(min_y, max_y, STANDARD_MAP_HEIGHT)?;
+    let (width, height) = world
+        .size()
+        .map_err(|error| invalid_data(&format!("invalid world layout: {error}")))?;
     let cell_count = usize::from(width) * usize::from(height);
     let mut visual_cells = vec![VisualCell::new(None); cell_count];
     let mut collision_cells = vec![Collision::Blocked; cell_count];
@@ -163,8 +147,9 @@ fn compose_world_map(
     let mut materials = BTreeMap::<CompositeTileId, CompositeTile>::new();
 
     for (coordinate, map) in world.maps() {
-        let origin_x = checked_origin(coordinate.x(), min_x, STANDARD_MAP_WIDTH)?;
-        let origin_y = checked_origin(coordinate.y(), min_y, STANDARD_MAP_HEIGHT)?;
+        let (origin_x, origin_y) = world
+            .origin_of(coordinate)
+            .map_err(|error| invalid_data(&format!("invalid layout origin: {error}")))?;
         for material in &map.materials {
             match materials.get(&material.id) {
                 Some(existing) if existing != material => {
@@ -203,9 +188,12 @@ fn compose_world_map(
     let initial_map = world
         .map_at(initial)
         .ok_or_else(|| invalid_data("world project initial map is missing"))?;
+    let (origin_x, origin_y) = world
+        .origin_of(initial)
+        .map_err(|error| invalid_data(&format!("invalid layout origin: {error}")))?;
     let player_spawn = TilePosition::new(
-        checked_origin(initial.x(), min_x, STANDARD_MAP_WIDTH)? + initial_map.player_spawn.x(),
-        checked_origin(initial.y(), min_y, STANDARD_MAP_HEIGHT)? + initial_map.player_spawn.y(),
+        origin_x + initial_map.player_spawn.x(),
+        origin_y + initial_map.player_spawn.y(),
     );
     let project = MapProject {
         format_version: map_project::FORMAT_VERSION.into(),
@@ -222,17 +210,6 @@ fn compose_world_map(
     };
     project.validate(known)?;
     Ok(project)
-}
-
-fn checked_extent(min: i32, max: i32, map_extent: u16) -> Result<u16, Box<dyn Error>> {
-    let map_count = i64::from(max) - i64::from(min) + 1;
-    u16::try_from(map_count * i64::from(map_extent))
-        .map_err(|_| invalid_data("world map layout exceeds map-project dimensions"))
-}
-
-fn checked_origin(coordinate: i32, minimum: i32, map_extent: u16) -> Result<u16, Box<dyn Error>> {
-    u16::try_from((i64::from(coordinate) - i64::from(minimum)) * i64::from(map_extent))
-        .map_err(|_| invalid_data("world map coordinate is outside the composed layout"))
 }
 
 fn invalid_data(message: &str) -> Box<dyn Error> {
