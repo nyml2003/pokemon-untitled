@@ -23,6 +23,22 @@ pub(crate) fn plan_ui_frame<Action>(
     let mut labels = Vec::new();
     for (z_index, command) in frame.commands().iter().enumerate() {
         match command {
+            UiDrawCommand::Shadow {
+                bounds,
+                color,
+                border_radius,
+                clip,
+            } => {
+                if let Some(bounds) = ui_visible_bounds(*bounds, *clip) {
+                    images.extend(shadow_images(
+                        bounds,
+                        *border_radius,
+                        white,
+                        ui_color(*color),
+                        z_index as i32,
+                    ));
+                }
+            }
             UiDrawCommand::Fill {
                 bounds,
                 color,
@@ -162,6 +178,35 @@ pub(crate) fn plan_ui_frame<Action>(
 
 fn ui_color(color: punctum_ui::UiColor) -> Rgba8 {
     Rgba8::new(color.red, color.green, color.blue, color.alpha)
+}
+
+/// 将阴影矩形渲染为三圈同心的半透明矩形，从内到外透明度递减以近似光晕。
+fn shadow_images(
+    bounds: PixelRect,
+    border_radius: punctum_ui::UiBorderRadius,
+    resource: ResourceId,
+    color: Rgba8,
+    z_index: i32,
+) -> Vec<GpuPixelImage> {
+    (0..3)
+        .map(|ring| {
+            let inset = 2u32.saturating_sub(ring);
+            let ring_bounds = PixelRect::new(
+                bounds.x.saturating_add(inset),
+                bounds.y.saturating_add(inset),
+                bounds.width.saturating_sub(inset * 2),
+                bounds.height.saturating_sub(inset * 2),
+            );
+            let alpha = (u32::from(color.alpha) / 3 * (ring + 1)).min(255) as u8;
+            GpuPixelImage::new(
+                ring_bounds,
+                resource,
+                Rgba8::new(color.red, color.green, color.blue, alpha),
+                z_index,
+            )
+            .with_corner_radii(ui_corner_radii(border_radius, ring_bounds))
+        })
+        .collect()
 }
 
 fn ui_corner_radii(radius: punctum_ui::UiBorderRadius, bounds: PixelRect) -> [u32; 4] {

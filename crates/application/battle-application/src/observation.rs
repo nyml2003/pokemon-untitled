@@ -1,12 +1,13 @@
 use battle_domain::{
     Ability, Action, Battle, BattleError, BattleEvent as DomainEvent,
     BattleOutcome as DomainBattleOutcome, BattlePhase, BattleStat, BattleUnit, BattleUnitId,
-    DamageSource as DomainDamageSource, MajorStatus, MajorStatusKind, Move, MoveCategory, MoveId,
-    MoveSlot, PokemonType, Side, StatStages, SubmitOutcome as DomainSubmitOutcome, TEAM_SIZE,
-    TeamSlot, TypeEffectiveness, UsedMove as DomainUsedMove, VolatileStatus, Weather, WeatherState,
+    DamageSource as DomainDamageSource, MAX_MOVES, MajorStatus, MajorStatusKind, Move,
+    MoveCategory, MoveId, MoveSlot, PokemonType, Side, StatStages,
+    SubmitOutcome as DomainSubmitOutcome, TEAM_SIZE, TeamSlot, TypeEffectiveness,
+    UsedMove as DomainUsedMove, VolatileStatus, Weather, WeatherState,
 };
 
-use crate::Accuracy;
+use crate::{Accuracy, rules};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Participant {
@@ -58,9 +59,38 @@ impl BattleObservation {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DamageProjection {
+    move_id: MoveId,
+    effectiveness: TypeEffectiveness,
+    /// 无暴击、随机数 85 时的最小伤害占对手最大 HP 的百分比。
+    min_percent: u8,
+    /// 无暴击、随机数 100 时的最大伤害占对手最大 HP 的百分比。
+    max_percent: u8,
+}
+
+impl DamageProjection {
+    pub fn move_id(&self) -> &MoveId {
+        &self.move_id
+    }
+
+    pub const fn effectiveness(&self) -> TypeEffectiveness {
+        self.effectiveness
+    }
+
+    pub const fn min_percent(&self) -> u8 {
+        self.min_percent
+    }
+
+    pub const fn max_percent(&self) -> u8 {
+        self.max_percent
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OwnSideObservation {
     active_slot: TeamSlot,
     members: [BattleUnit; TEAM_SIZE],
+    active_move_projections: Vec<DamageProjection>,
 }
 
 impl OwnSideObservation {
@@ -70,6 +100,10 @@ impl OwnSideObservation {
 
     pub const fn members(&self) -> &[BattleUnit; TEAM_SIZE] {
         &self.members
+    }
+
+    pub fn active_move_projections(&self) -> &[DamageProjection] {
+        &self.active_move_projections
     }
 }
 
@@ -524,17 +558,88 @@ pub(crate) fn submit_outcome(
 
 pub(crate) fn observe(battle: &Battle, viewer: Side) -> Result<BattleObservation, BattleError> {
     let opponent = viewer.opponent();
+    let active_slot = battle.active_slot(viewer);
+    let own_members = battle.team(viewer).members().clone();
+    let own_active = &battle.team(viewer).members()[active_slot.index()];
+    let opponent_active = battle.active(opponent);
     Ok(BattleObservation {
         viewer,
         turn: battle.turn_number(),
         phase: battle.phase(),
         weather: battle.weather(),
         own: OwnSideObservation {
-            active_slot: battle.active_slot(viewer),
-            members: battle.team(viewer).members().clone(),
+            active_slot,
+            members: own_members,
+            active_move_projections: damage_projections(
+                battle.weather().map(WeatherState::weather),
+                own_active,
+                opponent_active,
+            ),
         },
         opponent: opponent_observation(battle, opponent)?,
     })
+}
+
+// 为出战宝可梦的每个招式计算伤害预测与相性标注。
+fn damage_projections(
+    weather: Option<Weather>,
+    attacker: &BattleUnit,
+    defender: &BattleUnit,
+) -> Vec<DamageProjection> {
+    let max_hp = u64::from(defender.state.max_hp.max(1));
+    attacker
+        .moves()
+        .iter()
+        .take(MAX_MOVES)
+        .map(|battle_move| {
+            let move_type = battle_move.move_types().first().copied();
+            let deal_damage =
+                battle_move.category() != MoveCategory::Status && battle_move.power() > 0;
+            let effectiveness = if deal_damage {
+                move_type.map_or(TypeEffectiveness::Normal, |kind| {
+                    rules::type_effectiveness(kind, defender)
+                })
+            } else {
+                TypeEffectiveness::Normal
+            };
+            let (min_percent, max_percent) =
+                if deal_damage && effectiveness != TypeEffectiveness::Immune {
+                    let min = rules::calculate_damage(
+                        attacker,
+                        defender,
+                        battle_move.power(),
+                        move_type,
+                        battle_move.category(),
+                        false,
+                        85,
+                        weather,
+                    );
+                    let max = rules::calculate_damage(
+                        attacker,
+                        defender,
+                        battle_move.power(),
+                        move_type,
+                        battle_move.category(),
+                        false,
+                        100,
+                        weather,
+                    );
+                    (damage_percent(min, max_hp), damage_percent(max, max_hp))
+                } else {
+                    (0, 0)
+                };
+            DamageProjection {
+                move_id: battle_move.id().clone(),
+                effectiveness,
+                min_percent,
+                max_percent,
+            }
+        })
+        .collect()
+}
+
+fn damage_percent(damage: u64, max_hp: u64) -> u8 {
+    ((damage.saturating_mul(100) / max_hp).min(100)) as u8
 }
 
 pub(crate) fn event_log(battle: &Battle, viewer: Side) -> Result<Vec<BattleEvent>, BattleError> {

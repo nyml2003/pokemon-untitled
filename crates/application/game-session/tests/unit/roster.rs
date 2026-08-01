@@ -134,21 +134,21 @@ fn seeded_roster_has_twelve_unique_pokemon_with_four_unique_learnset_moves() {
 }
 
 #[test]
-fn random_roster_uses_the_complete_gen3_national_range_and_default_forms() {
-    for national_dex in [FIRST_NATIONAL_POKEMON, LAST_GEN3_POKEMON] {
-        assert!(is_gen3_default_form(national_dex, national_dex));
+fn random_roster_uses_the_complete_kanto_national_range_and_default_forms() {
+    for national_dex in [FIRST_NATIONAL_POKEMON, LAST_KANTO_POKEMON] {
+        assert!(is_kanto_default_form(national_dex, national_dex));
     }
     for (species_id, form_id) in [
         (0, 0),
-        (LAST_GEN3_POKEMON + 1, LAST_GEN3_POKEMON + 1),
+        (LAST_KANTO_POKEMON + 1, LAST_KANTO_POKEMON + 1),
         (25, 1_025),
     ] {
-        assert!(!is_gen3_default_form(species_id, form_id));
+        assert!(!is_kanto_default_form(species_id, form_id));
     }
 
     let data = CurrentDataSet::embedded().unwrap();
     for member in random_members(&data, 42).unwrap() {
-        assert!(is_gen3_default_form(
+        assert!(is_kanto_default_form(
             data.pokemon(member.pokemon_form_id).unwrap().species_id.0,
             member.pokemon_form_id.0,
         ));

@@ -877,3 +877,115 @@ fn checkpoint_cannot_be_used_with_another_application() {
         Err(TransitionError::CheckpointOwnerMismatch)
     );
 }
+
+#[test]
+fn opening_observation_projections_cover_each_own_move() {
+    let (application, one, _) = application();
+
+    let observation = application.observe(&one).unwrap();
+    let active = observation.own().active_slot().index();
+    let own_move_count = observation.own().members()[active].moves().len();
+
+    let projections = observation.own().active_move_projections();
+    assert_eq!(projections.len(), own_move_count);
+    for projection in projections {
+        assert_eq!(projection.effectiveness(), TypeEffectiveness::Normal);
+        assert!(projection.min_percent() >= 1);
+        assert!(projection.min_percent() <= projection.max_percent());
+        assert!(projection.max_percent() <= 100);
+    }
+}
+
+#[test]
+fn projection_reports_double_effectiveness_and_ignores_status_moves() {
+    let attacker = unit(
+        "fire",
+        "fire",
+        PokemonType::Fire,
+        100,
+        100,
+        BattleStats::new(80, 80, 80, 80, 70).unwrap(),
+        vec![
+            Move::new(
+                MoveId::new("fire-blast").unwrap(),
+                "fire-blast",
+                vec![PokemonType::Fire],
+                40,
+                Accuracy::AlwaysHit,
+                35,
+                35,
+                0,
+            )
+            .unwrap(),
+            Move::new_with_category(
+                MoveId::new("growl").unwrap(),
+                "growl",
+                vec![PokemonType::Normal],
+                MoveCategory::Status,
+                0,
+                Accuracy::AlwaysHit,
+                30,
+                30,
+                0,
+            )
+            .unwrap(),
+        ],
+    );
+    let defender = unit(
+        "grass",
+        "grass",
+        PokemonType::Grass,
+        100,
+        100,
+        BattleStats::new(80, 80, 80, 80, 50).unwrap(),
+        vec![battle_move("grass-move", 40, Accuracy::AlwaysHit, 35)],
+    );
+
+    let mut own_members = vec![attacker];
+    for index in 1..TEAM_SIZE {
+        own_members.push(pokemon(
+            &format!("fire-bench-{index}"),
+            100,
+            100,
+            50,
+            50,
+            10,
+            vec![battle_move("bench-move", 40, Accuracy::AlwaysHit, 35)],
+        ));
+    }
+    let mut opponent_members = vec![defender];
+    for index in 1..TEAM_SIZE {
+        opponent_members.push(pokemon(
+            &format!("grass-bench-{index}"),
+            100,
+            100,
+            50,
+            50,
+            10,
+            vec![battle_move("bench-move", 40, Accuracy::AlwaysHit, 35)],
+        ));
+    }
+    let application = BattleApplication::new(
+        Team::new(own_members).unwrap(),
+        Team::new(opponent_members).unwrap(),
+        7,
+    )
+    .unwrap();
+    let (own, _) = application.perspectives();
+
+    let observation = application.observe(&own).unwrap();
+    let projections = observation.own().active_move_projections();
+    assert_eq!(projections.len(), 2);
+
+    let fire = projections[0].clone();
+    assert_eq!(fire.move_id().as_str(), "fire-blast");
+    assert_eq!(fire.effectiveness(), TypeEffectiveness::Double);
+    assert!(fire.min_percent() >= 1);
+    assert!(fire.min_percent() <= fire.max_percent());
+
+    let status = projections[1].clone();
+    assert_eq!(status.move_id().as_str(), "growl");
+    assert_eq!(status.effectiveness(), TypeEffectiveness::Normal);
+    assert_eq!(status.min_percent(), 0);
+    assert_eq!(status.max_percent(), 0);
+}

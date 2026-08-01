@@ -372,9 +372,9 @@ pub(crate) fn battle_message(snapshot: &BattleSessionSnapshot) -> String {
             participant,
             amount,
         }) => format!(
-            "{} 受到 {} 点伤害。",
+            "{} 受到 {}% 伤害。",
             combatant_name(scene, *participant),
-            amount
+            damage_percent(scene, *participant, *amount)
         ),
         Some(BattleCue::StatusApplied {
             participant,
@@ -615,6 +615,19 @@ fn combatant_name(scene: &battle_session::BattleScene, participant: Participant)
         Participant::Own => scene.own().name(),
         Participant::Opponent => scene.opponent().name(),
     }
+}
+
+/// 伤害占该宝可梦最大 HP 的整数百分比，封顶 100。
+fn damage_percent(
+    scene: &battle_session::BattleScene,
+    participant: Participant,
+    amount: u32,
+) -> u32 {
+    let max_hp = match participant {
+        Participant::Own => scene.own().max_hp(),
+        Participant::Opponent => scene.opponent().max_hp(),
+    };
+    (u64::from(amount) * 100 / u64::from(max_hp.max(1))).min(100) as u32
 }
 
 pub(crate) fn used_move_name(used_move: &UsedMove) -> &str {

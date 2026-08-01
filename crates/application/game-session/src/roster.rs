@@ -21,7 +21,7 @@ use crate::{BattleSource, BattleStartRequest};
 const ROSTER_SIZE: usize = TEAM_SIZE * 2;
 const DEMO_LEVEL: u8 = 50;
 const FIRST_NATIONAL_POKEMON: u32 = 1;
-const LAST_GEN3_POKEMON: u32 = 386;
+const LAST_KANTO_POKEMON: u32 = 151;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RosterError {
@@ -237,7 +237,7 @@ fn random_members(data: &CurrentDataSet, seed: u64) -> Result<Vec<RosterMember>,
     let mut eligible = data
         .pokemon_iter()
         .filter_map(|pokemon| {
-            if !is_gen3_default_form(pokemon.species_id.0, pokemon.id.0)
+            if !is_kanto_default_form(pokemon.species_id.0, pokemon.id.0)
                 || !pokemon.types.iter().all(|id| is_supported_type(data, *id))
                 || !seen_names.insert(pokemon.display_name.localized.clone())
             {
@@ -275,8 +275,11 @@ fn random_members(data: &CurrentDataSet, seed: u64) -> Result<Vec<RosterMember>,
         .collect()
 }
 
-const fn is_gen3_default_form(species_id: u32, form_id: u32) -> bool {
-    species_id >= FIRST_NATIONAL_POKEMON && species_id <= LAST_GEN3_POKEMON && form_id == species_id
+/// 只接受全国图鉴 1-151（关都）范围内的默认形态。
+const fn is_kanto_default_form(species_id: u32, form_id: u32) -> bool {
+    species_id >= FIRST_NATIONAL_POKEMON
+        && species_id <= LAST_KANTO_POKEMON
+        && form_id == species_id
 }
 
 fn compatible_move_ids(data: &CurrentDataSet, pokemon: PokemonFormId) -> Vec<DataMoveId> {

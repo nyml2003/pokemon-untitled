@@ -100,6 +100,32 @@ pub struct UiPixelOffset {
     pub x: i32,
     pub y: i32,
 }
+
+/// 围绕元素外沿扩散的半透明阴影，不参与布局。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UiShadow {
+    pub color: UiColor,
+    pub offset_x: i32,
+    pub offset_y: i32,
+    /// 阴影向四周外扩的像素宽度。
+    pub spread: u32,
+}
+
+impl UiShadow {
+    pub const fn new(color: UiColor, offset_x: i32, offset_y: i32, spread: u32) -> Self {
+        Self {
+            color,
+            offset_x,
+            offset_y,
+            spread,
+        }
+    }
+
+    pub const fn is_visible(self) -> bool {
+        self.color.alpha > 0 && self.spread > 0
+    }
+}
+
 impl UiPixelOffset {
     pub const fn new(x: i32, y: i32) -> Self {
         Self { x, y }
@@ -356,6 +382,8 @@ pub struct UiStyle {
     pub clip: bool,
     /// 只改变视觉和命中位置，不改变父容器中的布局占位。
     pub visual_offset: UiPixelOffset,
+    /// 围绕元素外沿扩散的半透明阴影。
+    pub shadow: UiShadow,
 }
 impl Default for UiStyle {
     fn default() -> Self {
@@ -376,6 +404,7 @@ impl Default for UiStyle {
             position: Position::Flow,
             clip: false,
             visual_offset: UiPixelOffset::default(),
+            shadow: UiShadow::default(),
         }
     }
 }

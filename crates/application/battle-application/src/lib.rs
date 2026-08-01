@@ -18,9 +18,10 @@ pub use battle_domain::{
     WeatherState, calculate_gen3_stats,
 };
 pub use observation::{
-    BattleEvent, BattleObservation, BattleTransition, DamageSource, ObservedBattleOutcome,
-    OpponentSideObservation, OwnSideObservation, Participant, RevealedCombatant,
-    RevealedMoveObservation, RevealedPokemonObservation, SubmitOutcome, TransitionError, UsedMove,
+    BattleEvent, BattleObservation, BattleTransition, DamageProjection, DamageSource,
+    ObservedBattleOutcome, OpponentSideObservation, OwnSideObservation, Participant,
+    RevealedCombatant, RevealedMoveObservation, RevealedPokemonObservation, SubmitOutcome,
+    TransitionError, UsedMove,
 };
 
 use battle_domain::{Battle, BattleCommand};

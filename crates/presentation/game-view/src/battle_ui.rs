@@ -6,8 +6,8 @@ use super::{
 };
 use super::{assets::*, common::*};
 use battle_session::{
-    Action, BattleObservation, BattleSessionSnapshot, BattleUnit, MoveCategory, Participant,
-    PokemonType,
+    Action, BattleObservation, BattleSessionSnapshot, BattleUnit, DamageProjection, MoveCategory,
+    Participant, PokemonType, TypeEffectiveness,
 };
 use game_data::PokedexData;
 use game_ui::{BattleMenuPage, BattleUiState, CommandConsoleView, PokedexAction};
@@ -21,6 +21,11 @@ use punctum_ui::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, UiBuildError, UiColor, UiContent,
     UiContentId, UiKey, UiNode, UiStyle, UiTree,
 };
+
+/// 属性图标显示尺寸：真实资源 32x16（2:1）放大两倍。
+const TYPE_ICON_SIZE: (u32, u32) = (56, 28);
+/// 招式分类图标显示尺寸：真实资源 32x14（16:7）放大两倍。
+const CATEGORY_ICON_SIZE: (u32, u32) = (64, 28);
 /// 构建响应式像素 UI 图鉴树。
 /// 图鉴是独立页面而非地图表面，因此不会投影为 `GameView`。
 pub fn project_pokedex(
@@ -69,7 +74,7 @@ pub fn project_pokedex(
         if let Some(pokemon_type) = pokedex_type(kind.id.0) {
             type_children.push(ui_image(
                 UiContentId::new(type_icon_asset(pokemon_type).as_str())?,
-                UiStyle::fixed(88, 30),
+                UiStyle::fixed(60, 30),
             ));
         } else {
             type_children.push(ui_text(
@@ -304,40 +309,13 @@ pub fn project_battle_ui(
 
     let menu = match page {
         BattleMenuPage::Main => battle_main_actions_flex(selected),
-        BattleMenuPage::Fight if actions.contains(&Action::Struggle) => battle_move_menu(
-            selected,
-            [(
-                "挣扎".to_owned(),
-                PokemonType::Normal,
-                MoveCategory::Physical,
-                "威50 PP--".to_owned(),
-            )],
-        ),
-        BattleMenuPage::Fight => battle_move_menu(
-            selected,
-            observation
-                .map(active_pokemon)
-                .map_or(&[][..], |pokemon| pokemon.moves())
-                .iter()
-                .take(4)
-                .map(|battle_move| {
-                    (
-                        battle_move.name().to_owned(),
-                        battle_move
-                            .move_types()
-                            .first()
-                            .copied()
-                            .unwrap_or(PokemonType::Normal),
-                        battle_move.category(),
-                        format!(
-                            "威{} PP{}/{}",
-                            battle_move.power(),
-                            battle_move.current_pp(),
-                            battle_move.max_pp()
-                        ),
-                    )
-                }),
-        ),
+        BattleMenuPage::Fight if actions.contains(&Action::Struggle) => {
+            battle_move_menu(selected, [BattleMoveMenuItem::struggle()])
+        }
+        BattleMenuPage::Fight => {
+            let items = battle_move_items(observation);
+            battle_move_menu(selected, items)
+        }
         BattleMenuPage::Pokemon => UiNode::auto(),
         BattleMenuPage::Hidden => UiNode::auto(),
     };
@@ -584,7 +562,12 @@ fn battle_main_actions_flex(selected: usize) -> UiNode {
             },
             (0..2).map(|column| {
                 let index = row * 2 + column;
-                battle_main_action_button(9_110 + index as u32, buttons[index], index == selected)
+                battle_main_action_button(
+                    9_110 + index as u32,
+                    buttons[index],
+                    index == selected,
+                    TypeEffectiveness::Normal,
+                )
             }),
         )
     });
@@ -602,13 +585,19 @@ fn battle_main_actions_flex(selected: usize) -> UiNode {
     )
 }
 
-fn battle_main_action_button(_id: u32, content: &str, selected: bool) -> UiNode {
+fn battle_main_action_button(
+    _id: u32,
+    content: &str,
+    selected: bool,
+    effectiveness: TypeEffectiveness,
+) -> UiNode {
     ui_button(
         &BATTLE_THEME,
         UiStyle {
             width: Dimension::Fill,
             height: Dimension::Fill,
             border_radius: BATTLE_THEME.medium_radius,
+            shadow: effectiveness_annotation(effectiveness).1,
             ..UiStyle::default()
         },
         selected,
@@ -627,15 +616,76 @@ fn battle_main_action_button(_id: u32, content: &str, selected: bool) -> UiNode 
     .with_action(())
 }
 
+/// 招式菜单中一个招式的展示数据，含伤害预测与相性标注。
+struct BattleMoveMenuItem {
+    name: String,
+    move_type: PokemonType,
+    category: MoveCategory,
+    power_detail: String,
+    effectiveness: TypeEffectiveness,
+    min_percent: u8,
+    max_percent: u8,
+}
+
+impl BattleMoveMenuItem {
+    fn struggle() -> Self {
+        Self {
+            name: "挣扎".to_owned(),
+            move_type: PokemonType::Normal,
+            category: MoveCategory::Physical,
+            power_detail: "威50 PP--".to_owned(),
+            effectiveness: TypeEffectiveness::Normal,
+            min_percent: 0,
+            max_percent: 0,
+        }
+    }
+}
+
+/// 汇总出战宝可梦前四个招式的展示数据，与观察到的伤害预测对齐。
+fn battle_move_items(observation: Option<&BattleObservation>) -> Vec<BattleMoveMenuItem> {
+    let Some(observation) = observation else {
+        return Vec::new();
+    };
+    let projections = observation.own().active_move_projections();
+    active_pokemon(observation)
+        .moves()
+        .iter()
+        .take(4)
+        .enumerate()
+        .map(|(index, battle_move)| {
+            let projection = projections.get(index);
+            BattleMoveMenuItem {
+                name: battle_move.name().to_owned(),
+                move_type: battle_move
+                    .move_types()
+                    .first()
+                    .copied()
+                    .unwrap_or(PokemonType::Normal),
+                category: battle_move.category(),
+                power_detail: format!(
+                    "威{} PP{}/{}",
+                    battle_move.power(),
+                    battle_move.current_pp(),
+                    battle_move.max_pp()
+                ),
+                effectiveness: projection
+                    .map_or(TypeEffectiveness::Normal, DamageProjection::effectiveness),
+                min_percent: projection.map_or(0, DamageProjection::min_percent),
+                max_percent: projection.map_or(0, DamageProjection::max_percent),
+            }
+        })
+        .collect()
+}
+
 fn battle_move_menu(
     selected: usize,
-    moves: impl IntoIterator<Item = (String, PokemonType, MoveCategory, String)>,
+    moves: impl IntoIterator<Item = BattleMoveMenuItem>,
 ) -> UiNode {
     let moves = moves.into_iter().collect::<Vec<_>>();
     let selected = selected.min(moves.len().saturating_sub(1));
-    let detail = moves.get(selected).map(|(_, move_type, category, detail)| {
-        move_detail_panel(9_300, *move_type, *category, detail)
-    });
+    let detail = moves
+        .get(selected)
+        .map(|item| move_detail_panel(9_300, item));
 
     ui_row(
         UiStyle {
@@ -653,8 +703,13 @@ fn battle_move_menu(
                     clip: true,
                     ..UiStyle::default()
                 },
-                moves.iter().enumerate().map(|(index, (name, ..))| {
-                    battle_main_action_button(9_120 + index as u32, name, index == selected)
+                moves.iter().enumerate().map(|(index, item)| {
+                    battle_main_action_button(
+                        9_120 + index as u32,
+                        &item.name,
+                        index == selected,
+                        item.effectiveness,
+                    )
                 }),
             ),
             ui_column(
@@ -669,12 +724,52 @@ fn battle_move_menu(
     )
 }
 
-fn move_detail_panel(
-    _id: u32,
-    move_type: PokemonType,
-    category: MoveCategory,
-    detail: &str,
-) -> UiNode {
+fn move_detail_panel(_id: u32, item: &BattleMoveMenuItem) -> UiNode {
+    let mut rows = Vec::new();
+    rows.push(ui_row(
+        UiStyle {
+            width: Dimension::Fill,
+            height: Dimension::Px(28),
+            gap: BATTLE_THEME.small_spacing,
+            ..UiStyle::default()
+        },
+        [
+            ui_image(
+                UiContentId::from_resource_key(type_icon_asset(item.move_type).as_str()),
+                UiStyle::fixed(TYPE_ICON_SIZE.0, TYPE_ICON_SIZE.1),
+            ),
+            ui_image(
+                UiContentId::from_resource_key(move_category_icon_asset(item.category).as_str()),
+                UiStyle::fixed(CATEGORY_ICON_SIZE.0, CATEGORY_ICON_SIZE.1),
+            ),
+        ],
+    ));
+    rows.push(ui_text(
+        &BATTLE_THEME,
+        TextTone::Ink,
+        item.power_detail.clone(),
+        17,
+        Dimension::Fill,
+    ));
+    let (tone, shadow) = effectiveness_annotation(item.effectiveness);
+    if let Some(label) = effectiveness_label(item.effectiveness) {
+        rows.push(ui_text(
+            &BATTLE_THEME,
+            tone,
+            label.to_owned(),
+            16,
+            Dimension::Fill,
+        ));
+    }
+    if let Some(prediction) = damage_prediction(item) {
+        rows.push(ui_text(
+            &BATTLE_THEME,
+            TextTone::MutedInk,
+            prediction,
+            15,
+            Dimension::Fill,
+        ));
+    }
     ui_modal(
         &BATTLE_THEME,
         UiStyle {
@@ -684,6 +779,7 @@ fn move_detail_panel(
             gap: BATTLE_THEME.small_spacing,
             padding: Insets::all(BATTLE_THEME.medium_spacing),
             border_radius: BATTLE_THEME.medium_radius,
+            shadow,
             ..UiStyle::default()
         },
         [
@@ -694,27 +790,65 @@ fn move_detail_panel(
                 15,
                 Dimension::Fill,
             ),
-            ui_row(
+            ui_column(
                 UiStyle {
                     width: Dimension::Fill,
-                    height: Dimension::Px(28),
+                    height: Dimension::Fill,
                     gap: BATTLE_THEME.small_spacing,
                     ..UiStyle::default()
                 },
-                [
-                    ui_image(
-                        UiContentId::from_resource_key(type_icon_asset(move_type).as_str()),
-                        UiStyle::fixed(72, 28),
-                    ),
-                    ui_image(
-                        UiContentId::from_resource_key(move_category_icon_asset(category).as_str()),
-                        UiStyle::fixed(72, 28),
-                    ),
-                ],
+                rows,
             ),
-            ui_text(&BATTLE_THEME, TextTone::Ink, detail, 17, Dimension::Fill),
         ],
     )
+}
+
+/// 返回效果拔群/效果不济/无效的展示文案。
+fn effectiveness_label(effectiveness: TypeEffectiveness) -> Option<&'static str> {
+    match effectiveness {
+        TypeEffectiveness::Quadruple | TypeEffectiveness::Double => Some("效果拔群"),
+        TypeEffectiveness::Quarter | TypeEffectiveness::Half => Some("效果不济"),
+        TypeEffectiveness::Immune => Some("没有效果"),
+        TypeEffectiveness::Normal => None,
+    }
+}
+
+/// 返回效果标注使用的文字色调与阴影样式。
+fn effectiveness_annotation(effectiveness: TypeEffectiveness) -> (TextTone, punctum_ui::UiShadow) {
+    let shadow_color = match effectiveness {
+        TypeEffectiveness::Quadruple | TypeEffectiveness::Double => Rgba8::new(232, 64, 64, 120),
+        TypeEffectiveness::Quarter | TypeEffectiveness::Half => Rgba8::new(86, 148, 232, 110),
+        TypeEffectiveness::Immune => Rgba8::new(96, 96, 96, 110),
+        TypeEffectiveness::Normal => Rgba8::new(0, 0, 0, 0),
+    };
+    let tone = match effectiveness {
+        TypeEffectiveness::Quadruple | TypeEffectiveness::Double => TextTone::Selected,
+        TypeEffectiveness::Quarter | TypeEffectiveness::Half => TextTone::MutedInk,
+        TypeEffectiveness::Immune => TextTone::Muted,
+        TypeEffectiveness::Normal => TextTone::Ink,
+    };
+    (
+        tone,
+        punctum_ui::UiShadow::new(
+            shadow_color.into_ui(),
+            0,
+            0,
+            if effectiveness == TypeEffectiveness::Normal {
+                0
+            } else {
+                6
+            },
+        ),
+    )
+}
+
+/// 返回伤害预测文案；状态类、零威力或无效招式返回 `None`。
+fn damage_prediction(item: &BattleMoveMenuItem) -> Option<String> {
+    match item.effectiveness {
+        TypeEffectiveness::Immune => None,
+        _ if item.min_percent == 0 && item.max_percent == 0 => Some("无伤害".to_owned()),
+        _ => Some(format!("伤害约 {}-{}%", item.min_percent, item.max_percent)),
+    }
 }
 
 fn battle_unavailable_page(message: &str) -> UiNode {
@@ -832,13 +966,13 @@ fn selected_team_member_panel(
                 .unwrap_or(PokemonType::Normal),
         )
         .as_str(),
-        UiStyle::fixed(72, 28),
+        UiStyle::fixed(TYPE_ICON_SIZE.0, TYPE_ICON_SIZE.1),
     )];
     if let Some(secondary) = pokemon.types().get(1).copied() {
         types.push(image(
             id + 6,
             type_icon_asset(secondary).as_str(),
-            UiStyle::fixed(72, 28),
+            UiStyle::fixed(TYPE_ICON_SIZE.0, TYPE_ICON_SIZE.1),
         ));
     }
     panel(
@@ -904,7 +1038,12 @@ fn selected_team_member_panel(
                 if pokemon.is_fainted() {
                     "无法战斗".to_owned()
                 } else {
-                    format!("HP {}/{}", pokemon.current_hp(), pokemon.max_hp())
+                    format!(
+                        "HP {}/{}（{}%）",
+                        pokemon.current_hp(),
+                        pokemon.max_hp(),
+                        hp_percent(pokemon.current_hp(), pokemon.max_hp())
+                    )
                 },
                 if pokemon.is_fainted() {
                     HP_LOW.into_ui()
@@ -1047,13 +1186,13 @@ fn battle_status_panel(
     let mut types = vec![image(
         id + 30,
         type_icon_asset(primary).as_str(),
-        UiStyle::fixed(72, 28),
+        UiStyle::fixed(TYPE_ICON_SIZE.0, TYPE_ICON_SIZE.1),
     )];
     if let Some(secondary) = secondary {
         types.push(image(
             id + 31,
             type_icon_asset(secondary).as_str(),
-            UiStyle::fixed(72, 28),
+            UiStyle::fixed(TYPE_ICON_SIZE.0, TYPE_ICON_SIZE.1),
         ));
     }
     panel(
@@ -1117,7 +1256,7 @@ fn battle_status_panel(
                     .with_content(UiContent::Fill(hp_color(hp, max_hp).into_ui()))]),
             text(
                 id + 7,
-                format!("HP {hp}/{max_hp}"),
+                format!("HP {hp}/{max_hp}（{}%）", hp_percent(hp, max_hp)),
                 BATTLE_MUTED.into_ui(),
                 15,
                 Dimension::Fill,
@@ -1162,11 +1301,16 @@ fn console_item(id: u32, content: &str, selected: bool) -> UiNode {
 }
 
 fn hp_color(hp: u32, max_hp: u32) -> Rgba8 {
-    match hp.saturating_mul(100) / max_hp.max(1) {
+    match hp_percent(hp, max_hp) {
         0..=20 => HP_LOW,
         21..=50 => HP_MID,
         _ => HP_GOOD,
     }
+}
+
+/// 当前 HP 占最大 HP 的整数百分比。
+fn hp_percent(hp: u32, max_hp: u32) -> u32 {
+    (u64::from(hp) * 100 / u64::from(max_hp.max(1))) as u32
 }
 
 fn panel(

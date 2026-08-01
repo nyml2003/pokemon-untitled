@@ -1,11 +1,17 @@
 use crate::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, Position, UiBorderRadius,
     UiButtonState, UiButtonStyle, UiColor, UiContent, UiContentId, UiId, UiInteractionSnapshot,
-    UiKey, UiLayoutError, UiPixelOffset, UiRect, UiRipple, UiSize, tree::UiNode,
+    UiKey, UiLayoutError, UiPixelOffset, UiRect, UiRipple, UiShadow, UiSize, tree::UiNode,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UiDrawCommand {
+    Shadow {
+        bounds: UiRect,
+        color: UiColor,
+        border_radius: UiBorderRadius,
+        clip: UiRect,
+    },
     Fill {
         bounds: UiRect,
         color: UiColor,
@@ -206,6 +212,14 @@ fn resolve_node<Action: Clone>(
         return Ok(());
     }
     let radius = node.style.border_radius.clamped(bounds);
+    if node.style.shadow.is_visible() {
+        buffers.commands.push(UiDrawCommand::Shadow {
+            bounds: shadow_bounds(bounds, node.style.shadow),
+            color: node.style.shadow.color,
+            border_radius: radius,
+            clip,
+        });
+    }
     if node.style.border.is_visible() {
         buffers.commands.push(UiDrawCommand::Fill {
             bounds,
@@ -399,6 +413,26 @@ fn inset(bounds: UiRect, insets: Insets) -> UiRect {
         bounds.width.saturating_sub(insets.horizontal()),
         bounds.height.saturating_sub(insets.vertical()),
     )
+}
+
+/// 计算阴影矩形：按偏移平移并按扩散宽度外扩。
+fn shadow_bounds(bounds: UiRect, shadow: UiShadow) -> UiRect {
+    let left = i64::from(bounds.x) + i64::from(shadow.offset_x) - i64::from(shadow.spread);
+    let top = i64::from(bounds.y) + i64::from(shadow.offset_y) - i64::from(shadow.spread);
+    let right = left + i64::from(bounds.width) + 2 * i64::from(shadow.spread);
+    let bottom = top + i64::from(bounds.height) + 2 * i64::from(shadow.spread);
+    if right <= 0 || bottom <= 0 {
+        return UiRect::default();
+    }
+    let left = left.max(0).min(i64::from(u32::MAX)) as u32;
+    let top = top.max(0).min(i64::from(u32::MAX)) as u32;
+    let right = right.max(0).min(i64::from(u32::MAX)) as u32;
+    let bottom = bottom.max(0).min(i64::from(u32::MAX)) as u32;
+    if left >= right || top >= bottom {
+        UiRect::default()
+    } else {
+        UiRect::new(left, top, right - left, bottom - top)
+    }
 }
 
 fn translate(bounds: UiRect, offset: UiPixelOffset) -> UiRect {

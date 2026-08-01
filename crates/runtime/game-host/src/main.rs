@@ -68,6 +68,15 @@ struct CreatureGameApp {
     runtime: Option<NativeTarget<'static>>,
 }
 
+/// 以系统时钟与进程号派生每次启动不同的队伍随机种子。
+fn random_roster_seed() -> u64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    (now ^ u128::from(std::process::id())) as u64
+}
+
 impl CreatureGameApp {
     fn new() -> Result<Self, Box<dyn Error>> {
         let package = load_product_content_package()?;
@@ -80,7 +89,7 @@ impl CreatureGameApp {
             load_narrative_scripts()?,
         )
         .map_err(|error| std::io::Error::other(format!("map world: {error:?}")))?;
-        let game = GameRuntime::new(CurrentDataSet::embedded()?, world, 17)
+        let game = GameRuntime::new(CurrentDataSet::embedded()?, world, random_roster_seed())
             .map_err(|error| std::io::Error::other(format!("map game: {error:?}")))?;
         let pokedex = game_data::PokedexData::embedded_gen3()?;
         let assets = sprites::load_host_assets(

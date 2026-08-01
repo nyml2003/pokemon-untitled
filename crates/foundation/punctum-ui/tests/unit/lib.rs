@@ -767,3 +767,48 @@ fn remaining_content_and_flex_branches_stay_pure() {
     .unwrap();
     assert!(spaced_stack.resolve(UiSize::new(10, 10)).is_ok());
 }
+
+#[test]
+fn shadow_expands_around_the_node_bounds() {
+    let tree = UiTree::new(fill(
+        41,
+        UiStyle {
+            width: Dimension::Px(20),
+            height: Dimension::Px(20),
+            shadow: UiShadow::new(UiColor::new(255, 0, 0, 180), 0, 0, 4),
+            ..UiStyle::default()
+        },
+    ))
+    .unwrap();
+    let frame = tree.resolve(UiSize::new(100, 100)).unwrap();
+    match &frame.commands()[0] {
+        UiDrawCommand::Shadow { bounds, color, .. } => {
+            assert_eq!(*bounds, UiRect::new(0, 0, 24, 24));
+            assert_eq!(*color, UiColor::new(255, 0, 0, 180));
+        }
+        _ => panic!("expected shadow command"),
+    }
+    match &frame.commands()[1] {
+        UiDrawCommand::Fill { .. } => {}
+        _ => panic!("expected fill command after shadow"),
+    }
+}
+
+#[test]
+fn transparent_shadow_is_skipped() {
+    let tree = UiTree::new(fill(
+        42,
+        UiStyle {
+            width: Dimension::Px(20),
+            height: Dimension::Px(20),
+            shadow: UiShadow::new(UiColor::new(0, 0, 0, 0), 0, 0, 4),
+            ..UiStyle::default()
+        },
+    ))
+    .unwrap();
+    let frame = tree.resolve(UiSize::new(100, 100)).unwrap();
+    match &frame.commands()[0] {
+        UiDrawCommand::Fill { .. } => {}
+        other => panic!("expected only fill, found {other:?}"),
+    }
+}

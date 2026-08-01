@@ -23,8 +23,8 @@ pub use interaction::{
 pub use layout::{UiActionHit, UiDrawCommand, UiFrame, UiHitRegion, UiInteractionTarget};
 pub use model::{
     CrossAlign, Dimension, FlexDirection, Insets, MainAlign, Position, UiBorder, UiBorderRadius,
-    UiButtonStyle, UiColor, UiContent, UiContentId, UiId, UiKey, UiPixelOffset, UiRect, UiSize,
-    UiStyle, UiTextSize,
+    UiButtonStyle, UiColor, UiContent, UiContentId, UiId, UiKey, UiPixelOffset, UiRect, UiShadow,
+    UiSize, UiStyle, UiTextSize,
 };
 pub use scroll::KeyboardSingleColumnFixedHeightScrollView;
 pub use tree::{UiNode, UiTree};
