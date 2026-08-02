@@ -25,6 +25,7 @@ from tools.pokemon_ops.domain.model import BuildProfile, NativeOperation, TestSu
 NATIVE_OPERATIONS: dict[str, tuple[NativeOperation, NativeOperation]] = {
     "game-host": (NativeOperation.BUILD_GAME_HOST, NativeOperation.RUN_GAME_HOST),
     "game-page-demo": (NativeOperation.BUILD_GAME_PAGE_DEMO, NativeOperation.RUN_GAME_PAGE_DEMO),
+    "battle-factory-demo": (NativeOperation.BUILD_BATTLE_FACTORY_DEMO, NativeOperation.RUN_BATTLE_FACTORY_DEMO),
     "map-editor": (NativeOperation.BUILD_MAP_EDITOR, NativeOperation.RUN_MAP_EDITOR),
     "pokemon-editor": (NativeOperation.BUILD_POKEMON_EDITOR, NativeOperation.RUN_POKEMON_EDITOR),
     "trainer-editor": (NativeOperation.BUILD_TRAINER_EDITOR, NativeOperation.RUN_TRAINER_EDITOR),

@@ -6,7 +6,7 @@ from tools.pokemon_ops.ports.interfaces import ProcessRunner
 
 
 TEST_COMMANDS: dict[str, tuple[str, ...]] = {
-    "core": ("cargo", "test", "-p", "game-session"),
+    "core": ("cargo", "test", "-p", "game-session", "-p", "battle-factory"),
     "world": ("cargo", "test", "-p", "world-application"),
     "workspace": ("cargo", "test", "--workspace"),
 }

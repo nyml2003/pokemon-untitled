@@ -135,4 +135,9 @@ impl FormId {
     pub const fn new(value: u32) -> Self {
         Self(value)
     }
+
+    /// 底层数值。
+    pub const fn value(self) -> u32 {
+        self.0
+    }
 }

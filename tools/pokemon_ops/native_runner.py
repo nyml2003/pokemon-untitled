@@ -19,6 +19,8 @@ def main() -> int:
         "run_game_host": "game-host",
         "build_game_page_demo": "game-page-demo",
         "run_game_page_demo": "game-page-demo",
+        "build_battle_factory_demo": "battle-factory-demo",
+        "run_battle_factory_demo": "battle-factory-demo",
         "build_map_editor": "map-editor",
         "run_map_editor": "map-editor",
         "build_trainer_editor": "trainer-editor",

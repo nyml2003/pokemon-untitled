@@ -232,6 +232,36 @@ name = "battle-domain"
 version = "0.0.0"
 
 [[package]]
+name = "battle-factory"
+version = "0.0.0"
+dependencies = [
+ "battle-application",
+ "battle-session",
+ "game-data",
+ "game-session",
+]
+
+[[package]]
+name = "battle-factory-demo"
+version = "0.0.0"
+dependencies = [
+ "battle-application",
+ "battle-factory",
+ "battle-session",
+ "game-asset-plan",
+ "game-assets",
+ "game-data",
+ "game-fs-assets",
+ "game-native-target",
+ "game-ui",
+ "game-view",
+ "punctum-gpu",
+ "punctum-input",
+ "punctum-ui",
+ "winit",
+]
+
+[[package]]
 name = "battle-ramus-adapter"
 version = "0.0.0"
 dependencies = [

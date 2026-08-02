@@ -73,6 +73,35 @@ pub fn asset_requests(
     debug_assert_eq!(manifest.player().len(), TEAM_SIZE);
     debug_assert_eq!(manifest.opponent().len(), TEAM_SIZE);
     let mut requests = character_requests(world);
+    requests.extend(battle_asset_requests(manifest));
+    for entry in pokedex.entries() {
+        requests.push(AssetRequest {
+            resource_key: AssetKey::from_resource_template(format!(
+                "pokedex/{}",
+                entry.national_dex
+            )),
+            asset_key: AssetKey::from_resource_template(entry.front_asset.clone()),
+            expected_size: None,
+        });
+        if let Some(resource_key) = page_pokedex_icon_asset(entry.national_dex) {
+            requests.push(AssetRequest {
+                resource_key,
+                asset_key: AssetKey::from_resource_template(format!(
+                    "pokemon/{:04}/form/00/icon/00",
+                    entry.national_dex
+                )),
+                expected_size: None,
+            });
+        }
+    }
+    requests
+}
+
+/// 只请求战斗画面所需资源，不包含世界角色与图鉴页面资源。
+pub fn battle_asset_requests(manifest: &DemoSpriteManifest) -> Vec<AssetRequest> {
+    debug_assert_eq!(manifest.player().len(), TEAM_SIZE);
+    debug_assert_eq!(manifest.opponent().len(), TEAM_SIZE);
+    let mut requests = Vec::new();
     for (slot, form) in manifest.player().iter().enumerate() {
         for frame in 0..2 {
             requests.push(AssetRequest {
@@ -98,26 +127,6 @@ pub fn asset_requests(
     }
     requests.extend(type_icon_requests());
     requests.extend(move_category_requests());
-    for entry in pokedex.entries() {
-        requests.push(AssetRequest {
-            resource_key: AssetKey::from_resource_template(format!(
-                "pokedex/{}",
-                entry.national_dex
-            )),
-            asset_key: AssetKey::from_resource_template(entry.front_asset.clone()),
-            expected_size: None,
-        });
-        if let Some(resource_key) = page_pokedex_icon_asset(entry.national_dex) {
-            requests.push(AssetRequest {
-                resource_key,
-                asset_key: AssetKey::from_resource_template(format!(
-                    "pokemon/{:04}/form/00/icon/00",
-                    entry.national_dex
-                )),
-                expected_size: None,
-            });
-        }
-    }
     requests
 }
 

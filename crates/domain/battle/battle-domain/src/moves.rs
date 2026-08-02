@@ -199,6 +199,11 @@ impl Move {
         self.current_pp = self.current_pp.saturating_sub(1);
     }
 
+    /// 恢复全部 PP。
+    pub fn restore_pp(&mut self) {
+        self.current_pp = self.max_pp;
+    }
+
     pub const fn priority(&self) -> i8 {
         self.priority
     }

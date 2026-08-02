@@ -224,68 +224,138 @@ fn radar_fragment(input: VertexOutput) -> vec4<f32> {
 
 /// 确定性坐标哈希，用于天气粒子的伪随机分布。
 fn hash_pixel(coord: vec2<u32>) -> f32 {
-    let p = vec2<f32>(f32(coord.x), f32(coord.y)) * vec2<f32>(127.1, 311.7);
-    return fract(sin(dot(p, vec2<f32>(269.5, 183.3))) * 43758.5453);
+    let value = sin(f32(coord.x) * 127.1 + f32(coord.y) * 311.7) * 43758.5453;
+    return value - floor(value);
 }
 
-/// 雨：斜向雨线，随帧下滑。
+/// 雨：近/远两层斜雨丝带尾迹渐变，整体蓝灰氛围。
 fn weather_rain(input: VertexOutput, frame: u32, tint: vec4<f32>) -> vec4<f32> {
     let size = input.pixel_size;
     let point = input.local_pixel;
-    let column = u32(point.x) / 9u;
-    let cell = hash_pixel(vec2<u32>(column, 1u));
-    let travel = (f32(frame) * 9.0 + cell * 36.0) % (size.y + 24.0);
-    let top = travel - 18.0;
-    let length = 7.0;
+    var result = vec4<f32>(tint.rgb, tint.a * 0.35);
+    result = result + rain_streak(point, size, f32(frame) * 0.6, 9.0, 7.0, 1.4, 0.5, tint, 1u);
+    result = result + rain_streak(point, size, f32(frame) * 1.8, 22.0, 13.0, 3.2, 0.3, tint, 2u);
+    return result;
+}
+
+/// 单层雨丝：一列内一条斜向下落、下端实上端淡的尾迹。
+fn rain_streak(
+    point: vec2<f32>,
+    size: vec2<f32>,
+    time: f32,
+    column_width: f32,
+    length: f32,
+    slope: f32,
+    density: f32,
+    tint: vec4<f32>,
+    seed: u32,
+) -> vec4<f32> {
+    let column = u32(point.x / column_width);
+    let random = hash_pixel(vec2<u32>(column, seed));
+    if random >= density {
+        return vec4<f32>(0.0);
+    }
+    let cycle = size.y + length + 8.0;
+    let travel = (time + random * cycle) % cycle;
+    let top = travel - length;
     if point.y < top || point.y > top + length {
         return vec4<f32>(0.0);
     }
-    let slope = 2.5;
-    let line_x = f32(column) * 9.0 + cell * 6.0 + (point.y - top) * slope;
+    let along = (point.y - top) / length;
+    let line_x = f32(column) * column_width + random * (column_width - 4.0) + along * slope;
     let dist = abs(point.x - line_x);
-    let coverage = 1.0 - smoothstep(0.2, 0.9, dist);
-    return vec4<f32>(tint.rgb, tint.a * coverage);
+    let core = 1.0 - smoothstep(0.3, 1.2, dist);
+    let fade = smoothstep(0.0, 0.45, along);
+    return vec4<f32>(tint.rgb, tint.a * core * fade);
 }
 
-/// 沙暴：随风斜向飘移的黄褐沙粒。
+/// 沙暴：近/远两层沙粒横向流动，底部黄褐尘雾。
 fn weather_sandstorm(input: VertexOutput, frame: u32, tint: vec4<f32>) -> vec4<f32> {
+    let size = input.pixel_size;
     let point = input.local_pixel;
-    let cell = vec2<u32>(u32(point.x) / 7u, u32(point.y) / 7u);
-    let random = hash_pixel(cell);
-    let drift = f32(frame % 13u);
-    let on = (random * 20.0 + drift) % 13.0 < 3.0;
-    if !on {
+    var result = vec4<f32>(tint.rgb, tint.a * 0.4);
+    result = result + sand_layer(point, size, f32(frame), 8.0, 0.55, 0.9, tint, 11u);
+    result = result + sand_layer(point, size, f32(frame) * 2.2, 18.0, 0.3, 1.8, tint, 13u);
+    let dust = smoothstep(size.y * 0.35, size.y, point.y);
+    result = result + vec4<f32>(tint.rgb, tint.a * 0.3 * dust);
+    return result;
+}
+
+/// 单层沙粒：一行内一个沙粒从右向左流过。
+fn sand_layer(
+    point: vec2<f32>,
+    size: vec2<f32>,
+    time: f32,
+    row_height: f32,
+    density: f32,
+    grain_size: f32,
+    tint: vec4<f32>,
+    seed: u32,
+) -> vec4<f32> {
+    let row = u32(point.y / row_height);
+    let random = hash_pixel(vec2<u32>(row, seed));
+    if random >= density {
         return vec4<f32>(0.0);
     }
-    let grain_x = f32(cell.x) * 7.0 + random * 6.0 - drift;
-    let grain_y = f32(cell.y) * 7.0 + random * 5.0;
-    let dist = distance(point, vec2<f32>(grain_x, grain_y));
-    let coverage = 1.0 - smoothstep(0.8, 1.6, dist);
+    let cycle = size.x + 16.0;
+    let travel = (time + random * cycle) % cycle;
+    let grain_x = travel - 8.0;
+    let grain_y = f32(row) * row_height + random * (row_height - 2.0);
+    let dist = abs(point.x - grain_x) + abs(point.y - grain_y);
+    let coverage = 1.0 - smoothstep(grain_size, grain_size * 2.4, dist);
     return vec4<f32>(tint.rgb, tint.a * coverage);
 }
 
-/// 晴天：从中心向外衰减的暖色光晕与轻微热浪。
-fn weather_sun(input: VertexOutput, tint: vec4<f32>) -> vec4<f32> {
+/// 晴天：暖色光晕 + 顶部丁达尔光柱 + 轻微热浪。
+fn weather_sun(input: VertexOutput, frame: u32, tint: vec4<f32>) -> vec4<f32> {
     let size = input.pixel_size;
     let point = input.local_pixel;
     let center = size * 0.5;
-    let dist = distance(point, center);
-    let max_dist = max(length(size * 0.5), 1.0);
+    let dist = abs(point.x - center.x) + abs(point.y - center.y);
+    let max_dist = size.x * 0.5 + size.y * 0.5;
     let halo = 1.0 - dist / max_dist;
-    let heat = 0.5 + 0.5 * sin((point.x + point.y) * 0.02);
-    return vec4<f32>(tint.rgb, tint.a * (0.35 + 0.65 * halo) * (0.8 + 0.2 * heat));
+    // 丁达尔光柱：横向几道暖色光柱，随帧轻微移动
+    let shaft = 0.5 + 0.5 * sin(point.x * 0.02 + sin(f32(frame) * 0.02) * 0.5);
+    let beam = pow(shaft, 7.0);
+    // 热浪：轻微亮度扰动
+    let heat = 0.9 + 0.1 * sin((point.x + point.y) * 0.01 + f32(frame) * 0.04);
+    let strength = (0.4 + 0.6 * halo) * (0.85 + 0.15 * beam) * heat;
+    return vec4<f32>(tint.rgb, tint.a * strength);
 }
 
-/// 冰雹：缓慢下落的淡青冰粒。
+/// 冰雹：近/远两层冰粒下落，带横向摆动。
 fn weather_hail(input: VertexOutput, frame: u32, tint: vec4<f32>) -> vec4<f32> {
+    let size = input.pixel_size;
     let point = input.local_pixel;
-    let cell = vec2<u32>(u32(point.x) / 8u, u32(point.y) / 8u);
-    let random = hash_pixel(cell);
-    let speed = f32((frame * 5u + cell.y * 7u) % 32u) - 16.0;
-    let grain_x = f32(cell.x) * 8.0 + random * 5.0;
-    let grain_y = f32(cell.y) * 8.0 + random * 6.0 - speed;
-    let dist = distance(point, vec2<f32>(grain_x, grain_y));
-    let coverage = 1.0 - smoothstep(0.9, 1.8, dist);
+    var result = vec4<f32>(tint.rgb, tint.a * 0.35);
+    result = result + hail_layer(point, size, f32(frame) * 0.8, 8.0, 0.4, 1.0, tint, 3u);
+    result = result + hail_layer(point, size, f32(frame) * 1.6, 18.0, 0.18, 2.0, tint, 7u);
+    return result;
+}
+
+/// 单层冰粒：每列一个冰粒下落，带横向 sin 摆动。
+fn hail_layer(
+    point: vec2<f32>,
+    size: vec2<f32>,
+    time: f32,
+    column_width: f32,
+    density: f32,
+    grain_size: f32,
+    tint: vec4<f32>,
+    seed: u32,
+) -> vec4<f32> {
+    let column = u32(point.x / column_width);
+    let random = hash_pixel(vec2<u32>(column, seed));
+    if random >= density {
+        return vec4<f32>(0.0);
+    }
+    let cycle = size.y + 16.0;
+    let travel = (time + random * cycle) % cycle;
+    let grain_y = travel - 8.0;
+    let sway = sin(time * 0.1 + random * 6.2831) * 3.0;
+    let grain_x = f32(column) * column_width + random * (column_width - 4.0) + sway;
+    let dist = abs(point.x - grain_x) + abs(point.y - grain_y);
+    let coverage = 1.0 - smoothstep(grain_size, grain_size * 2.6, dist);
     return vec4<f32>(tint.rgb, tint.a * coverage);
 }
 
@@ -300,7 +370,7 @@ fn weather_fragment(input: VertexOutput) -> vec4<f32> {
         return weather_sandstorm(input, frame, tint);
     }
     if pattern == 2u {
-        return weather_sun(input, tint);
+        return weather_sun(input, frame, tint);
     }
     return weather_hail(input, frame, tint);
 }

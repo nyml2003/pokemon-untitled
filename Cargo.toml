@@ -17,6 +17,7 @@ members = [
     "crates/foundation/punctum-ui",
     "crates/foundation/ramus",
     "crates/application/battle-application",
+    "crates/application/battle-factory",
     "crates/application/battle-session",
     "crates/application/editor-application",
     "crates/application/game-foundation",
@@ -50,6 +51,7 @@ members = [
     "crates/adapter/punctum-wgpu",
     "crates/runtime/game-host",
     "crates/runtime/game-page-demo",
+    "crates/runtime/battle-factory-demo",
     "crates/runtime/map-editor",
     "crates/runtime/map-editor-cli",
     "crates/runtime/pokemon-editor",
@@ -71,6 +73,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 battle-application = { path = "crates/application/battle-application" }
 battle-domain = { path = "crates/domain/battle/battle-domain" }
+battle-factory = { path = "crates/application/battle-factory" }
 battle-ruleset = { path = "crates/domain/battle/battle-ruleset" }
 battle-session = { path = "crates/application/battle-session" }
 editor-application = { path = "crates/application/editor-application" }

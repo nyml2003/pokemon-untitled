@@ -23,7 +23,10 @@ pub use product_session::{
     ProductBattleSnapshot, ProductCommand, ProductError, ProductEvent, ProductEvents,
     ProductSession, ProductSnapshot,
 };
-pub use roster::{DEBUG_PRESETS, DebugTeamPreset, DemoSpriteManifest, RosterError};
+pub use roster::{
+    DEBUG_PRESETS, DebugTeamPreset, DemoSpriteManifest, RosterError, demo_manifest_from_teams,
+    random_team,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GameScene {

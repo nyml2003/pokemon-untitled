@@ -10,8 +10,8 @@ use game_native_target::{
 };
 use punctum_gpu::{PixelSize, Rgba8};
 use punctum_ui::{
-    Dimension, FlexDirection, Insets, Position, UiBorderRadius, UiColor, UiContent, UiNode,
-    UiSize, UiStyle, UiTree,
+    Dimension, FlexDirection, Insets, Position, UiBorderRadius, UiColor, UiContent, UiNode, UiSize,
+    UiStyle, UiTree,
 };
 use winit::{
     application::ApplicationHandler,
@@ -152,8 +152,7 @@ impl LabApp {
                     border_radius: UiBorderRadius::all(10),
                     ..UiStyle::default()
                 })
-                .with_content(UiContent::Fill(UiColor::new(10, 14, 20, 200))
-                )
+                .with_content(UiContent::Fill(UiColor::new(10, 14, 20, 200)))
                 .with_children([UiNode::auto()
                     .with_style(UiStyle {
                         padding: Insets::all(2),
@@ -257,9 +256,7 @@ impl ApplicationHandler for LabApp {
                 }
                 window.request_redraw();
             }
-            WindowEvent::KeyboardInput { event, .. }
-                if event.state == ElementState::Pressed =>
-            {
+            WindowEvent::KeyboardInput { event, .. } if event.state == ElementState::Pressed => {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if let Some(weather) = WeatherKind::from_key(code) {
                         self.weather = weather;

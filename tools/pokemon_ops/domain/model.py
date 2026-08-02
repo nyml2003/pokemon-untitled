@@ -21,6 +21,8 @@ class NativeOperation(StrEnum):
     RUN_GAME_HOST = "run_game_host"
     BUILD_GAME_PAGE_DEMO = "build_game_page_demo"
     RUN_GAME_PAGE_DEMO = "run_game_page_demo"
+    BUILD_BATTLE_FACTORY_DEMO = "build_battle_factory_demo"
+    RUN_BATTLE_FACTORY_DEMO = "run_battle_factory_demo"
     BUILD_MAP_EDITOR = "build_map_editor"
     RUN_MAP_EDITOR = "run_map_editor"
     BUILD_TRAINER_EDITOR = "build_trainer_editor"

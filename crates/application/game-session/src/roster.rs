@@ -125,6 +125,29 @@ pub fn demo_teams(data: &CurrentDataSet, seed: u64) -> Result<(Team, Team), Rost
     ))
 }
 
+/// 用给定种子生成一支六人随机队伍。
+pub fn random_team(data: &CurrentDataSet, seed: u64, prefix: &str) -> Result<Team, RosterError> {
+    let members = random_members(data, seed)?;
+    let roster = members.into_iter().take(TEAM_SIZE).collect::<Vec<_>>();
+    build_team(data, prefix, &roster)
+}
+
+/// 从双方队伍派生精灵资源清单，供战斗资源加载使用。
+pub fn demo_manifest_from_teams(player: &Team, opponent: &Team) -> DemoSpriteManifest {
+    DemoSpriteManifest {
+        player: player
+            .members()
+            .iter()
+            .map(|unit| PokemonFormId(unit.species().form_id().value()))
+            .collect(),
+        opponent: opponent
+            .members()
+            .iter()
+            .map(|unit| PokemonFormId(unit.species().form_id().value()))
+            .collect(),
+    }
+}
+
 pub(crate) fn product_teams(
     data: &CurrentDataSet,
     content: &ThinSliceContent,
